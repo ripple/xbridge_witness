@@ -1,0 +1,23 @@
+{"attn_server": {
+    "server": { 
+        "public_key": "aKE3m5xrstjw2kZMVQ79AsGCEEp9tmPq18Ny3A84maQ2rRa5KE7i",
+        "secret_key": "ssvxJC1Hj86THvtugf5aF6B4fxA24",
+        "port_peer": 51238,
+        "port_ws": 6011,
+        "__ssl_key": "/etc/ssl/private/server.key",
+        "__ssl_cert": "/etc/ssl/certs/server.crt"
+    },
+    "mainchain": {
+        "door_account": "rEEw6AmPHD28M5AHyrzFSVoLA3oANcmYas",
+        "ip": "127.0.0.1",
+        "port_ws": 6006
+    },
+    "sidechain": {
+        "door_account": "rEEw6AmPHD28M5AHyrzFSVoLA3oANcmYas",
+        "ip": "127.0.0.1",
+        "port_ws": 6007
+    },
+    "sntp_servers": ["time.windows.com", "time.apple.com", "time.nist.gov", "pool.ntp.org"]
+}}
+
+
