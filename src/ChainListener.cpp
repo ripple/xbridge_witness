@@ -19,9 +19,6 @@
 #include <ChainListener.h>
 
 // #include <ripple/app/sidechain/Federator.h>
-#include <AttnServer.h>
-#include <FederatorEvents.h>
-#include <WebsocketClient.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/XRPAmount.h>
 #include <ripple/basics/strHex.h>
@@ -32,6 +29,9 @@
 #include <ripple/protocol/STAmount.h>
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/jss.h>
+#include <AttnServer.h>
+#include <FederatorEvents.h>
+#include <WebsocketClient.h>
 
 #include <type_traits>
 
@@ -41,23 +41,22 @@ namespace ripple {
 namespace jss {
 
 #define JSS(x) constexpr ::Json::StaticString x(#x)
-    
-JSS(Memo);                   // txn common field
-JSS(Memos);                  // txn common field
-JSS(MemoType);               // txn common field
-JSS(MemoData);               // txn common field
+
+JSS(Memo);      // txn common field
+JSS(Memos);     // txn common field
+JSS(MemoType);  // txn common field
+JSS(MemoData);  // txn common field
 
 #undef JSS
-}
-}
+}  // namespace jss
+}  // namespace ripple
 
 // todo: temporary hack as log macros have changed
 // -----------------------------------------------
 #undef JLOGV
 #undef jss
-#define JLOGV(a,...)
-#define jss(a,b) a
-
+#define JLOGV(a, ...)
+#define jss(a, b) a
 
 namespace ripple {
 namespace sidechain {
@@ -82,7 +81,8 @@ ChainListener::ChainListener(
 // WebsocketClient won't work)
 ChainListener::~ChainListener() = default;
 
-std::string const& ChainListener::chainName() const
+std::string const&
+ChainListener::chainName() const
 {
     // Note: If this function is ever changed to return a value instead of a
     // ref, review the code to ensure the "jv" functions don't bind to temps
@@ -91,22 +91,31 @@ std::string const& ChainListener::chainName() const
     return isMainchain() ? m : s;
 }
 
-void ChainListener::processMessage(Json::Value const& msg)
+void
+ChainListener::processMessage(Json::Value const& msg)
 {
     // Even though this lock has a large scope, this function does very little
     // processing and should run relatively quickly
     std::lock_guard l{m_};
 
-    JLOGV(j_.trace(), "chain listener message", jv("msg", msg), jv("isMainchain", isMainchain()));
+    JLOGV(
+        j_.trace(),
+        "chain listener message",
+        jv("msg", msg),
+        jv("isMainchain", isMainchain()));
 
-    std::array<std::pair<bool, char const *>, 4> checks {{
-        { msg.isMember(jss::validated) && msg[jss::validated].asBool(),  "not validated" },
-        { msg.isMember(jss::engine_result_code),  "no engine result code" },
-        { msg.isMember(jss::account_history_tx_index),  "no account history tx index" },
-        { msg.isMember(jss::meta),  "tx meta" }}};
-    
-    for ( auto check : checks) {
-        if (!check.first) {
+    std::array<std::pair<bool, char const*>, 4> checks{
+        {{msg.isMember(jss::validated) && msg[jss::validated].asBool(),
+          "not validated"},
+         {msg.isMember(jss::engine_result_code), "no engine result code"},
+         {msg.isMember(jss::account_history_tx_index),
+          "no account history tx index"},
+         {msg.isMember(jss::meta), "tx meta"}}};
+
+    for (auto check : checks)
+    {
+        if (!check.first)
+        {
             JLOGV(
                 j_.trace(),
                 "ignoring listener message",
@@ -159,14 +168,16 @@ void ChainListener::processMessage(Json::Value const& msg)
 
         if (!msg.isMember(jss::transaction))
             return {};
-        
+
         auto const txn = msg[jss::transaction];
 
         if (!fieldMatchesStr(txn, jss::TransactionType, "Payment"))
             return {};
 
-        bool const accIsSrc = fieldMatchesStr(txn, jss::Account, doorAccountStr_.c_str());
-        bool const accIsDst = fieldMatchesStr(txn, jss::Destination, doorAccountStr_.c_str());
+        bool const accIsSrc =
+            fieldMatchesStr(txn, jss::Account, doorAccountStr_.c_str());
+        bool const accIsDst =
+            fieldMatchesStr(txn, jss::Destination, doorAccountStr_.c_str());
 
         if (accIsSrc == accIsDst)
         {
@@ -179,7 +190,8 @@ void ChainListener::processMessage(Json::Value const& msg)
         return PaymentType::user;
     }();
 
-    // There are four types of messages used to control the attn_server accounts:
+    // There are four types of messages used to control the attn_server
+    // accounts:
     // 1. AccountSet without modifying account settings. These txns are used to
     // trigger TicketCreate txns.
     // 2. TicketCreate to issue tickets.

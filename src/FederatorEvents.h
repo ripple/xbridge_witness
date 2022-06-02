@@ -61,7 +61,6 @@ struct HeartbeatTimer
 
 }  // namespace event
 
-
 }  // namespace sidechain
 }  // namespace ripple
 

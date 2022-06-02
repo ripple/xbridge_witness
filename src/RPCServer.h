@@ -9,14 +9,13 @@ namespace sidechain {
 class RPCServer
 {
 private:
-
 public:
-    RPCServer(boost::asio::io_context& ioc, AttnServer &attn_server);
+    RPCServer(boost::asio::io_context& ioc, AttnServer& attn_server);
 
 private:
 };
 
-}
-}
+}  // namespace sidechain
+}  // namespace ripple
 
 #endif  // RPCSERVER_H_INCLUDED

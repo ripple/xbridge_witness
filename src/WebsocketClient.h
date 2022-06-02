@@ -20,8 +20,8 @@
 #ifndef RIPPLE_SIDECHAIN_IO_WEBSOCKET_CLIENT_H_INCLUDED
 #define RIPPLE_SIDECHAIN_IO_WEBSOCKET_CLIENT_H_INCLUDED
 
-#include <ThreadSaftyAnalysis.h>
 #include <ripple/core/Config.h>
+#include <ThreadSaftyAnalysis.h>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -57,7 +57,8 @@ class WebsocketClient
     boost::asio::io_service& ios_;
     boost::asio::io_service::strand strand_;
     boost::asio::ip::tcp::socket stream_;
-    boost::beast::websocket::stream<boost::asio::ip::tcp::socket&> GUARDED_BY(m_) ws_;
+    boost::beast::websocket::stream<boost::asio::ip::tcp::socket&> GUARDED_BY(
+        m_) ws_;
     boost::beast::multi_buffer rb_;
 
     std::atomic<bool> peerClosed_{false};
@@ -83,15 +84,19 @@ public:
     ~WebsocketClient();
 
     // Returns command id that will be returned in the response
-    std::uint32_t send(std::string const& cmd, Json::Value params) EXCLUDES(m_);
+    std::uint32_t
+    send(std::string const& cmd, Json::Value params) EXCLUDES(m_);
 
-    void shutdown() EXCLUDES(shutdownM_);
+    void
+    shutdown() EXCLUDES(shutdownM_);
 
 private:
-    void onReadMsg(error_code const& ec) EXCLUDES(m_);
+    void
+    onReadMsg(error_code const& ec) EXCLUDES(m_);
 
     // Called when the read op terminates
-    void onReadDone();
+    void
+    onReadDone();
 };
 
 }  // namespace sidechain

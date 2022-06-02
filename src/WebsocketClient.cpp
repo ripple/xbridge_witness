@@ -38,7 +38,8 @@ namespace ripple {
 namespace sidechain {
 
 template <class ConstBuffers>
-std::string WebsocketClient::buffer_string(ConstBuffers const& b)
+std::string
+WebsocketClient::buffer_string(ConstBuffers const& b)
 {
     using boost::asio::buffer;
     using boost::asio::buffer_size;
@@ -48,7 +49,8 @@ std::string WebsocketClient::buffer_string(ConstBuffers const& b)
     return s;
 }
 
-void WebsocketClient::cleanup()
+void
+WebsocketClient::cleanup()
 {
     ios_.post(strand_.wrap([this] {
         if (!peerClosed_)
@@ -73,7 +75,8 @@ void WebsocketClient::cleanup()
     }));
 }
 
-void WebsocketClient::shutdown()
+void
+WebsocketClient::shutdown()
 {
     cleanup();
     std::unique_lock l{shutdownM_};
@@ -103,8 +106,12 @@ WebsocketClient::WebsocketClient(
                 for (auto const& h : headers)
                     req.set(h.first, h.second);
             }));
-        ws_.handshake(ep.address().to_string() + ":" + std::to_string(ep.port()), "/");
-        ws_.async_read(rb_, strand_.wrap(std::bind(&WebsocketClient::onReadMsg, this, std::placeholders::_1)));
+        ws_.handshake(
+            ep.address().to_string() + ":" + std::to_string(ep.port()), "/");
+        ws_.async_read(
+            rb_,
+            strand_.wrap(std::bind(
+                &WebsocketClient::onReadMsg, this, std::placeholders::_1)));
     }
     catch (std::exception&)
     {
@@ -118,7 +125,8 @@ WebsocketClient::~WebsocketClient()
     cleanup();
 }
 
-std::uint32_t WebsocketClient::send(std::string const& cmd, Json::Value params)
+std::uint32_t
+WebsocketClient::send(std::string const& cmd, Json::Value params)
 {
     params[jss::method] = cmd;
     params[jss::jsonrpc] = "2.0";
@@ -133,7 +141,8 @@ std::uint32_t WebsocketClient::send(std::string const& cmd, Json::Value params)
     return id;
 }
 
-void WebsocketClient::onReadMsg(error_code const& ec)
+void
+WebsocketClient::onReadMsg(error_code const& ec)
 {
     if (ec)
     {
@@ -158,7 +167,8 @@ void WebsocketClient::onReadMsg(error_code const& ec)
 }
 
 // Called when the read op terminates
-void WebsocketClient::onReadDone()
+void
+WebsocketClient::onReadDone()
 {
 }
 

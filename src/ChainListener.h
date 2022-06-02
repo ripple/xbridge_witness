@@ -45,7 +45,7 @@ protected:
     AccountID doorAccount_;
     AttnServer& attn_server_;
     mutable std::mutex m_;
-    
+
     beast::Journal j_;
 
     ChainListener(
@@ -56,10 +56,16 @@ protected:
 
     virtual ~ChainListener();
 
-    std::string const& chainName() const;
+    std::string const&
+    chainName() const;
 
-    void processMessage(Json::Value const& msg) EXCLUDES(m_);
-    bool isMainchain() const { return chain_type_== mainChain; }
+    void
+    processMessage(Json::Value const& msg) EXCLUDES(m_);
+    bool
+    isMainchain() const
+    {
+        return chain_type_ == mainChain;
+    }
 };
 
 }  // namespace sidechain
