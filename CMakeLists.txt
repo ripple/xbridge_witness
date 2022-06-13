@@ -80,6 +80,33 @@ if(xbridge_witness_coverage)
   set(coverage ${xbridge_witness_coverage} CACHE BOOL "gcc/clang only" FORCE)
 endif()
 
+# this one is a string and therefore can't be an option
+set (san "" CACHE STRING "On gcc & clang, add sanitizer instrumentation")
+set_property (CACHE san PROPERTY STRINGS ";undefined;memory;address;thread")
+if (san)
+  string (TOLOWER ${san} san)
+  set (SAN_FLAG "-fsanitize=${san}")
+  set (SAN_LIB "")
+  if (is_gcc)
+    if (san STREQUAL "address")
+      set (SAN_LIB "asan")
+    elseif (san STREQUAL "thread")
+      set (SAN_LIB "tsan")
+    elseif (san STREQUAL "memory")
+      set (SAN_LIB "msan")
+    elseif (san STREQUAL "undefined")
+      set (SAN_LIB "ubsan")
+    endif ()
+  endif ()
+  set (_saved_CRL ${CMAKE_REQUIRED_LIBRARIES})
+  set (CMAKE_REQUIRED_LIBRARIES "${SAN_FLAG};${SAN_LIB}")
+  check_cxx_compiler_flag (${SAN_FLAG} COMPILER_SUPPORTS_SAN)
+  set (CMAKE_REQUIRED_LIBRARIES ${_saved_CRL})
+  if (NOT COMPILER_SUPPORTS_SAN)
+    message (FATAL_ERROR "${san} sanitizer does not seem to be supported by your compiler")
+  endif ()
+endif ()
+
 include(XBridgeWitnessSanity)
 include(XBridgeWitnessCov)
 include(XBridgeWitnessInterface)
@@ -100,8 +127,24 @@ add_executable (xbridge_witnessd
   src/xbwd/client/ChainListener.cpp
   )
 target_include_directories (xbridge_witnessd PRIVATE src)
-target_link_libraries (xbridge_witnessd Ripple::xrpl_core XBridgeWitness::opts
+target_link_libraries (xbridge_witnessd PUBLIC Ripple::xrpl_core XBridgeWitness::opts
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt)
+
+if (san)
+  target_compile_options (xbridge_witnessd
+    INTERFACE
+      # sanitizers recommend minimum of -O1 for reasonable performance
+      $<$<CONFIG:Debug>:-O1>
+      ${SAN_FLAG}
+      -fno-omit-frame-pointer)
+  target_compile_definitions (xbridge_witnessd
+    INTERFACE
+      $<$<STREQUAL:${san},address>:SANITIZER=ASAN>
+      $<$<STREQUAL:${san},thread>:SANITIZER=TSAN>
+      $<$<STREQUAL:${san},memory>:SANITIZER=MSAN>
+      $<$<STREQUAL:${san},undefined>:SANITIZER=UBSAN>)
+  target_link_libraries (xbridge_witnessd INTERFACE ${SAN_FLAG} ${SAN_LIB})
+endif ()
 
 if (has_parent)
   set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_ALL ON)
