@@ -286,7 +286,7 @@ Federator::onEvent(event::HeartbeatTimer const& e)
 void
 Federator::unlockMainLoop()
 {
-    std::lock_guard<std::mutex> l(m_);
+    std::lock_guard<std::mutex> l(mainLoopMutex_);
     mainLoopLocked_ = false;
     mainLoopCv_.notify_one();
 }
