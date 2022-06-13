@@ -1,3 +1,5 @@
+#pragma once
+
 //------------------------------------------------------------------------------
 /*
     This file is part of rippled: https://github.com/ripple/rippled
@@ -17,11 +19,9 @@
 */
 //==============================================================================
 
-#ifndef RIPPLE_SIDECHAIN_IO_WEBSOCKET_CLIENT_H_INCLUDED
-#define RIPPLE_SIDECHAIN_IO_WEBSOCKET_CLIENT_H_INCLUDED
+#include <xbwd/basics/ThreadSaftyAnalysis.h>
 
 #include <ripple/core/Config.h>
-#include <ThreadSaftyAnalysis.h>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -35,9 +35,9 @@
 #include <functional>
 #include <memory>
 
-namespace ripple {
-namespace sidechain {
+namespace xbwd {
 
+// TODO: Replace this class with `ServerHandler`
 class WebsocketClient
 {
     using error_code = boost::system::error_code;
@@ -76,8 +76,7 @@ public:
     WebsocketClient(
         std::function<void(Json::Value const&)> callback,
         boost::asio::io_service& ios,
-        boost::asio::ip::address const& ip,
-        std::uint16_t port,
+        beast::IP::Endpoint const& ip,
         std::unordered_map<std::string, std::string> const& headers,
         beast::Journal j);
 
@@ -99,7 +98,4 @@ private:
     onReadDone();
 };
 
-}  // namespace sidechain
-}  // namespace ripple
-
-#endif
+}  // namespace xbwd

@@ -17,7 +17,7 @@
 */
 //==============================================================================
 
-#include <WebsocketClient.h>
+#include <xbwd/client/WebsocketClient.h>
 
 #include <ripple/json/Output.h>
 #include <ripple/json/json_reader.h>
@@ -29,13 +29,11 @@
 #include <boost/beast/websocket.hpp>
 
 #include <condition_variable>
+#include <iostream>
 #include <string>
 #include <unordered_map>
 
-#include <iostream>
-
-namespace ripple {
-namespace sidechain {
+namespace xbwd {
 
 template <class ConstBuffers>
 std::string
@@ -86,8 +84,7 @@ WebsocketClient::shutdown()
 WebsocketClient::WebsocketClient(
     std::function<void(Json::Value const&)> callback,
     boost::asio::io_service& ios,
-    boost::asio::ip::address const& ip,
-    std::uint16_t port,
+    beast::IP::Endpoint const& ip,
     std::unordered_map<std::string, std::string> const& headers,
     beast::Journal j)
     : ios_(ios)
@@ -99,7 +96,8 @@ WebsocketClient::WebsocketClient(
 {
     try
     {
-        boost::asio::ip::tcp::endpoint const ep{ip, port};
+        // TODO: Change all the beast::IP:Endpoints to boost endpoints
+        boost::asio::ip::tcp::endpoint const ep{ip.address(), ip.port()};
         stream_.connect(ep);
         ws_.set_option(boost::beast::websocket::stream_base::decorator(
             [&](boost::beast::websocket::request_type& req) {
@@ -116,7 +114,7 @@ WebsocketClient::WebsocketClient(
     catch (std::exception&)
     {
         cleanup();
-        Rethrow();
+        throw;
     }
 }
 
@@ -128,12 +126,12 @@ WebsocketClient::~WebsocketClient()
 std::uint32_t
 WebsocketClient::send(std::string const& cmd, Json::Value params)
 {
-    params[jss::method] = cmd;
-    params[jss::jsonrpc] = "2.0";
-    params[jss::ripplerpc] = "2.0";
+    params[ripple::jss::method] = cmd;
+    params[ripple::jss::jsonrpc] = "2.0";
+    params[ripple::jss::ripplerpc] = "2.0";
 
     auto const id = nextId_++;
-    params[jss::id] = id;
+    params[ripple::jss::id] = id;
     auto const s = to_string(params);
 
     std::lock_guard l{m_};
@@ -172,5 +170,4 @@ WebsocketClient::onReadDone()
 {
 }
 
-}  // namespace sidechain
-}  // namespace ripple
+}  // namespace xbwd

@@ -1,3 +1,5 @@
+#pragma once
+
 //------------------------------------------------------------------------------
 /*
     This file is part of rippled: https://github.com/ripple/rippled
@@ -16,9 +18,6 @@
     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 //==============================================================================
-
-#ifndef RIPPLE_BASICS_THREAD_SAFTY_ANALYSIS_H_INCLUDED
-#define RIPPLE_BASICS_THREAD_SAFTY_ANALYSIS_H_INCLUDED
 
 #ifdef RIPPLE_ENABLE_THREAD_SAFETY_ANNOTATIONS
 #define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
@@ -78,5 +77,3 @@
 
 #define NO_THREAD_SAFETY_ANALYSIS \
     THREAD_ANNOTATION_ATTRIBUTE__(no_thread_safety_analysis)
-
-#endif

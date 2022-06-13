@@ -37,7 +37,7 @@ if (coverage)
       add_custom_target (coverage_report
         USES_TERMINAL
         COMMAND ${CMAKE_COMMAND} -E echo "Generating coverage - results will be in ${CMAKE_BINARY_DIR}/coverage/index.html."
-        COMMAND ${CMAKE_COMMAND} -E echo "Running validator-keys tests."
+        COMMAND ${CMAKE_COMMAND} -E echo "Running xbridge_witnessd tests."
         COMMAND validator-keys --unittest$<$<BOOL:${coverage_test}>:=${coverage_test}>
         COMMAND ${LLVM_PROFDATA}
           merge -sparse default.profraw -o rip.profdata

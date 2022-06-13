@@ -1,3 +1,5 @@
+#pragma once
+
 //------------------------------------------------------------------------------
 /*
     This file is part of rippled: https://github.com/ripple/rippled
@@ -17,43 +19,60 @@
 */
 //==============================================================================
 
-#ifndef RIPPLE_SIDECHAIN_FEDERATOR_EVENTS_H_INCLUDED
-#define RIPPLE_SIDECHAIN_FEDERATOR_EVENTS_H_INCLUDED
-
-#include <ripple/beast/utility/Journal.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
-#include <ripple/protocol/Issue.h>
 #include <ripple/protocol/STAmount.h>
 #include <ripple/protocol/TER.h>
 
-#include <boost/format.hpp>
-
 #include <optional>
-#include <sstream>
-#include <string>
 #include <variant>
 
-namespace ripple {
-namespace sidechain {
+namespace xbwd {
 namespace event {
 
 enum class Dir { sideToMain, mainToSide };
-enum class AccountFlagOp { set, clear };
-static constexpr std::uint32_t MemoStringMax = 512;
 
-enum class EventType {
-    bootstrap,
-    trigger,
-    result,
-    resultAndTrigger,
-    heartbeat,
+// A cross chain transfer was detected on this federator
+struct XChainTransferDetected
+{
+    // direction of the transfer
+    Dir dir_;
+    // Src account on the src chain
+    ripple::AccountID src_;
+    // TODO: add sidechain field
+    // ripple::STSidechain sidechain_;
+    std::optional<ripple::STAmount> deliveredAmt_;
+    std::uint32_t xChainSeq_;
+    std::uint32_t ledgerSeq_;
+    ripple::uint256 txnHash_;
+    ripple::TER status_;
+    std::int32_t rpcOrder_;
+
+    Json::Value
+    toJson() const;
 };
 
 struct HeartbeatTimer
 {
-    EventType
-    eventType() const;
+    Json::Value
+    toJson() const;
+};
+
+struct XChainTransferResult
+{
+    // direction is the direction of the triggering transaction.
+    // I.e. A "mainToSide" transfer result is a transaction that
+    // happens on the sidechain (the triggering transaction happended on the
+    // mainchain)
+    Dir dir_;
+    ripple::AccountID dst_;
+    std::optional<ripple::STAmount> deliveredAmt_;
+    std::uint32_t xChainSeq_;
+    std::uint32_t ledgerSeq_;
+    // Txn hash transaction on the dst chain
+    ripple::uint256 txnHash_;
+    ripple::TER ter_;
+    std::int32_t rpcOrder_;
 
     Json::Value
     toJson() const;
@@ -61,7 +80,12 @@ struct HeartbeatTimer
 
 }  // namespace event
 
-}  // namespace sidechain
-}  // namespace ripple
+using FederatorEvent = std::variant<
+    event::XChainTransferDetected,
+    event::HeartbeatTimer,
+    event::XChainTransferResult>;
 
-#endif
+Json::Value
+toJson(FederatorEvent const& event);
+
+}  // namespace xbwd

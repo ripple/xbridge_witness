@@ -1,10 +1,14 @@
 cmake_minimum_required (VERSION 3.11)
-project (attn_server)
+project (xbridge_witnessd)
+
+include(${CMAKE_BINARY_DIR}/conan_paths.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_VERBOSE_MAKEFILE 1)
 
+find_package(SOCI REQUIRED)
+find_package(fmt REQUIRED)
 
 #[===========================================[
   The tool depends on the xrpl_core
@@ -14,15 +18,17 @@ set(CMAKE_VERBOSE_MAKEFILE 1)
   FetchContent.
 #]===========================================]
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
-include(KeysNIH)
+include(XBridgeWitnessNIH)
 
 get_directory_property(has_parent PARENT_DIRECTORY)
+
 if(coverage)
   # Rippled also responds to the "coverage" flag, so clear it if it's set until
   # the dependency is set up.
-  set(keys_coverage ${coverage})
+  set(xbridge_witness_coverage ${coverage})
   set(coverage OFF CACHE BOOL "gcc/clang only" FORCE)
 endif()
+
 if (NOT has_parent)
   find_package(Ripple QUIET)
   if (NOT TARGET Ripple::xrpl_core)
@@ -69,32 +75,37 @@ if (NOT has_parent)
     endif()
   endif ()
 endif ()
-if(keys_coverage)
-  set(coverage ${keys_coverage} CACHE BOOL "gcc/clang only" FORCE)
-endif()
-include(KeysSanity)
-include(KeysCov)
-include(KeysInterface)
 
-add_executable (attn_server
-  src/main.cpp
-  src/RPCServer.cpp
-  src/AttnServer.cpp
-  src/WebsocketClient.cpp
-  src/ChainListener.cpp
-  #src/InitialSync.cpp
-  #src/ValidatorKeys.cpp
-  #src/ValidatorKeysTool.cpp
-  ## UNIT TESTS:
-  #src/test/ValidatorKeys_test.cpp
-  #src/test/ValidatorKeysTool_test.cpp
+if(xbridge_witness_coverage)
+  set(coverage ${xbridge_witness_coverage} CACHE BOOL "gcc/clang only" FORCE)
+endif()
+
+include(XBridgeWitnessSanity)
+include(XBridgeWitnessCov)
+include(XBridgeWitnessInterface)
+
+add_executable (xbridge_witnessd
+  src/xbwd/app/App.cpp
+  src/xbwd/app/BuildInfo.cpp
+  src/xbwd/app/Config.cpp
+  src/xbwd/app/DBInit.cpp
+  src/xbwd/app/main.cpp
+  src/xbwd/core/DatabaseCon.cpp
+  src/xbwd/core/SociDB.cpp
+  src/xbwd/federator/Federator.cpp
+  src/xbwd/federator/FederatorEvents.cpp
+  src/xbwd/rpc/RPCHandler.cpp
+  src/xbwd/rpc/ServerHandler.cpp
+  src/xbwd/client/WebsocketClient.cpp
+  src/xbwd/client/ChainListener.cpp
   )
-target_include_directories (attn_server PRIVATE src)
-target_link_libraries (attn_server Ripple::xrpl_core Keys::opts)
+target_include_directories (xbridge_witnessd PRIVATE src)
+target_link_libraries (xbridge_witnessd Ripple::xrpl_core XBridgeWitness::opts
+  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt)
 
 if (has_parent)
-  set_target_properties (attn_server PROPERTIES EXCLUDE_FROM_ALL ON)
-  set_target_properties (attn_server PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
+  set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_ALL ON)
+  set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
 endif ()
 
 
