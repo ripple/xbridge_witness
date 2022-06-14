@@ -100,6 +100,7 @@ WebsocketClient::WebsocketClient(
         // TODO: Change all the beast::IP:Endpoints to boost endpoints
         boost::asio::ip::tcp::endpoint const ep{ip.address(), ip.port()};
         stream_.connect(ep);
+        peerClosed_ = false;
         ws_.set_option(boost::beast::websocket::stream_base::decorator(
             [&](boost::beast::websocket::request_type& req) {
                 for (auto const& h : headers)

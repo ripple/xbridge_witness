@@ -61,7 +61,7 @@ class WebsocketClient
         m_) ws_;
     boost::beast::multi_buffer rb_;
 
-    std::atomic<bool> peerClosed_{false};
+    std::atomic<bool> peerClosed_{true};
 
     std::function<void(Json::Value const&)> callback_;
     std::atomic<std::uint32_t> nextId_{0};

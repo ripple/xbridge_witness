@@ -39,20 +39,30 @@ App::App(config::Config const& config, beast::severities::Severity logLevel)
         });
     }
 
-    federator_ = make_Federator(
-        *this,
-        get_io_service(),
-        config.sidechain,
-        config.keyType,
-        config.signingKey,
-        config.mainchainIp,
-        config.sidechainIp,
-        logs_.journal("Federator"));
+    try
+    {
+        federator_ = make_Federator(
+            *this,
+            get_io_service(),
+            config.sidechain,
+            config.keyType,
+            config.signingKey,
+            config.mainchainIp,
+            config.sidechainIp,
+            logs_.journal("Federator"));
 
-    serverHandler_ = std::make_unique<rpc::ServerHandler>(
-        *this, get_io_service(), logs_.journal("ServerHandler"));
-
-    JLOG(j_.trace()) << "finished app constructor";
+        serverHandler_ = std::make_unique<rpc::ServerHandler>(
+            *this, get_io_service(), logs_.journal("ServerHandler"));
+    }
+    catch (std::exception const& e)
+    {
+        JLOGV(
+            j_.fatal(),
+            "Exception while creating app ",
+            ripple::jv("what", e.what()));
+        work_.reset();
+        throw;
+    }
 }
 
 App::~App()
@@ -61,8 +71,6 @@ App::~App()
 
     for (auto& t : threads_)
         t.join();
-
-    JLOG(j_.trace()) << "finished app destructor";
 }
 
 bool

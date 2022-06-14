@@ -164,19 +164,12 @@ main(int argc, char** argv)
         if (!app.setup(config))
             return EXIT_FAILURE;
 
-        try
-        {
-            app.start();
-            app.run();
-        }
-        catch (std::exception const& e)
-        {
-            std::cerr << "Top level exception handler. e: " << e.what();
-        }
+        app.start();
+        app.run();
     }
     catch (std::exception const& e)
     {
-        std::cerr << e.what() << "\n";
+        std::cerr << "Exception: " << e.what() << "\n";
         return EXIT_FAILURE;
     }
 
