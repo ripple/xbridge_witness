@@ -51,6 +51,8 @@ App::App(config::Config const& config, beast::severities::Severity logLevel)
 
     serverHandler_ = std::make_unique<rpc::ServerHandler>(
         *this, get_io_service(), logs_.journal("ServerHandler"));
+
+    JLOG(j_.trace()) << "finished app constructor";
 }
 
 App::~App()
@@ -59,6 +61,8 @@ App::~App()
 
     for (auto& t : threads_)
         t.join();
+
+    JLOG(j_.trace()) << "finished app destructor";
 }
 
 bool

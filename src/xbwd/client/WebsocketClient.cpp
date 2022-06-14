@@ -19,6 +19,7 @@
 
 #include <xbwd/client/WebsocketClient.h>
 
+#include <ripple/basics/Log.h>
 #include <ripple/json/Output.h>
 #include <ripple/json/json_reader.h>
 #include <ripple/json/json_writer.h>
@@ -144,7 +145,10 @@ WebsocketClient::onReadMsg(error_code const& ec)
 {
     if (ec)
     {
-        // JLOGV(j_.trace(), "WebsocketClient::onReadMsg error", jv("ec", ec));
+        JLOGV(
+            j_.trace(),
+            "WebsocketClient::onReadMsg error",
+            ripple::jv("ec", ec));
         if (ec == boost::beast::websocket::error::closed)
             peerClosed_ = true;
         return;
@@ -154,7 +158,7 @@ WebsocketClient::onReadMsg(error_code const& ec)
     Json::Reader jr;
     jr.parse(buffer_string(rb_.data()), jval);
     rb_.consume(rb_.size());
-    // JLOGV(j_.trace(), "WebsocketClient::onReadMsg", jv("msg", jval));
+    JLOGV(j_.trace(), "WebsocketClient::onReadMsg", ripple::jv("msg", jval));
     callback_(jval);
 
     std::lock_guard l{m_};
