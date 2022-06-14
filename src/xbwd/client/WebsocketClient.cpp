@@ -112,8 +112,14 @@ WebsocketClient::WebsocketClient(
             strand_.wrap(std::bind(
                 &WebsocketClient::onReadMsg, this, std::placeholders::_1)));
     }
-    catch (std::exception&)
+    catch (std::exception& e)
     {
+        JLOGV(
+            j_.fatal(),
+            "WebsocketClient::exception connecting to endpoint",
+            ripple::jv("what", e.what()),
+            ripple::jv("ip", ip.address()),
+            ripple::jv("port", ip.port()));
         cleanup();
         throw;
     }
@@ -121,7 +127,7 @@ WebsocketClient::WebsocketClient(
 
 WebsocketClient::~WebsocketClient()
 {
-    cleanup();
+    shutdown();
 }
 
 std::uint32_t

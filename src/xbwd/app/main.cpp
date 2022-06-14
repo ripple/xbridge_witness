@@ -18,6 +18,7 @@
 #include <boost/preprocessor/stringize.hpp>
 #include <boost/program_options.hpp>
 
+#include <exception>
 #include <fstream>
 #include <stdexcept>
 
@@ -163,8 +164,15 @@ main(int argc, char** argv)
         if (!app.setup(config))
             return EXIT_FAILURE;
 
-        app.start();
-        app.run();
+        try
+        {
+            app.start();
+            app.run();
+        }
+        catch (std::exception const& e)
+        {
+            std::cerr << "Top level exception handler. e: " << e.what();
+        }
     }
     catch (std::exception const& e)
     {
