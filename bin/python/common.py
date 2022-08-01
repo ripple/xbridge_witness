@@ -358,13 +358,13 @@ class Sidechain:
         assert is_dict != is_individual
 
         if is_dict:
-            self.lockingchain_door = Account(account_id=from_rpc_result["locking_chain_door"])
+            self.lockingchain_door = Account(account_id=from_rpc_result["lockingchain_door"])
             self.lockingchain_issue = Issue(
-                from_rpc_result=from_rpc_result["locking_chain_issue"]
+                from_rpc_result=from_rpc_result["lockingchain_issue"]
             )
-            self.issuingchain_door = Account(account_id=from_rpc_result["issuing_chain_door"])
+            self.issuingchain_door = Account(account_id=from_rpc_result["issuingchain_door"])
             self.issuingchain_issue = Issue(
-                from_rpc_result=from_rpc_result["issuing_chain_issue"]
+                from_rpc_result=from_rpc_result["issuingchain_issue"]
             )
         else:
             self.lockingchain_door = lockingchain_door
@@ -375,10 +375,10 @@ class Sidechain:
     def to_cmd_obj(self) -> dict:
         """Return an object suitalbe for use in a command"""
         result = {
-            "locking_chain_door": self.lockingchain_door.account_id,
-            "locking_chain_issue": self.lockingchain_issue.to_cmd_obj(),
-            "issuing_chain_door": self.issuingchain_door.account_id,
-            "issuing_chain_issue": self.issuingchain_issue.to_cmd_obj(),
+            "lockingchain_door": self.lockingchain_door.account_id,
+            "lockingchain_issue": self.lockingchain_issue.to_cmd_obj(),
+            "issuingchain_door": self.issuingchain_door.account_id,
+            "issuingchain_issue": self.issuingchain_issue.to_cmd_obj(),
         }
         return result
 
@@ -410,7 +410,7 @@ class XChainClaimProof:
         if is_dict:
             self.sidechain = Sidechain(from_rpc_result=from_rpc_result["sidechain"])
             self.amount = Asset(from_rpc_result=from_rpc_result["amount"])
-            self.wasSrcSend = from_rpc_result["was_locking_chain_send"]
+            self.wasSrcSend = from_rpc_result["was_lockingchain_send"]
             self.signatures = from_rpc_result["signatures"]
             self.xChainSeq = from_rpc_result["xchain_seq"]
         else:
@@ -426,7 +426,7 @@ class XChainClaimProof:
             "sidechain": self.sidechain.to_cmd_obj(),
             "amount": self.amount.to_cmd_obj(),
             "signatures": self.signatures,
-            "was_locking_chain_send": self.wasSrcSend,
+            "was_lockingchain_send": self.wasSrcSend,
             "xchain_seq": self.xChainSeq,
         }
         return result
