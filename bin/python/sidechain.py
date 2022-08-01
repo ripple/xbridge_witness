@@ -45,7 +45,7 @@ from transaction import (
     Payment,
     SignerListSet,
     SetRegularKey,
-    SidechainCreate,
+    XChainCreateBridge,
     Trust,
 )
 from witness_app import witness_servers
@@ -347,7 +347,7 @@ def setup_mainchain(mc_app: App, params: Params, setup_user_accounts: bool = Tru
         for wc in params.witness_configs
     ]
     r = mc_app(
-        SidechainCreate(
+        XChainCreateBridge(
             account=params.mc_door_account,
             sidechain=sidechain,
             quorum=quorum,
@@ -383,7 +383,7 @@ def setup_sidechain(sc_app: App, params: Params, setup_user_accounts: bool = Tru
         for wc in params.witness_configs
     ]
     sc_app(
-        SidechainCreate(
+        XChainCreateBridge(
             account=params.sc_door_account,
             sidechain=sidechain,
             quorum=quorum,

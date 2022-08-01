@@ -77,7 +77,7 @@ is:
 
 ## Setting up the sidechain 
 
-The `SidechainCreate` transaction is used to attach a sidechain to a door
+The `XChainCreateBridge` transaction is used to attach a sidechain to a door
 account on both the mainchain and the sidechain. The account must be one of the
 door accounts listed in the sidechain spec, and the two door accounts must be
 unique.
@@ -87,7 +87,7 @@ An example of such a transaction is:
 ```json
 {
   "Account": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",
-  "TransactionType": "SidechainCreate",
+  "TransactionType": "XChainCreateBridge",
   "Sidechain": {
     "src_chain_door": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",
     "src_chain_issue": "XRP",

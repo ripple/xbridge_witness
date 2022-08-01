@@ -387,7 +387,7 @@ class SetHook(Transaction):
         return txn
 
 
-class SidechainCreate(Transaction):
+class XChainCreateBridge(Transaction):
     def __init__(
         self,
         *,
@@ -412,7 +412,7 @@ class SidechainCreate(Transaction):
         txn = super().to_cmd_obj()
         txn = {
             **txn,
-            "TransactionType": "SidechainCreate",
+            "TransactionType": "XChainCreateBridge",
             "Sidechain": self.sidechain.to_cmd_obj(),
             "SignerQuorum": self.quorum,
         }

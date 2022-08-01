@@ -16,7 +16,7 @@ from transaction import (
     SetHook,
     Payment,
     Trust,
-    SidechainCreate,
+    XChainCreateBridge,
     SidechainXChainSeqNumCreate,
     SidechainXChainTransfer,
     SidechainXChainClaim,
