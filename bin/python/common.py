@@ -336,7 +336,7 @@ class Issue:
         return result
 
 
-class Sidechain:
+class Bridge:
     """Parameters for a sidechain"""
 
     def __init__(
@@ -388,7 +388,7 @@ class XChainClaimProof:
 
     def __init__(
         self,
-        sidechain: Optional[Sidechain] = None,
+        sidechain: Optional[Bridge] = None,
         amount: Optional[Asset] = None,
         # signatures dict has keys: "signature" and "signing_key"
         signatures: Optional[List[dict]] = None,
@@ -408,7 +408,7 @@ class XChainClaimProof:
         assert is_dict != is_individual
 
         if is_dict:
-            self.sidechain = Sidechain(from_rpc_result=from_rpc_result["sidechain"])
+            self.sidechain = Bridge(from_rpc_result=from_rpc_result["sidechain"])
             self.amount = Asset(from_rpc_result=from_rpc_result["amount"])
             self.wasSrcSend = from_rpc_result["was_lockingchain_send"]
             self.signatures = from_rpc_result["signatures"]

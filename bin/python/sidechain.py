@@ -30,7 +30,7 @@ from command import (
     Subscribe,
     WalletPropose,
 )
-from common import Account, Asset, eprint, disable_eprint, XRP, Sidechain
+from common import Account, Asset, eprint, disable_eprint, XRP, Bridge
 from config_file import ConfigFile
 import interactive
 from log_analyzer import convert_log
@@ -338,7 +338,7 @@ def setup_mainchain(mc_app: App, params: Params, setup_user_accounts: bool = Tru
     mc_app.maybe_ledger_accept()
 
     # create the sidechain object
-    sidechain = Sidechain(from_rpc_result=params.witness_configs[0]["sidechain"])
+    sidechain = Bridge(from_rpc_result=params.witness_configs[0]["XChainBridge"])
     divide = 4 * len(params.witness_configs)
     by = 5
     quorum = (divide + by - 1) // by
@@ -374,7 +374,7 @@ def setup_sidechain(sc_app: App, params: Params, setup_user_accounts: bool = Tru
     sc_app(LogLevel("fatal"))
 
     # create the sidechain object
-    sidechain = Sidechain(from_rpc_result=params.witness_configs[0]["sidechain"])
+    sidechain = Bridge(from_rpc_result=params.witness_configs[0]["XChainBridge"])
     divide = 4 * len(params.witness_configs)
     by = 5
     quorum = (divide + by - 1) // by
