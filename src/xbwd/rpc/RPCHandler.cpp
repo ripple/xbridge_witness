@@ -9,6 +9,7 @@
 #include <ripple/protocol/STArray.h>
 #include <ripple/protocol/STBase.h>
 #include <ripple/protocol/STObject.h>
+#include <ripple/protocol/STXChainAttestationBatch.h>
 #include <ripple/protocol/jss.h>
 
 #include <fmt/core.h>
@@ -38,8 +39,95 @@ doServerInfo(App& app, Json::Value const& in, Json::Value& result)
 }
 
 void
+doWitnessSignAnything(App& app, Json::Value const& in, Json::Value& result)
+{
+    result["request"] = in;
+    auto optBridge = optFromJson<ripple::STXChainBridge>(in, "bridge");
+    auto optAmt = optFromJson<ripple::STAmount>(in, "sending_amount");
+    auto optClaimID = optFromJson<std::uint32_t>(in, "claim_id");
+    auto optDoor = optFromJson<ripple::AccountID>(in, "door");
+    auto optSendingAccount =
+        optFromJson<ripple::AccountID>(in, "sending_account");
+    auto optRewardAccount =
+        optFromJson<ripple::AccountID>(in, "reward_account");
+    auto optDst = optFromJson<ripple::AccountID>(in, "destination");
+    {
+        auto const missingOrInvalidField = [&]() -> std::string {
+            if (!optBridge)
+                return "bridge";
+            if (!optAmt)
+                return "sending_amount";
+            if (!optClaimID)
+                return "claim_id";
+            if (!optDoor)
+                return "door";
+            if (!optSendingAccount)
+                return "sending_account";
+            if (!optRewardAccount)
+                return "reward_account";
+            if (!optDst)
+                return "destination";
+            return {};
+        }();
+        if (!missingOrInvalidField.empty())
+        {
+            result["error"] = fmt::format(
+                "Missing or invalid field: {}", missingOrInvalidField);
+            return;
+        }
+    }
+
+    auto const& door = *optDoor;
+    auto const& sendingAccount = *optSendingAccount;
+    auto const& bridge = *optBridge;
+    auto const& sendingAmount = *optAmt;
+    auto const& rewardAccount = *optRewardAccount;
+    auto const& claimID = *optClaimID;
+
+    bool const wasSrcChainSend = (*optDoor == optBridge->lockingChainDoor());
+    if (!wasSrcChainSend && *optDoor != optBridge->issuingChainDoor())
+    {
+        // TODO: Write log message
+        // put expected value in the error message?
+        result["error"] = fmt::format(
+            "Specified door account does not match any sidechain door "
+            "account.");
+        return;
+    }
+
+    auto const toSign = ripple::AttestationBatch::AttestationClaim::message(
+        bridge,
+        sendingAccount,
+        sendingAmount,
+        rewardAccount,
+        wasSrcChainSend,
+        claimID,
+        optDst);
+
+    auto const& signingSK = app.config().signingKey;
+    auto const& signingPK = derivePublicKey(app.config().keyType, signingSK);
+    auto const sigBuf = sign(signingPK, signingSK, ripple::makeSlice(toSign));
+    auto const hexSign = ripple::strHex(sigBuf);
+
+    ripple::AttestationBatch::AttestationClaim claim{
+        signingPK,
+        sigBuf,
+        sendingAccount,
+        sendingAmount,
+        rewardAccount,
+        wasSrcChainSend,
+        claimID,
+        optDst};
+
+    ripple::STXChainAttestationBatch batch{bridge, &claim, &claim + 1};
+    result["result"]["XChainAttestationBatch"] =
+        batch.getJson(ripple::JsonOptions::none);
+}
+void
 doWitness(App& app, Json::Value const& in, Json::Value& result)
 {
+    return doWitnessSignAnything(app, in, result);
+
     result["request"] = in;
     auto optSidechain = optFromJson<ripple::STXChainBridge>(in, "sidechain");
     auto optAmt = optFromJson<ripple::STAmount>(in, "amount");

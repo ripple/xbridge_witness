@@ -16,7 +16,8 @@
 namespace xbwd {
 
 App::App(config::Config const& config, beast::severities::Severity logLevel)
-    : logs_(logLevel)
+    : config_{config}
+    , logs_(logLevel)
     , j_(logs_.journal("App"))
     , xChainTxnDB_(
           config.dataDir,
