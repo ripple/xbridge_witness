@@ -5,7 +5,7 @@
 #include <ripple/protocol/AccountID.h>
 #include <ripple/protocol/SField.h>
 #include <ripple/protocol/STAmount.h>
-#include <ripple/protocol/STSidechain.h>
+#include <ripple/protocol/STXChainBridge.h>
 #include <ripple/protocol/SecretKey.h>
 #include <ripple/protocol/Seed.h>
 
@@ -159,7 +159,7 @@ fromJson(Json::Value const& jv, char const* key)
 }
 
 template <>
-inline ripple::STSidechain
+inline ripple::STXChainBridge
 fromJson(Json::Value const& jv, char const* key)
 {
     using namespace std::literals;
@@ -167,8 +167,7 @@ fromJson(Json::Value const& jv, char const* key)
     if (v.isNull())
         throw std::runtime_error(
             "Expected json key: "s + key + " while constructing a sidechain");
-    // TODO: Should this be sfSidechain or sfGeneric?
-    return ripple::STSidechainFromJson(ripple::sfGeneric, v);
+    return ripple::STXChainBridge(v);
 }
 
 template <>

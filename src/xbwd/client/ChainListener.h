@@ -23,7 +23,7 @@
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/protocol/AccountID.h>
-#include <ripple/protocol/STSidechain.h>
+#include <ripple/protocol/STXChainBridge.h>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/address.hpp>
@@ -44,7 +44,7 @@ public:
 
 private:
     bool const isMainchain_;
-    ripple::STSidechain const sidechain_;
+    ripple::STXChainBridge const sidechain_;
     std::weak_ptr<Federator> federator_;
     mutable std::mutex m_;
     beast::Journal j_;
@@ -58,7 +58,7 @@ private:
 public:
     ChainListener(
         IsMainchain isMainchain,
-        ripple::STSidechain const sidechain_,
+        ripple::STXChainBridge const sidechain_,
         std::weak_ptr<Federator>&& federator,
         beast::Journal j);
 

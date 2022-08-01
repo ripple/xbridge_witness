@@ -15,7 +15,7 @@ Config::Config(Json::Value const& jv)
     , signingKey{ripple::generateSecretKey(
           keyType,
           rpc::fromJson<ripple::Seed>(jv, "signing_key_seed"))}
-    , sidechain{rpc::fromJson<ripple::STSidechain>(jv, "sidechain")}
+    , sidechain{rpc::fromJson<ripple::STXChainBridge>(jv, "sidechain")}
 {
 }
 

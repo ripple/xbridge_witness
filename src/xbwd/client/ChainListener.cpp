@@ -43,7 +43,7 @@ class Federator;
 
 ChainListener::ChainListener(
     IsMainchain isMainchain,
-    ripple::STSidechain const sidechain,
+    ripple::STXChainBridge const sidechain,
     std::weak_ptr<Federator>&& federator,
     beast::Journal j)
     : isMainchain_{isMainchain == IsMainchain::yes}
@@ -74,8 +74,8 @@ ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
     params[ripple::jss::account_history_tx_stream] = Json::objectValue;
     params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
         ripple::toBase58(
-            isMainchain_ ? sidechain_.srcChainDoor()
-                         : sidechain_.dstChainDoor());
+            isMainchain_ ? sidechain_.lockingChainDoor()
+                         : sidechain_.issuingChainDoor());
     send("subscribe", params);
 }
 
@@ -101,8 +101,8 @@ ChainListener::stopHistoricalTxns()
           [ripple::jss::stop_history_tx_only] = true;
     params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
         ripple::toBase58(
-            isMainchain_ ? sidechain_.srcChainDoor()
-                         : sidechain_.dstChainDoor());
+            isMainchain_ ? sidechain_.lockingChainDoor()
+                         : sidechain_.issuingChainDoor());
     send("unsubscribe", params);
 }
 
@@ -284,27 +284,23 @@ ChainListener::processMessage(Json::Value const& msg)
         auto const txn = msg[ripple::jss::transaction];
 
         auto const isXChainTransfer = fieldMatchesStr(
-            txn,
-            ripple::jss::TransactionType,
-            ripple::jss::SidechainXChainTransfer);
+            txn, ripple::jss::TransactionType, ripple::jss::XChainCommit);
 
         auto const isXChainClaim = !isXChainTransfer &&
             fieldMatchesStr(
-                txn,
-                ripple::jss::TransactionType,
-                ripple::jss::SidechainXChainClaim);
+                txn, ripple::jss::TransactionType, ripple::jss::XChainClaim);
 
         if (!isXChainTransfer && !isXChainClaim)
             return {};
 
             // TODO: Fix bug where sidechain field is empty
 #if 0
-        auto const txnSidechain = [&]() -> std::optional<ripple::STSidechain> {
+        auto const txnSidechain = [&]() -> std::optional<ripple::STXChainBridge> {
             if (msg.isMember(ripple::jss::Sidechain))
             {
                 try
                 {
-                    return ripple::STSidechainFromJson(
+                    return ripple::STXChainBridgeFromJson(
                         ripple::sfSidechain, txn[ripple::jss::Sidechain]);
                 }
                 catch (...)
@@ -438,10 +434,10 @@ ChainListener::processMessage(Json::Value const& msg)
         try
         {
             if (msg[ripple::jss::transaction].isMember(
-                    ripple::sfXChainSequence.getName()))
+                    ripple::sfXChainClaimID.getName()))
             {
                 return msg[ripple::jss::transaction]
-                          [ripple::sfXChainSequence.getName()]
+                          [ripple::sfXChainClaimID.getName()]
                               .asUInt();
             }
         }

@@ -43,7 +43,7 @@ class Federator : public std::enable_shared_from_this<Federator>
     std::atomic<bool> requestStop_ = false;
 
     App& app_;
-    ripple::STSidechain const sidechain_;
+    ripple::STXChainBridge const sidechain_;
     std::shared_ptr<ChainListener> mainchainListener_;
     std::shared_ptr<ChainListener> sidechainListener_;
 
@@ -78,7 +78,7 @@ public:
     Federator(
         PrivateTag,
         App& app,
-        ripple::STSidechain const& sidechain,
+        ripple::STXChainBridge const& sidechain,
         ripple::KeyType keyType,
         ripple::SecretKey const& signingKey,
         beast::Journal j);
@@ -128,7 +128,7 @@ private:
     make_Federator(
         App& app,
         boost::asio::io_service& ios,
-        ripple::STSidechain const& sidechain,
+        ripple::STXChainBridge const& sidechain,
         ripple::KeyType keyType,
         ripple::SecretKey const& signingKey,
         beast::IP::Endpoint const& mainchainIp,
@@ -140,7 +140,7 @@ std::shared_ptr<Federator>
 make_Federator(
     App& app,
     boost::asio::io_service& ios,
-    ripple::STSidechain const& sidechain,
+    ripple::STXChainBridge const& sidechain,
     ripple::KeyType keyType,
     ripple::SecretKey const& signingKey,
     beast::IP::Endpoint const& mainchainIp,

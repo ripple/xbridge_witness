@@ -40,7 +40,7 @@ struct XChainTransferDetected
     // Src account on the src chain
     ripple::AccountID src_;
     // TODO: add sidechain field
-    // ripple::STSidechain sidechain_;
+    // ripple::STXChainBridge sidechain_;
     std::optional<ripple::STAmount> deliveredAmt_;
     std::uint32_t xChainSeq_;
     std::uint32_t ledgerSeq_;

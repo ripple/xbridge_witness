@@ -3,7 +3,7 @@
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
-#include <ripple/protocol/STSidechain.h>
+#include <ripple/protocol/STXChainBridge.h>
 #include <ripple/protocol/SecretKey.h>
 
 #include <boost/asio/ip/address.hpp>
@@ -24,7 +24,7 @@ public:
     boost::filesystem::path dataDir;
     ripple::KeyType keyType;
     ripple::SecretKey signingKey;
-    ripple::STSidechain sidechain;
+    ripple::STXChainBridge sidechain;
 
     explicit Config(Json::Value const& jv);
 };

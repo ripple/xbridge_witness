@@ -41,7 +41,7 @@ void
 doWitness(App& app, Json::Value const& in, Json::Value& result)
 {
     result["request"] = in;
-    auto optSidechain = optFromJson<ripple::STSidechain>(in, "sidechain");
+    auto optSidechain = optFromJson<ripple::STXChainBridge>(in, "sidechain");
     auto optAmt = optFromJson<ripple::STAmount>(in, "amount");
     auto optXChainSeq =
         optFromJson<std::uint32_t>(in, "xchain_sequence_number");
@@ -66,8 +66,8 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         }
     }
 
-    bool const wasSrcChainSend = (*optDoor == optSidechain->srcChainDoor());
-    if (!wasSrcChainSend && *optDoor != optSidechain->dstChainDoor())
+    bool const wasSrcChainSend = (*optDoor == optSidechain->lockingChainDoor());
+    if (!wasSrcChainSend && *optDoor != optSidechain->issuingChainDoor())
     {
         // TODO: Write log message
         // put expected value in the error message?

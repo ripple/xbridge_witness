@@ -46,7 +46,7 @@ std::shared_ptr<Federator>
 make_Federator(
     App& app,
     boost::asio::io_service& ios,
-    ripple::STSidechain const& sidechain,
+    ripple::STXChainBridge const& sidechain,
     ripple::KeyType keyType,
     ripple::SecretKey const& signingKey,
     beast::IP::Endpoint const& mainchainIp,
@@ -75,7 +75,7 @@ make_Federator(
 Federator::Federator(
     PrivateTag,
     App& app,
-    ripple::STSidechain const& sidechain,
+    ripple::STXChainBridge const& sidechain,
     ripple::KeyType keyType,
     ripple::SecretKey const& signingKey,
     beast::Journal j)

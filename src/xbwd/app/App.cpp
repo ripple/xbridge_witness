@@ -10,7 +10,7 @@
 
 #include <ripple/beast/core/CurrentThreadName.h>
 #include <ripple/protocol/STAmount.h>
-#include <ripple/protocol/STSidechain.h>
+#include <ripple/protocol/STXChainBridge.h>
 #include <ripple/protocol/STXChainClaimProof.h>
 
 namespace xbwd {

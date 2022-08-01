@@ -53,7 +53,7 @@ if (NOT has_parent)
     # rippled version to download. Default tag is develop/master/release as 
     # determined by the branch of this project
     if (NOT (_branch STREQUAL "master" OR _branch STREQUAL "release"))
-      set (rippled_tag "attest" CACHE STRING
+      set (rippled_tag "xchain" CACHE STRING
         "tag/commit of rippled to fetch from if a local install is not found")
     else ()
       set (rippled_tag "${_branch}" CACHE STRING

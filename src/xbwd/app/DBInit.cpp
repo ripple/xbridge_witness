@@ -49,7 +49,7 @@ xChainDBInit()
         //              this is raw data - no encoded.
         // Signature is hex encoded (without a leading 0x)
         // Success is a bool (but soci complains about using bools)
-        // Sidechain is encoded as a serialized STSidechain
+        // Sidechain is encoded as a serialized STXChainBridge
 
         auto const tblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
