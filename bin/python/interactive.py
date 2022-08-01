@@ -1557,13 +1557,13 @@ class SidechainRepl(cmd.Cmd):
     ##################
 
     ##################
-    # new_sidechain
+    # new_bridge
 
-    def do_new_sidechain(self, line):
+    def do_new_bridge(self, line):
         args = line.split()
         if len(args) != 2:
             print(
-                f'Error: new_sidechain command exactly two arguments. Type "help" for help.'
+                f'Error: new_bridge command exactly two arguments. Type "help" for help.'
             )
             return
 
@@ -1590,20 +1590,20 @@ class SidechainRepl(cmd.Cmd):
             return
         self.sidechain_aliases[alias] = sidechain
 
-    def complete_new_sidechain(self, text, line, begidx, endidx):
+    def complete_new_bridge(self, text, line, begidx, endidx):
         return []
 
-    def help_new_sidechain(self):
+    def help_new_bridge(self):
         print(
             "\n".join(
                 [
-                    "new_sidechain alias json_file_with_sidechain_field",
+                    "new_bridge alias json_file_with_sidechain_field",
                     "Add a new account to the address book",
                 ]
             )
         )
 
-    # new_sidechain
+    # new_bridge
     ##################
 
     ##################
@@ -1682,7 +1682,7 @@ class SidechainRepl(cmd.Cmd):
             )
         )
 
-    # new_sidechain
+    # new_proof
     ##################
 
     ##################

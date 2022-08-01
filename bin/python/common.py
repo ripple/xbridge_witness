@@ -342,43 +342,43 @@ class Sidechain:
     def __init__(
         self,
         *,
-        mainchain_door: Optional[Account] = None,
-        mainchain_issue: Optional[Issue] = None,
-        sidechain_door: Optional[Account] = None,
-        sidechain_issue: Optional[Issue] = None,
+        lockingchain_door: Optional[Account] = None,
+        lockingchain_issue: Optional[Issue] = None,
+        issuingchain_door: Optional[Account] = None,
+        issuingchain_issue: Optional[Issue] = None,
         from_rpc_result: Optional[dict] = None,
     ):
         is_dict = from_rpc_result is not None
         is_individual = (
-            mainchain_door is not None
-            and mainchain_issue is not None
-            and sidechain_door is not None
-            and sidechain_issue is not None
+            lockingchain_door is not None
+            and lockingchain_issue is not None
+            and issuingchain_door is not None
+            and issuingchain_issue is not None
         )
         assert is_dict != is_individual
 
         if is_dict:
-            self.mainchain_door = Account(account_id=from_rpc_result["src_chain_door"])
-            self.mainchain_issue = Issue(
-                from_rpc_result=from_rpc_result["src_chain_issue"]
+            self.lockingchain_door = Account(account_id=from_rpc_result["locking_chain_door"])
+            self.lockingchain_issue = Issue(
+                from_rpc_result=from_rpc_result["locking_chain_issue"]
             )
-            self.sidechain_door = Account(account_id=from_rpc_result["dst_chain_door"])
-            self.sidechain_issue = Issue(
-                from_rpc_result=from_rpc_result["dst_chain_issue"]
+            self.issuingchain_door = Account(account_id=from_rpc_result["issuing_chain_door"])
+            self.issuingchain_issue = Issue(
+                from_rpc_result=from_rpc_result["issuing_chain_issue"]
             )
         else:
-            self.mainchain_door = mainchain_door
-            self.mainchain_issue = mainchain_issue
-            self.sidechain_door = sidechain_door
-            self.sidechain_issue = sidechain_issue
+            self.lockingchain_door = lockingchain_door
+            self.lockingchain_issue = lockingchain_issue
+            self.issuingchain_door = issuingchain_door
+            self.issuingchain_issue = issuingchain_issue
 
     def to_cmd_obj(self) -> dict:
         """Return an object suitalbe for use in a command"""
         result = {
-            "src_chain_door": self.mainchain_door.account_id,
-            "src_chain_issue": self.mainchain_issue.to_cmd_obj(),
-            "dst_chain_door": self.sidechain_door.account_id,
-            "dst_chain_issue": self.sidechain_issue.to_cmd_obj(),
+            "locking_chain_door": self.lockingchain_door.account_id,
+            "locking_chain_issue": self.lockingchain_issue.to_cmd_obj(),
+            "issuing_chain_door": self.issuingchain_door.account_id,
+            "issuing_chain_issue": self.issuingchain_issue.to_cmd_obj(),
         }
         return result
 
@@ -410,7 +410,7 @@ class XChainClaimProof:
         if is_dict:
             self.sidechain = Sidechain(from_rpc_result=from_rpc_result["sidechain"])
             self.amount = Asset(from_rpc_result=from_rpc_result["amount"])
-            self.wasSrcSend = from_rpc_result["was_src_chain_send"]
+            self.wasSrcSend = from_rpc_result["was_locking_chain_send"]
             self.signatures = from_rpc_result["signatures"]
             self.xChainSeq = from_rpc_result["xchain_seq"]
         else:
@@ -426,7 +426,7 @@ class XChainClaimProof:
             "sidechain": self.sidechain.to_cmd_obj(),
             "amount": self.amount.to_cmd_obj(),
             "signatures": self.signatures,
-            "was_src_chain_send": self.wasSrcSend,
+            "was_locking_chain_send": self.wasSrcSend,
             "xchain_seq": self.xChainSeq,
         }
         return result
