@@ -44,7 +44,7 @@ doWitnessSignAnything(App& app, Json::Value const& in, Json::Value& result)
     result["request"] = in;
     auto optBridge = optFromJson<ripple::STXChainBridge>(in, "bridge");
     auto optAmt = optFromJson<ripple::STAmount>(in, "sending_amount");
-    auto optClaimID = optFromJson<std::uint32_t>(in, "claim_id");
+    auto optClaimID = optFromJson<std::uint64_t>(in, "claim_id");
     auto optDoor = optFromJson<ripple::AccountID>(in, "door");
     auto optSendingAccount =
         optFromJson<ripple::AccountID>(in, "sending_account");
@@ -65,8 +65,6 @@ doWitnessSignAnything(App& app, Json::Value const& in, Json::Value& result)
                 return "sending_account";
             if (!optRewardAccount)
                 return "reward_account";
-            if (!optDst)
-                return "destination";
             return {};
         }();
         if (!missingOrInvalidField.empty())

@@ -73,10 +73,43 @@ fromJson(Json::Value const& jv, char const* key)
     if (uInt > std::numeric_limits<std::uint32_t>::max())
     {
         throw std::runtime_error(
-            "json key: "s + key + " is too large for an uint16");
+            "json key: "s + key + " is too large for an uint32");
     }
 
     return static_cast<std::uint32_t>(uInt);
+}
+
+template <>
+inline std::uint64_t
+fromJson(Json::Value const& jv, char const* key)
+{
+    using namespace std::literals;
+    auto const v = jv[key];
+    if (v.isNull())
+        throw std::runtime_error(
+            "Expected json key: "s + key + " while constructing an uint64");
+
+    if (v.isString())
+    {
+        auto const s = v.asString();
+        try
+        {
+            return boost::lexical_cast<std::uint64_t>(s);
+        }
+        catch (...)
+        {
+            throw std::runtime_error(
+                "json key: "s + key + " can not be parsed as a uint64");
+        }
+    }
+    auto const uInt = v.asUInt();
+    if (uInt > std::numeric_limits<std::uint64_t>::max())
+    {
+        throw std::runtime_error(
+            "json key: "s + key + " is too large for an uint64");
+    }
+
+    return static_cast<std::uint64_t>(uInt);
 }
 
 template <>
