@@ -101,6 +101,7 @@ fromJson(Json::Value const& jv, char const* key)
         if (ec != std::errc() || (p != s.data() + s.size()))
             throw std::runtime_error(
                 "json key: "s + key + " can not be parsed as a uint64");
+        return val;
     }
     auto const uInt = v.asUInt();
     if (uInt > std::numeric_limits<std::uint64_t>::max())
