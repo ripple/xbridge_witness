@@ -12,6 +12,7 @@
 #include <boost/asio/ip/address.hpp>
 #include <boost/filesystem.hpp>
 
+#include <charconv>
 #include <limits>
 #include <string>
 
@@ -91,16 +92,15 @@ fromJson(Json::Value const& jv, char const* key)
 
     if (v.isString())
     {
+        // parse as hex
         auto const s = v.asString();
-        try
-        {
-            return boost::lexical_cast<std::uint64_t>(s);
-        }
-        catch (...)
-        {
+        std::uint64_t val;
+
+        auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val, 16);
+
+        if (ec != std::errc() || (p != s.data() + s.size()))
             throw std::runtime_error(
                 "json key: "s + key + " can not be parsed as a uint64");
-        }
     }
     auto const uInt = v.asUInt();
     if (uInt > std::numeric_limits<std::uint64_t>::max())
