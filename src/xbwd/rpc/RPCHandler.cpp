@@ -129,8 +129,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
     result["request"] = in;
     auto optSidechain = optFromJson<ripple::STXChainBridge>(in, "sidechain");
     auto optAmt = optFromJson<ripple::STAmount>(in, "amount");
-    auto optXChainSeq =
-        optFromJson<std::uint32_t>(in, "xchain_sequence_number");
+    auto optClaimID = optFromJson<std::uint32_t>(in, "xchain_sequence_number");
     auto optDoor = optFromJson<ripple::AccountID>(in, "dst_door");
     {
         auto const missingOrInvalidField = [&]() -> std::string {
@@ -138,7 +137,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                 return "sidechain";
             if (!optAmt)
                 return "amount";
-            if (!optXChainSeq)
+            if (!optClaimID)
                 return "xchain_sequence_number";
             if (!optDoor)
                 return "dst_door";
@@ -152,8 +151,9 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         }
     }
 
-    bool const wasSrcChainSend = (*optDoor == optSidechain->lockingChainDoor());
-    if (!wasSrcChainSend && *optDoor != optSidechain->issuingChainDoor())
+    bool const wasLockingChainSend =
+        (*optDoor == optSidechain->lockingChainDoor());
+    if (!wasLockingChainSend && *optDoor != optSidechain->issuingChainDoor())
     {
         // TODO: Write log message
         // put expected value in the error message?
@@ -163,11 +163,11 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         return;
     }
 
-    auto const& tblName = wasSrcChainSend
-        ? db_init::xChainMainToSideTableName()
-        : db_init::xChainSideToMainTableName();
+    auto const& tblName = wasLockingChainSend
+        ? db_init::xChainLockingToIssuingTableName()
+        : db_init::xChainIssuingToLockingTableName();
 
-    std::vector<std::uint8_t> const encodedSidechain = [&] {
+    std::vector<std::uint8_t> const encodedBridge = [&] {
         ripple::Serializer s;
         optSidechain->add(s);
         return std::move(s.modData());
@@ -183,24 +183,23 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         // Soci blob does not play well with optional. Store an empty blob when
         // missing delivered amount
         soci::blob amtBlob{*session};
-        soci::blob sidechainBlob(*session);
+        soci::blob bridgeBlob(*session);
         convert(encodedAmt, amtBlob);
-        convert(encodedSidechain, sidechainBlob);
+        convert(encodedBridge, bridgeBlob);
 
         boost::optional<std::string> hexSignature;
         boost::optional<std::string> publicKey;
 
         auto sql = fmt::format(
             R"sql(SELECT Signature, PublicKey FROM {table_name}
-                  WHERE XChainSeq = :xChainSeq and
+                  WHERE ClaimID = :claimID and
                         DeliveredAmt = :amt and
-                        Sidechain = :sidechain;
+                        Sidechain = :bridge;
             )sql",
             fmt::arg("table_name", tblName));
 
         *session << sql, soci::into(hexSignature), soci::into(publicKey),
-            soci::use(*optXChainSeq), soci::use(amtBlob),
-            soci::use(sidechainBlob);
+            soci::use(*optClaimID), soci::use(amtBlob), soci::use(bridgeBlob);
 
         // TODO: Check for multiple values
         if (hexSignature && publicKey)
@@ -215,8 +214,8 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
             proof["amount"] = optAmt->getJson(ripple::JsonOptions::none);
             // TODO: use decoded sidechain
             proof["sidechain"] = in["sidechain"];
-            proof["was_src_chain_send"] = wasSrcChainSend;
-            proof["xchain_seq"] = *optXChainSeq;
+            proof["was_src_chain_send"] = wasLockingChainSend;
+            proof["xchain_seq"] = *optClaimID;
             result["result"]["proof"] = proof;
         }
         else

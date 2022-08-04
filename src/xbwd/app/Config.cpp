@@ -1,3 +1,4 @@
+#include "ripple/protocol/AccountID.h"
 #include <xbwd/app/Config.h>
 
 #include <xbwd/rpc/fromJSON.h>
@@ -16,6 +17,11 @@ Config::Config(Json::Value const& jv)
           keyType,
           rpc::fromJson<ripple::Seed>(jv, "signing_key_seed"))}
     , sidechain{rpc::fromJson<ripple::STXChainBridge>(jv, "sidechain")}
+    , lockingChainRewardAccount{rpc::fromJson<ripple::AccountID>(
+          jv,
+          "lockingchain_reward_account")}
+    , issuingChainRewardAccount{
+          rpc::fromJson<ripple::AccountID>(jv, "issuingchain_reward_account")}
 {
 }
 

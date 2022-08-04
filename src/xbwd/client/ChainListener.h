@@ -44,7 +44,7 @@ public:
 
 private:
     bool const isMainchain_;
-    ripple::STXChainBridge const sidechain_;
+    ripple::STXChainBridge const bridge_;
     std::weak_ptr<Federator> federator_;
     mutable std::mutex m_;
     beast::Journal j_;

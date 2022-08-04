@@ -13,9 +13,9 @@ namespace db_init {
 std::string const&
 xChainDBName();
 std::string const&
-xChainMainToSideTableName();
+xChainLockingToIssuingTableName();
 std::string const&
-xChainSideToMainTableName();
+xChainIssuingToLockingTableName();
 
 std::vector<std::string> const&
 xChainDBPragma();

@@ -53,6 +53,8 @@ class Federator : public std::enable_shared_from_this<Federator>
     ripple::KeyType const keyType_;
     ripple::PublicKey const signingPK_;
     ripple::SecretKey const signingSK_;
+    ripple::AccountID lockingChainRewardAccount_;
+    ripple::AccountID issuingChainRewardAccount_;
 
     // Use a condition variable to prevent busy waiting when the queue is
     // empty
@@ -81,6 +83,8 @@ public:
         ripple::STXChainBridge const& sidechain,
         ripple::KeyType keyType,
         ripple::SecretKey const& signingKey,
+        ripple::AccountID lockingChainRewardAccount,
+        ripple::AccountID issuingChainRewardAccount,
         beast::Journal j);
 
     ~Federator();
@@ -116,7 +120,7 @@ private:
     mainLoop() EXCLUDES(mainLoopMutex_);
 
     void
-    onEvent(event::XChainTransferDetected const& e);
+    onEvent(event::XChainCommitDetected const& e);
 
     void
     onEvent(event::XChainTransferResult const& e);
@@ -133,6 +137,8 @@ private:
         ripple::SecretKey const& signingKey,
         beast::IP::Endpoint const& mainchainIp,
         beast::IP::Endpoint const& sidechainIp,
+        ripple::AccountID lockingChainRewardAccount,
+        ripple::AccountID issuingChainRewardAccount,
         beast::Journal j);
 };
 
@@ -145,6 +151,8 @@ make_Federator(
     ripple::SecretKey const& signingKey,
     beast::IP::Endpoint const& mainchainIp,
     beast::IP::Endpoint const& sidechainIp,
+    ripple::AccountID lockingChainRewardAccount,
+    ripple::AccountID issuingChainRewardAccount,
     beast::Journal j);
 
 }  // namespace xbwd

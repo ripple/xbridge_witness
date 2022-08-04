@@ -13,16 +13,16 @@ xChainDBName()
 }
 
 std::string const&
-xChainMainToSideTableName()
+xChainLockingToIssuingTableName()
 {
-    static std::string const r{"XChainTxnMainToSide"};
+    static std::string const r{"XChainTxnLockingToIssuing"};
     return r;
 }
 
 std::string const&
-xChainSideToMainTableName()
+xChainIssuingToLockingTableName()
 {
-    static std::string const r{"XChainTxnSideToMain"};
+    static std::string const r{"XChainTxnIssuingToLocking"};
     return r;
 }
 
@@ -53,26 +53,31 @@ xChainDBInit()
 
         auto const tblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
-                TransID      CHARACTER(64) PRIMARY KEY,
-                LedgerSeq    BIGINT UNSIGNED,
-                XChainSeq    BIGINT UNSIGNED,
-                Success      UNSIGNED,
-                DeliveredAmt BLOB,
-                Sidechain    BLOB,
-                PublicKey    TEXT,
-                Signature    TEXT);
+                TransID       CHARACTER(64) PRIMARY KEY,
+                LedgerSeq     BIGINT UNSIGNED,
+                ClaimID       BIGINT UNSIGNED,
+                Success       UNSIGNED,
+                DeliveredAmt  BLOB,
+                Bridge        BLOB,
+                RewardAccount TEXT,
+                PublicKey     TEXT,
+                Signature     TEXT);
         )sql";
         auto const idxFmtStr = R"sql(
-            CREATE INDEX IF NOT EXISTS {table_name}XSeqIdx ON {table_name}(XChainSeq);",
+            CREATE INDEX IF NOT EXISTS {table_name}XSeqIdx ON {table_name}(ClaimID);",
         )sql";
         r.push_back(fmt::format(
-            tblFmtStr, fmt::arg("table_name", xChainMainToSideTableName())));
+            tblFmtStr,
+            fmt::arg("table_name", xChainLockingToIssuingTableName())));
         r.push_back(fmt::format(
-            idxFmtStr, fmt::arg("table_name", xChainMainToSideTableName())));
+            idxFmtStr,
+            fmt::arg("table_name", xChainLockingToIssuingTableName())));
         r.push_back(fmt::format(
-            tblFmtStr, fmt::arg("table_name", xChainSideToMainTableName())));
+            tblFmtStr,
+            fmt::arg("table_name", xChainIssuingToLockingTableName())));
         r.push_back(fmt::format(
-            idxFmtStr, fmt::arg("table_name", xChainSideToMainTableName())));
+            idxFmtStr,
+            fmt::arg("table_name", xChainIssuingToLockingTableName())));
 
         r.push_back("END TRANSACTION;");
         return r;

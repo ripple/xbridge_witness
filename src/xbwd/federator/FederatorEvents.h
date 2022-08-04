@@ -22,6 +22,7 @@
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
 #include <ripple/protocol/STAmount.h>
+#include <ripple/protocol/STXChainBridge.h>
 #include <ripple/protocol/TER.h>
 
 #include <optional>
@@ -30,19 +31,19 @@
 namespace xbwd {
 namespace event {
 
-enum class Dir { sideToMain, mainToSide };
+enum class Dir { issuingToLocking, lockingToIssuing };
 
 // A cross chain transfer was detected on this federator
-struct XChainTransferDetected
+struct XChainCommitDetected
 {
-    // direction of the transfer
     Dir dir_;
     // Src account on the src chain
     ripple::AccountID src_;
-    // TODO: add sidechain field
-    // ripple::STXChainBridge sidechain_;
+    ripple::STXChainBridge bridge_;
     std::optional<ripple::STAmount> deliveredAmt_;
-    std::uint32_t xChainSeq_;
+    std::uint64_t claimID_;
+    std::optional<ripple::AccountID> otherChainAccount_;
+
     std::uint32_t ledgerSeq_;
     ripple::uint256 txnHash_;
     ripple::TER status_;
@@ -67,7 +68,7 @@ struct XChainTransferResult
     Dir dir_;
     ripple::AccountID dst_;
     std::optional<ripple::STAmount> deliveredAmt_;
-    std::uint32_t xChainSeq_;
+    std::uint64_t claimID_;
     std::uint32_t ledgerSeq_;
     // Txn hash transaction on the dst chain
     ripple::uint256 txnHash_;
@@ -81,7 +82,7 @@ struct XChainTransferResult
 }  // namespace event
 
 using FederatorEvent = std::variant<
-    event::XChainTransferDetected,
+    event::XChainCommitDetected,
     event::HeartbeatTimer,
     event::XChainTransferResult>;
 

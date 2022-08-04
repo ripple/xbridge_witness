@@ -19,6 +19,8 @@
 
 #include <xbwd/federator/FederatorEvents.h>
 
+#include <fmt/core.h>
+
 #include <string_view>
 #include <type_traits>
 
@@ -27,17 +29,23 @@ namespace event {
 
 namespace {
 
+std::string
+to_hex(std::uint64_t i)
+{
+    return fmt::format("{:016x}", i);
+}
+
 std::string const&
 to_string(Dir dir)
 {
     switch (dir)
     {
-        case Dir::mainToSide: {
-            static std::string const r("main");
+        case Dir::lockingToIssuing: {
+            static std::string const r("locking");
             return r;
         }
-        case Dir::sideToMain: {
-            static std::string const r("side");
+        case Dir::issuingToLocking: {
+            static std::string const r("issuing");
             return r;
         }
     }
@@ -52,7 +60,7 @@ to_string(Dir dir)
 }  // namespace
 
 Json::Value
-XChainTransferDetected::toJson() const
+XChainCommitDetected::toJson() const
 {
     Json::Value result{Json::objectValue};
     result["eventType"] = "XChainTransferDetected";
@@ -60,7 +68,7 @@ XChainTransferDetected::toJson() const
     if (deliveredAmt_)
         result["deliveredAmt"] =
             deliveredAmt_->getJson(ripple::JsonOptions::none);
-    result["xChainSeq"] = xChainSeq_;
+    result["claimID"] = to_hex(claimID_);
     result["txnHash"] = to_string(txnHash_);
     result["rpcOrder"] = rpcOrder_;
     return result;
@@ -84,7 +92,7 @@ XChainTransferResult::toJson() const
     if (deliveredAmt_)
         result["deliveredAmt"] =
             deliveredAmt_->getJson(ripple::JsonOptions::none);
-    result["xChainSeq"] = xChainSeq_;
+    result["claimID"] = to_hex(claimID_);
     result["txnHash"] = to_string(txnHash_);
     result["ter"] = transHuman(ter_);
     result["rpcOrder"] = rpcOrder_;

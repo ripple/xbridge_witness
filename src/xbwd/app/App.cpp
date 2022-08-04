@@ -50,6 +50,8 @@ App::App(config::Config const& config, beast::severities::Severity logLevel)
             config.signingKey,
             config.mainchainIp,
             config.sidechainIp,
+            config.lockingChainRewardAccount,
+            config.issuingChainRewardAccount,
             logs_.journal("Federator"));
 
         serverHandler_ = std::make_unique<rpc::ServerHandler>(

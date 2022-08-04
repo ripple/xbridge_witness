@@ -25,6 +25,8 @@ public:
     ripple::KeyType keyType;
     ripple::SecretKey signingKey;
     ripple::STXChainBridge sidechain;
+    ripple::AccountID lockingChainRewardAccount;
+    ripple::AccountID issuingChainRewardAccount;
 
     explicit Config(Json::Value const& jv);
 };

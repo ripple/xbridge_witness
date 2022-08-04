@@ -31,6 +31,8 @@ The attestation server uses a json config file. Here's an example:
     "port": 6010
   },
   "db_dir": "/home/swd/data/witness/witness0/db",
+  "lockingchain_reward_account": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",
+  "issuingchain_reward_account": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
   "signing_key_seed": "snwitEjg9Mr8n65cnqhATKcd1dQmv",
   "sidechain": {
     "src_chain_door": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",

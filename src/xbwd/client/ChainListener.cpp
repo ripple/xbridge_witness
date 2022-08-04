@@ -27,6 +27,7 @@
 #include <ripple/basics/XRPAmount.h>
 #include <ripple/basics/strHex.h>
 #include <ripple/json/Output.h>
+#include <ripple/json/json_get_or_throw.h>
 #include <ripple/json/json_writer.h>
 #include <ripple/protocol/AccountID.h>
 #include <ripple/protocol/SField.h>
@@ -47,7 +48,7 @@ ChainListener::ChainListener(
     std::weak_ptr<Federator>&& federator,
     beast::Journal j)
     : isMainchain_{isMainchain == IsMainchain::yes}
-    , sidechain_{sidechain}
+    , bridge_{sidechain}
     , federator_{std::move(federator)}
     , j_{j}
 {
@@ -74,8 +75,8 @@ ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
     params[ripple::jss::account_history_tx_stream] = Json::objectValue;
     params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
         ripple::toBase58(
-            isMainchain_ ? sidechain_.lockingChainDoor()
-                         : sidechain_.issuingChainDoor());
+            isMainchain_ ? bridge_.lockingChainDoor()
+                         : bridge_.issuingChainDoor());
     send("subscribe", params);
 }
 
@@ -101,8 +102,8 @@ ChainListener::stopHistoricalTxns()
           [ripple::jss::stop_history_tx_only] = true;
     params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
         ripple::toBase58(
-            isMainchain_ ? sidechain_.lockingChainDoor()
-                         : sidechain_.issuingChainDoor());
+            isMainchain_ ? bridge_.lockingChainDoor()
+                         : bridge_.issuingChainDoor());
     send("unsubscribe", params);
 }
 
@@ -261,12 +262,29 @@ ChainListener::processMessage(Json::Value const& msg)
 
     auto const meta = msg[ripple::jss::meta];
 
+    auto const txnBridge = [&]() -> std::optional<ripple::STXChainBridge> {
+        if (msg.isMember(ripple::jss::XChainBridge))
+        {
+            try
+            {
+                if (!msg.isMember(ripple::jss::transaction))
+                    return {};
+                auto const txn = msg[ripple::jss::transaction];
+                return ripple::STXChainBridge(txn[ripple::jss::XChainBridge]);
+            }
+            catch (...)
+            {
+            }
+        }
+        return std::nullopt;
+    }();
+
     // There are two payment types of interest:
     // 1. User initiated payments on this chain that trigger a transaction on
     // the other chain.
     // 2. Federated initated payments on this chain whose status needs to be
     // checked.
-    enum class TxnType { xChainTransfer, xChainClaim };
+    enum class TxnType { xChainCommit, xChainClaim };
     auto txnTypeOpt = [&]() -> std::optional<TxnType> {
         // Only keep transactions to or from the door account.
         // Transactions to the account are initiated by users and are are cross
@@ -283,45 +301,28 @@ ChainListener::processMessage(Json::Value const& msg)
             return {};
         auto const txn = msg[ripple::jss::transaction];
 
-        auto const isXChainTransfer = fieldMatchesStr(
+        auto const isXChainCommit = fieldMatchesStr(
             txn, ripple::jss::TransactionType, ripple::jss::XChainCommit);
 
-        auto const isXChainClaim = !isXChainTransfer &&
+        auto const isXChainClaim = !isXChainCommit &&
             fieldMatchesStr(
                 txn, ripple::jss::TransactionType, ripple::jss::XChainClaim);
 
-        if (!isXChainTransfer && !isXChainClaim)
+        if (!isXChainCommit && !isXChainClaim)
             return {};
 
-            // TODO: Fix bug where sidechain field is empty
-#if 0
-        auto const txnSidechain = [&]() -> std::optional<ripple::STXChainBridge> {
-            if (msg.isMember(ripple::jss::Sidechain))
-            {
-                try
-                {
-                    return ripple::STXChainBridgeFromJson(
-                        ripple::sfSidechain, txn[ripple::jss::Sidechain]);
-                }
-                catch (...)
-                {
-                }
-            }
-            return std::nullopt;
-        }();
-
-        if (!txnSidechain)
+        if (!txnBridge)
         {
             JLOGV(
                 j_.trace(),
                 "ignoring listener message",
-                ripple::jv("reason", "invalid txn: Missing sidechain"),
+                ripple::jv("reason", "invalid txn: Missing bridge"),
                 ripple::jv("msg", msg),
                 ripple::jv("chain_name", chainName()));
             return {};
         }
 
-        if (*txnSidechain != sidechain_)
+        if (*txnBridge != bridge_)
         {
             // TODO: It is a mistake to filter out based on sidechain.
             // This server should support multiple sidechains
@@ -336,12 +337,11 @@ ChainListener::processMessage(Json::Value const& msg)
                 ripple::jv("chain_name", chainName()));
             return {};
         }
-#endif
 
         if (isXChainClaim)
             return TxnType::xChainClaim;
-        else if (isXChainTransfer)
-            return TxnType::xChainTransfer;
+        else if (isXChainCommit)
+            return TxnType::xChainCommit;
         return {};
     }();
 
@@ -430,25 +430,9 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName()));
         return;
     }
-    auto const xChainSeq = [&]() -> std::optional<std::uint32_t> {
-        try
-        {
-            if (msg[ripple::jss::transaction].isMember(
-                    ripple::sfXChainClaimID.getName()))
-            {
-                return msg[ripple::jss::transaction]
-                          [ripple::sfXChainClaimID.getName()]
-                              .asUInt();
-            }
-        }
-        catch (...)
-        {
-        }
-        // TODO: this is an insane input stream
-        // Detect and connect to another server
-        return {};
-    }();
-    if (!xChainSeq)
+    auto const claimID = Json::getOptional<std::uint64_t>(
+        msg[ripple::jss::transaction], ripple::sfXChainClaimID);
+    if (!claimID)
     {
         JLOGV(
             j_.warn(),
@@ -500,7 +484,7 @@ ChainListener::processMessage(Json::Value const& msg)
         return;
     }
     auto const dst = [&]() -> std::optional<ripple::AccountID> {
-        if (txnType == TxnType::xChainClaim)
+        if (txnType == TxnType::xChainClaim || txnType == TxnType::xChainCommit)
         {
             try
             {
@@ -530,10 +514,10 @@ ChainListener::processMessage(Json::Value const& msg)
             }
             using namespace event;
             XChainTransferResult e{
-                isMainchain_ ? Dir::sideToMain : Dir::mainToSide,
+                isMainchain_ ? Dir::issuingToLocking : Dir::lockingToIssuing,
                 *dst,
                 deliveredAmt,
-                *xChainSeq,
+                *claimID,
                 *lgrSeq,
                 *txnHash,
                 txnTER,
@@ -541,13 +525,25 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
-        case TxnType::xChainTransfer: {
+        case TxnType::xChainCommit: {
+            if (!txnBridge)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv("reason", "no bridge in xchain commit"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName()));
+                return;
+            }
             using namespace event;
-            XChainTransferDetected e{
-                isMainchain_ ? Dir::mainToSide : Dir::sideToMain,
+            XChainCommitDetected e{
+                isMainchain_ ? Dir::lockingToIssuing : Dir::issuingToLocking,
                 *src,
+                *txnBridge,
                 deliveredAmt,
-                *xChainSeq,
+                *claimID,
+                dst,
                 *lgrSeq,
                 *txnHash,
                 txnTER,
