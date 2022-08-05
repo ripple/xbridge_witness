@@ -17,6 +17,8 @@
 */
 //==============================================================================
 
+#include "ripple/basics/Slice.h"
+#include "ripple/protocol/PublicKey.h"
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated"
@@ -28,6 +30,7 @@
 #include <ripple/core/ConfigSections.h>
 #include <ripple/core/DatabaseCon.h>
 #include <ripple/core/SociDB.h>
+#include <ripple/protocol/PublicKey.h>
 
 #include <boost/filesystem.hpp>
 
@@ -121,14 +124,6 @@ convert(soci::blob& from, std::vector<std::uint8_t>& to)
 }
 
 void
-convert(soci::blob& from, std::string& to)
-{
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
-    to.assign(tmp.begin(), tmp.end());
-}
-
-void
 convert(std::vector<std::uint8_t> const& from, soci::blob& to)
 {
     if (!from.empty())
@@ -138,12 +133,52 @@ convert(std::vector<std::uint8_t> const& from, soci::blob& to)
 }
 
 void
+convert(soci::blob& from, ripple::Buffer& to)
+{
+    to.alloc(from.get_len());
+    if (to.empty())
+        return;
+    from.read(0, reinterpret_cast<char*>(to.data()), from.get_len());
+}
+
+void
+convert(ripple::Buffer const& from, soci::blob& to)
+{
+    if (!from.empty())
+        to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
+    else
+        to.trim(0);
+}
+
+void
+convert(soci::blob& from, std::string& to)
+{
+    std::vector<std::uint8_t> tmp;
+    convert(from, tmp);
+    to.assign(tmp.begin(), tmp.end());
+}
+
+void
 convert(std::string const& from, soci::blob& to)
 {
     if (!from.empty())
         to.write(0, from.data(), from.size());
     else
         to.trim(0);
+}
+
+void
+convert(ripple::PublicKey const& from, soci::blob& to)
+{
+    to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
+}
+
+void
+convert(soci::blob& from, ripple::PublicKey& to)
+{
+    std::vector<std::uint8_t> tmp;
+    convert(from, tmp);
+    to = ripple::PublicKey{ripple::makeSlice(tmp)};
 }
 
 }  // namespace xbwd

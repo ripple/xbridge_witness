@@ -39,7 +39,7 @@ doServerInfo(App& app, Json::Value const& in, Json::Value& result)
 }
 
 void
-doWitnessSignAnything(App& app, Json::Value const& in, Json::Value& result)
+doWitness(App& app, Json::Value const& in, Json::Value& result)
 {
     result["request"] = in;
     auto optBridge = optFromJson<ripple::STXChainBridge>(in, "bridge");
@@ -82,78 +82,9 @@ doWitnessSignAnything(App& app, Json::Value const& in, Json::Value& result)
     auto const& rewardAccount = *optRewardAccount;
     auto const& claimID = *optClaimID;
 
-    bool const wasSrcChainSend = (*optDoor == optBridge->lockingChainDoor());
-    if (!wasSrcChainSend && *optDoor != optBridge->issuingChainDoor())
-    {
-        // TODO: Write log message
-        // put expected value in the error message?
-        result["error"] = fmt::format(
-            "Specified door account does not match any sidechain door "
-            "account.");
-        return;
-    }
-
-    auto const toSign = ripple::AttestationBatch::AttestationClaim::message(
-        bridge,
-        sendingAccount,
-        sendingAmount,
-        rewardAccount,
-        wasSrcChainSend,
-        claimID,
-        optDst);
-
-    auto const& signingSK = app.config().signingKey;
-    auto const& signingPK = derivePublicKey(app.config().keyType, signingSK);
-    auto const sigBuf = sign(signingPK, signingSK, ripple::makeSlice(toSign));
-    auto const hexSign = ripple::strHex(sigBuf);
-
-    ripple::AttestationBatch::AttestationClaim claim{
-        signingPK,
-        sigBuf,
-        sendingAccount,
-        sendingAmount,
-        rewardAccount,
-        wasSrcChainSend,
-        claimID,
-        optDst};
-
-    ripple::STXChainAttestationBatch batch{bridge, &claim, &claim + 1};
-    result["result"]["XChainAttestationBatch"] =
-        batch.getJson(ripple::JsonOptions::none);
-}
-void
-doWitness(App& app, Json::Value const& in, Json::Value& result)
-{
-    return doWitnessSignAnything(app, in, result);
-
-    result["request"] = in;
-    auto optSidechain = optFromJson<ripple::STXChainBridge>(in, "sidechain");
-    auto optAmt = optFromJson<ripple::STAmount>(in, "amount");
-    auto optClaimID = optFromJson<std::uint32_t>(in, "xchain_sequence_number");
-    auto optDoor = optFromJson<ripple::AccountID>(in, "dst_door");
-    {
-        auto const missingOrInvalidField = [&]() -> std::string {
-            if (!optSidechain)
-                return "sidechain";
-            if (!optAmt)
-                return "amount";
-            if (!optClaimID)
-                return "xchain_sequence_number";
-            if (!optDoor)
-                return "dst_door";
-            return {};
-        }();
-        if (!missingOrInvalidField.empty())
-        {
-            result["error"] = fmt::format(
-                "Missing or invalid field: {}", missingOrInvalidField);
-            return;
-        }
-    }
-
     bool const wasLockingChainSend =
-        (*optDoor == optSidechain->lockingChainDoor());
-    if (!wasLockingChainSend && *optDoor != optSidechain->issuingChainDoor())
+        (*optDoor == optBridge->lockingChainDoor());
+    if (!wasLockingChainSend && *optDoor != optBridge->issuingChainDoor())
     {
         // TODO: Write log message
         // put expected value in the error message?
@@ -169,54 +100,66 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
 
     std::vector<std::uint8_t> const encodedBridge = [&] {
         ripple::Serializer s;
-        optSidechain->add(s);
+        bridge.add(s);
         return std::move(s.modData());
     }();
 
     auto const encodedAmt = [&]() -> std::vector<std::uint8_t> {
         ripple::Serializer s;
-        optAmt->add(s);
+        sendingAmount.add(s);
         return std::move(s.modData());
     }();
     {
         auto session = app.getXChainTxnDB().checkoutDb();
-        // Soci blob does not play well with optional. Store an empty blob when
-        // missing delivered amount
-        soci::blob amtBlob{*session};
+        soci::blob amtBlob(*session);
         soci::blob bridgeBlob(*session);
+        soci::blob sendingAccountBlob(*session);
+        soci::blob rewardAccountBlob(*session);
+        soci::blob publicKeyBlob(*session);
+        soci::blob signatureBlob(*session);
+
         convert(encodedAmt, amtBlob);
         convert(encodedBridge, bridgeBlob);
-
-        boost::optional<std::string> hexSignature;
-        boost::optional<std::string> publicKey;
+        convert(sendingAccount, sendingAccountBlob);
 
         auto sql = fmt::format(
-            R"sql(SELECT Signature, PublicKey FROM {table_name}
+            R"sql(SELECT Signature, PublicKey, RewardAccount FROM {table_name}
                   WHERE ClaimID = :claimID and
                         DeliveredAmt = :amt and
-                        Sidechain = :bridge;
+                        Bridge = :bridge and
+                        SendingAccount = :sendingAccount;
             )sql",
             fmt::arg("table_name", tblName));
 
-        *session << sql, soci::into(hexSignature), soci::into(publicKey),
-            soci::use(*optClaimID), soci::use(amtBlob), soci::use(bridgeBlob);
+        *session << sql, soci::into(signatureBlob), soci::into(publicKeyBlob),
+            soci::into(rewardAccountBlob), soci::use(*optClaimID),
+            soci::use(amtBlob), soci::use(bridgeBlob),
+            soci::use(sendingAccountBlob);
 
         // TODO: Check for multiple values
-        if (hexSignature && publicKey)
+        if (signatureBlob.get_len() > 0 && publicKeyBlob.get_len() > 0 &&
+            rewardAccountBlob.get_len() > 0)
         {
-            Json::Value proof;
-            proof["signatures"] = Json::arrayValue;
-            auto& sigs = proof["signatures"];
-            Json::Value sig = Json::objectValue;
-            sig["signing_key"] = *publicKey;
-            sig["signature"] = *hexSignature;
-            sigs.append(sig);
-            proof["amount"] = optAmt->getJson(ripple::JsonOptions::none);
-            // TODO: use decoded sidechain
-            proof["sidechain"] = in["sidechain"];
-            proof["was_src_chain_send"] = wasLockingChainSend;
-            proof["xchain_seq"] = *optClaimID;
-            result["result"]["proof"] = proof;
+            ripple::AccountID rewardAccount;
+            convert(rewardAccountBlob, rewardAccount);
+            ripple::PublicKey signingPK;
+            convert(publicKeyBlob, signingPK);
+            ripple::Buffer sigBuf;
+            convert(signatureBlob, sigBuf);
+
+            ripple::AttestationBatch::AttestationClaim claim{
+                signingPK,
+                sigBuf,
+                sendingAccount,
+                sendingAmount,
+                rewardAccount,
+                wasLockingChainSend,
+                claimID,
+                optDst};
+
+            ripple::STXChainAttestationBatch batch{bridge, &claim, &claim + 1};
+            result["result"]["XChainAttestationBatch"] =
+                batch.getJson(ripple::JsonOptions::none);
         }
         else
         {

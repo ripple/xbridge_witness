@@ -13,6 +13,7 @@
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/signal_set.hpp>
 
+#include <condition_variable>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -51,9 +52,6 @@ class App
     mutable std::mutex stoppingMutex_;
     std::atomic<bool> isTimeToStop_ = false;
 
-    // TODO: Remove. Only used for "sign anything" hack
-    config::Config config_;
-
 public:
     explicit App(
         config::Config const& config,
@@ -81,12 +79,6 @@ public:
 
     boost::asio::io_service&
     get_io_service();
-
-    config::Config const&
-    config() const
-    {
-        return config_;
-    }
 };
 
 }  // namespace xbwd

@@ -53,15 +53,16 @@ xChainDBInit()
 
         auto const tblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
-                TransID       CHARACTER(64) PRIMARY KEY,
-                LedgerSeq     BIGINT UNSIGNED,
-                ClaimID       BIGINT UNSIGNED,
-                Success       UNSIGNED,
-                DeliveredAmt  BLOB,
-                Bridge        BLOB,
-                RewardAccount TEXT,
-                PublicKey     TEXT,
-                Signature     TEXT);
+                TransID        CHARACTER(64) PRIMARY KEY,
+                LedgerSeq      BIGINT UNSIGNED,
+                ClaimID        BIGINT UNSIGNED,
+                Success        UNSIGNED,
+                DeliveredAmt   BLOB,
+                Bridge         BLOB,
+                SendingAccount BLOB,
+                RewardAccount  BLOB,
+                PublicKey      BLOB,
+                Signature      BLOB);
         )sql";
         auto const idxFmtStr = R"sql(
             CREATE INDEX IF NOT EXISTS {table_name}XSeqIdx ON {table_name}(ClaimID);",

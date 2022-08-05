@@ -209,16 +209,16 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     auto const& rewardAccount = wasLockingChainSend
         ? issuingChainRewardAccount_
         : lockingChainRewardAccount_;
-    auto const hexSignature = [&]() -> boost::optional<std::string> {
+    auto const sigOpt = [&]() -> std::optional<ripple::Buffer> {
         if (!success)
-            return boost::none;
+            return std::nullopt;
         if (!e.deliveredAmt_)
         {
             JLOGV(
                 j_.error(),
                 "missing delivered amount in successful xchain transfer",
                 ripple::jv("event", e.toJson()));
-            return boost::none;
+            return std::nullopt;
         }
 
         auto const& bridge = e.bridge_;
@@ -252,7 +252,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
                 optDst};
             assert(claim.verify(bridge));
         }
-        return ripple::strHex(sig);
+        return sig;
     }();
 
     auto const encodedAmtOpt =
@@ -264,11 +264,6 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         return std::move(s.modData());
     }();
 
-    // TODO: cache this string
-    // TODO: decide on the correct token type
-    std::string const publicKey =
-        ripple::toBase58(ripple::TokenType::AccountPublic, signingPK_);
-
     std::vector<std::uint8_t> const encodedSidechain = [&] {
         ripple::Serializer s;
         sidechain_.add(s);
@@ -277,29 +272,52 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
+
         // Soci blob does not play well with optional. Store an empty blob when
         // missing delivered amount
         soci::blob amtBlob{*session};
-        soci::blob sidechainBlob(*session);
         if (encodedAmtOpt)
         {
             convert(*encodedAmtOpt, amtBlob);
         }
+
+        soci::blob sidechainBlob(*session);
         convert(encodedSidechain, sidechainBlob);
+
+        soci::blob sendingAccountBlob(*session);
+        // Convert to an AccountID first, because if the type changes we want to
+        // catch it.
+        ripple::AccountID const& sendingAccount{e.src_};
+        convert(sendingAccount, sendingAccountBlob);
+
+        soci::blob rewardAccountBlob(*session);
+        convert(rewardAccount, rewardAccountBlob);
+
+        soci::blob publicKeyBlob(*session);
+        convert(signingPK_, publicKeyBlob);
+
+        soci::blob signatureBlob(*session);
+        if (sigOpt)
+        {
+            convert(*sigOpt, signatureBlob);
+        }
 
         auto sql = fmt::format(
             R"sql(INSERT INTO {table_name}
-                  (TransID, LedgerSeq, ClaimID, Success, DeliveredAmt, Bridge, RewardAccount, PublicKey, Signature)
+                  (TransID, LedgerSeq, ClaimID, Success, DeliveredAmt, Bridge,
+                   SendingAccount, RewardAccount, PublicKey, Signature)
                   VALUES
-                  (:txnId, :lgrSeq, :claimID, :success, :amt, :bridge, :rewardAccount, :pk, :sig);
+                  (:txnId, :lgrSeq, :claimID, :success, :amt, :bridge,
+                   :sendingAccount, :rewardAccount, :pk, :sig);
             )sql",
             fmt::arg("table_name", tblName));
 
         auto const rewardAccountStr = ripple::toBase58(rewardAccount);
         *session << sql, soci::use(txnIdHex), soci::use(e.ledgerSeq_),
             soci::use(e.claimID_), soci::use(success), soci::use(amtBlob),
-            soci::use(sidechainBlob), soci::use(rewardAccountStr),
-            soci::use(publicKey), soci::use(hexSignature);
+            soci::use(sidechainBlob), soci::use(sendingAccountBlob),
+            soci::use(rewardAccountBlob), soci::use(publicKeyBlob),
+            soci::use(signatureBlob);
     }
 }
 
