@@ -279,12 +279,7 @@ ChainListener::processMessage(Json::Value const& msg)
         return std::nullopt;
     }();
 
-    // There are two payment types of interest:
-    // 1. User initiated payments on this chain that trigger a transaction on
-    // the other chain.
-    // 2. Federated initated payments on this chain whose status needs to be
-    // checked.
-    enum class TxnType { xChainCommit, xChainClaim };
+    enum class TxnType { xChainCommit, xChainClaim, xChainCreateAccount };
     auto txnTypeOpt = [&]() -> std::optional<TxnType> {
         // Only keep transactions to or from the door account.
         // Transactions to the account are initiated by users and are are cross
@@ -308,7 +303,13 @@ ChainListener::processMessage(Json::Value const& msg)
             fieldMatchesStr(
                 txn, ripple::jss::TransactionType, ripple::jss::XChainClaim);
 
-        if (!isXChainCommit && !isXChainClaim)
+        auto const isXChainCreateAccount = !isXChainCommit && !isXChainClaim &&
+            fieldMatchesStr(
+                txn,
+                ripple::jss::TransactionType,
+                ripple::jss::SidechainXChainAccountCreate);
+
+        if (!isXChainCommit && !isXChainClaim && !isXChainCreateAccount)
             return {};
 
         if (!txnBridge)
@@ -342,6 +343,8 @@ ChainListener::processMessage(Json::Value const& msg)
             return TxnType::xChainClaim;
         else if (isXChainCommit)
             return TxnType::xChainCommit;
+        else if (isXChainCreateAccount)
+            return TxnType::xChainCreateAccount;
         return {};
     }();
 
@@ -430,19 +433,6 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName()));
         return;
     }
-    auto const claimID = Json::getOptional<std::uint64_t>(
-        msg[ripple::jss::transaction], ripple::sfXChainClaimID);
-    if (!claimID)
-    {
-        JLOGV(
-            j_.warn(),
-            "ignoring listener message",
-            ripple::jv("reason", "no xChainSeq"),
-            ripple::jv("msg", msg),
-            ripple::jv("chain_name", chainName()));
-        return;
-    }
-
     TxnType const txnType = *txnTypeOpt;
 
     std::optional<ripple::STAmount> deliveredAmt;
@@ -484,17 +474,26 @@ ChainListener::processMessage(Json::Value const& msg)
         return;
     }
     auto const dst = [&]() -> std::optional<ripple::AccountID> {
-        if (txnType == TxnType::xChainClaim || txnType == TxnType::xChainCommit)
+        try
         {
-            try
+            switch (txnType)
             {
-                return ripple::parseBase58<ripple::AccountID>(
-                    msg[ripple::jss::transaction][ripple::jss::Destination]
-                        .asString());
+                case TxnType::xChainCreateAccount:
+                    [[fallthrough]];
+                case TxnType::xChainClaim:
+                    return ripple::parseBase58<ripple::AccountID>(
+                        msg[ripple::jss::transaction]
+                           [ripple::sfDestination.getJsonName()]
+                               .asString());
+                case TxnType::xChainCommit:
+                    return ripple::parseBase58<ripple::AccountID>(
+                        msg[ripple::jss::transaction]
+                           [ripple::sfOtherChainAccount.getJsonName()]
+                               .asString());
             }
-            catch (...)
-            {
-            }
+        }
+        catch (...)
+        {
         }
         return {};
     }();
@@ -502,6 +501,19 @@ ChainListener::processMessage(Json::Value const& msg)
     switch (txnType)
     {
         case TxnType::xChainClaim: {
+            auto const claimID = Json::getOptional<std::uint64_t>(
+                msg[ripple::jss::transaction], ripple::sfXChainClaimID);
+
+            if (!claimID)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv("reason", "no xChainSeq"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName()));
+                return;
+            }
             if (!dst)
             {
                 JLOGV(
@@ -526,6 +538,19 @@ ChainListener::processMessage(Json::Value const& msg)
         }
         break;
         case TxnType::xChainCommit: {
+            auto const claimID = Json::getOptional<std::uint64_t>(
+                msg[ripple::jss::transaction], ripple::sfXChainClaimID);
+
+            if (!claimID)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv("reason", "no xChainSeq"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName()));
+                return;
+            }
             if (!txnBridge)
             {
                 JLOGV(
@@ -544,6 +569,78 @@ ChainListener::processMessage(Json::Value const& msg)
                 deliveredAmt,
                 *claimID,
                 dst,
+                *lgrSeq,
+                *txnHash,
+                txnTER,
+                txnHistoryIndex};
+            pushEvent(std::move(e));
+        }
+        break;
+        case TxnType::xChainCreateAccount: {
+            // TODO: Get create count from the metadata
+            std::optional<std::uint64_t> const createCount;
+
+            if (!createCount)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv("reason", "no createCount"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName()));
+                return;
+            }
+            if (!txnBridge)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv("reason", "no bridge in xchain commit"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName()));
+                return;
+            }
+            auto const rewardAmt = [&]() -> std::optional<ripple::STAmount> {
+                if (msg[ripple::jss::transaction].isMember(
+                        ripple::sfSignatureReward.getJsonName()))
+                {
+                    return amountFromJson(
+                        ripple::sfGeneric,
+                        msg[ripple::jss::transaction]
+                           [ripple::sfSignatureReward.getJsonName()]);
+                }
+                return {};
+            }();
+            if (!rewardAmt)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv(
+                        "reason", "no reward amt in xchain create account"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName()));
+                return;
+            }
+            if (!dst)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv("reason", "no dst in xchain create account"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName()));
+                return;
+            }
+            using namespace event;
+            XChainAccountCreateCommitDetected e{
+                isMainchain_ ? Dir::lockingToIssuing : Dir::issuingToLocking,
+                *src,
+                *txnBridge,
+                deliveredAmt,
+                *rewardAmt,
+                *createCount,
+                *dst,
                 *lgrSeq,
                 *txnHash,
                 txnTER,

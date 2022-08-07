@@ -123,6 +123,9 @@ private:
     onEvent(event::XChainCommitDetected const& e);
 
     void
+    onEvent(event::XChainAccountCreateCommitDetected const& e);
+
+    void
     onEvent(event::XChainTransferResult const& e);
 
     void

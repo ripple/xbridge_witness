@@ -53,6 +53,27 @@ struct XChainCommitDetected
     toJson() const;
 };
 
+// A cross chain account create was detected on this federator
+struct XChainAccountCreateCommitDetected
+{
+    Dir dir_;
+    // Src account on the src chain
+    ripple::AccountID src_;
+    ripple::STXChainBridge bridge_;
+    std::optional<ripple::STAmount> deliveredAmt_;
+    ripple::STAmount rewardAmt_;
+    std::uint64_t createCount_;
+    ripple::AccountID otherChainAccount_;
+
+    std::uint32_t ledgerSeq_;
+    ripple::uint256 txnHash_;
+    ripple::TER status_;
+    std::int32_t rpcOrder_;
+
+    Json::Value
+    toJson() const;
+};
+
 struct HeartbeatTimer
 {
     Json::Value
@@ -83,6 +104,7 @@ struct XChainTransferResult
 
 using FederatorEvent = std::variant<
     event::XChainCommitDetected,
+    event::XChainAccountCreateCommitDetected,
     event::HeartbeatTimer,
     event::XChainTransferResult>;
 

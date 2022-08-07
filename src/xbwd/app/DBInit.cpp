@@ -20,6 +20,20 @@ xChainLockingToIssuingTableName()
 }
 
 std::string const&
+xChainCreateAccountLockingTableName()
+{
+    static std::string const r{"XChainTxnCreateAccountLocking"};
+    return r;
+}
+
+std::string const&
+xChainCreateAccountIssuingTableName()
+{
+    static std::string const r{"XChainTxnCreateAccountIssuing"};
+    return r;
+}
+
+std::string const&
 xChainIssuingToLockingTableName()
 {
     static std::string const r{"XChainTxnIssuingToLocking"};
@@ -64,14 +78,35 @@ xChainDBInit()
                 Signature         BLOB);
         )sql";
         auto const idxFmtStr = R"sql(
-            CREATE INDEX IF NOT EXISTS {table_name}XSeqIdx ON {table_name}(ClaimID);",
+            CREATE INDEX IF NOT EXISTS {table_name}ClaimIDIdx ON {table_name}(ClaimID);",
         )sql";
+
+        auto const createAccTblFmtStr = R"sql(
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                TransID           CHARACTER(64) PRIMARY KEY,
+                LedgerSeq         BIGINT UNSIGNED,
+                CreateCount       BIGINT UNSIGNED,
+                Success           UNSIGNED,
+                DeliveredAmt      BLOB,
+                RewardAmt         BLOB,
+                Bridge            BLOB,
+                SendingAccount    BLOB,
+                RewardAccount     BLOB,
+                OtherChainAccount BLOB,
+                PublicKey         BLOB,
+                Signature         BLOB);
+        )sql";
+        auto const createAccIdxFmtStr = R"sql(
+            CREATE INDEX IF NOT EXISTS {table_name}CreateCountIdx ON {table_name}(CreateCount);",
+        )sql";
+
         r.push_back(fmt::format(
             tblFmtStr,
             fmt::arg("table_name", xChainLockingToIssuingTableName())));
         r.push_back(fmt::format(
             idxFmtStr,
             fmt::arg("table_name", xChainLockingToIssuingTableName())));
+
         r.push_back(fmt::format(
             tblFmtStr,
             fmt::arg("table_name", xChainIssuingToLockingTableName())));

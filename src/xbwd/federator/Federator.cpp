@@ -319,12 +319,179 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             )sql",
             fmt::arg("table_name", tblName));
 
-        auto const rewardAccountStr = ripple::toBase58(rewardAccount);
         *session << sql, soci::use(txnIdHex), soci::use(e.ledgerSeq_),
             soci::use(e.claimID_), soci::use(success), soci::use(amtBlob),
             soci::use(bridgeBlob), soci::use(sendingAccountBlob),
             soci::use(rewardAccountBlob), soci::use(otherChainAccountBlob),
             soci::use(publicKeyBlob), soci::use(signatureBlob);
+    }
+}
+
+void
+Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
+{
+    JLOGV(
+        j_.error(),
+        "onEvent XChainAccountCreateDetected",
+        ripple::jv("event", e.toJson()));
+
+    bool const wasLockingChainSend = (e.dir_ == event::Dir::lockingToIssuing);
+
+    auto const& tblName = wasLockingChainSend
+        ? db_init::xChainCreateAccountLockingTableName()
+        : db_init::xChainCreateAccountIssuingTableName();
+
+    auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
+
+    {
+        auto session = app_.getXChainTxnDB().checkoutDb();
+        auto sql = fmt::format(
+            R"sql(SELECT count(*) FROM {table_name} WHERE TransID = "{tx_hex}";)sql",
+            fmt::arg("table_name", tblName),
+            fmt::arg("tx_hex", txnIdHex));
+
+        int count = 0;
+        *session << sql, soci::into(count);
+        if (session->got_data() && count > 0)
+        {
+            // Already have this transaction
+            // TODO: Sanity check the claim id and deliveredAmt match
+            // TODO: Stop historical transaction collection
+            return;  // Don't store it again
+        }
+    }
+
+    int const success =
+        ripple::isTesSuccess(e.status_) ? 1 : 0;  // soci complains about a bool
+    auto const& rewardAccount = wasLockingChainSend
+        ? issuingChainRewardAccount_
+        : lockingChainRewardAccount_;
+    auto const& dst = e.otherChainAccount_;
+
+    auto const sigOpt = [&]() -> std::optional<ripple::Buffer> {
+        if (!success)
+            return std::nullopt;
+        if (!e.deliveredAmt_)
+        {
+            JLOGV(
+                j_.error(),
+                "missing delivered amount in successful xchain create transfer",
+                ripple::jv("event", e.toJson()));
+            return std::nullopt;
+        }
+
+        auto const& bridge = e.bridge_;
+        auto const& sendingAccount = e.src_;
+        auto const& sendingAmount = *e.deliveredAmt_;
+        auto const& rewardAmount = e.rewardAmt_;
+        auto const& createCount = e.createCount_;
+
+        auto const toSign =
+            ripple::AttestationBatch::AttestationCreateAccount::message(
+                bridge,
+                sendingAccount,
+                sendingAmount,
+                rewardAmount,
+                rewardAccount,
+                wasLockingChainSend,
+                createCount,
+                dst);
+
+        auto const sig =
+            sign(signingPK_, signingSK_, ripple::makeSlice(toSign));
+        {
+            // TODO: Remove this test code
+            //
+            ripple::AttestationBatch::AttestationCreateAccount claim{
+                signingPK_,
+                sig,
+                sendingAccount,
+                sendingAmount,
+                rewardAmount,
+                rewardAccount,
+                wasLockingChainSend,
+                createCount,
+                dst};
+            assert(claim.verify(bridge));
+        }
+        return sig;
+    }();
+
+    auto const encodedAmtOpt =
+        [&]() -> std::optional<std::vector<std::uint8_t>> {
+        if (!e.deliveredAmt_)
+            return std::nullopt;
+        ripple::Serializer s;
+        e.deliveredAmt_->add(s);
+        return std::move(s.modData());
+    }();
+
+    auto const encodedRewardAmt = [&] {
+        ripple::Serializer s;
+        e.rewardAmt_.add(s);
+        return std::move(s.modData());
+    }();
+
+    std::vector<std::uint8_t> const encodedBridge = [&] {
+        ripple::Serializer s;
+        sidechain_.add(s);
+        return std::move(s.modData());
+    }();
+
+    {
+        auto session = app_.getXChainTxnDB().checkoutDb();
+
+        // Soci blob does not play well with optional. Store an empty blob when
+        // missing delivered amount
+        soci::blob amtBlob{*session};
+        if (encodedAmtOpt)
+        {
+            convert(*encodedAmtOpt, amtBlob);
+        }
+
+        soci::blob rewardAmtBlob{*session};
+        convert(encodedRewardAmt, rewardAmtBlob);
+
+        soci::blob bridgeBlob(*session);
+        convert(encodedBridge, bridgeBlob);
+
+        soci::blob sendingAccountBlob(*session);
+        // Convert to an AccountID first, because if the type changes we want to
+        // catch it.
+        ripple::AccountID const& sendingAccount{e.src_};
+        convert(sendingAccount, sendingAccountBlob);
+
+        soci::blob rewardAccountBlob(*session);
+        convert(rewardAccount, rewardAccountBlob);
+
+        soci::blob publicKeyBlob(*session);
+        convert(signingPK_, publicKeyBlob);
+
+        soci::blob signatureBlob(*session);
+        if (sigOpt)
+        {
+            convert(*sigOpt, signatureBlob);
+        }
+
+        soci::blob otherChainAccountBlob(*session);
+        convert(dst, otherChainAccountBlob);
+
+        auto sql = fmt::format(
+            R"sql(INSERT INTO {table_name}
+                  (TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, RewardAmt, Bridge,
+                   SendingAccount, RewardAccount, otherChainAccountBlob, PublicKey, Signature)
+                  VALUES
+                  (:txnId, :lgrSeq, :createCount, :success, :amt, :rewardAmt, :bridge,
+                   :sendingAccount, :rewardAccount, :otherChainAccount, :pk, :sig);
+            )sql",
+            fmt::arg("table_name", tblName));
+
+        *session << sql, soci::use(txnIdHex), soci::use(e.ledgerSeq_),
+            soci::use(e.createCount_), soci::use(success), soci::use(amtBlob),
+            soci::use(rewardAmtBlob), soci::use(bridgeBlob),
+            soci::use(sendingAccountBlob), soci::use(rewardAccountBlob),
+            soci::use(otherChainAccountBlob), soci::use(publicKeyBlob),
+            soci::use(signatureBlob);
     }
 }
 
