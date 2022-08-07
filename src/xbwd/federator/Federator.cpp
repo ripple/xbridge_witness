@@ -209,6 +209,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     auto const& rewardAccount = wasLockingChainSend
         ? issuingChainRewardAccount_
         : lockingChainRewardAccount_;
+    auto const& optDst = e.otherChainAccount_;
+
     auto const sigOpt = [&]() -> std::optional<ripple::Buffer> {
         if (!success)
             return std::nullopt;
@@ -225,7 +227,6 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         auto const& sendingAccount = e.src_;
         auto const& sendingAmount = *e.deliveredAmt_;
         auto const& claimID = e.claimID_;
-        auto const& optDst = e.otherChainAccount_;
 
         auto const toSign = ripple::AttestationBatch::AttestationClaim::message(
             bridge,
@@ -264,7 +265,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         return std::move(s.modData());
     }();
 
-    std::vector<std::uint8_t> const encodedSidechain = [&] {
+    std::vector<std::uint8_t> const encodedBridge = [&] {
         ripple::Serializer s;
         sidechain_.add(s);
         return std::move(s.modData());
@@ -281,8 +282,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             convert(*encodedAmtOpt, amtBlob);
         }
 
-        soci::blob sidechainBlob(*session);
-        convert(encodedSidechain, sidechainBlob);
+        soci::blob bridgeBlob(*session);
+        convert(encodedBridge, bridgeBlob);
 
         soci::blob sendingAccountBlob(*session);
         // Convert to an AccountID first, because if the type changes we want to
@@ -302,22 +303,28 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             convert(*sigOpt, signatureBlob);
         }
 
+        soci::blob otherChainAccountBlob(*session);
+        if (optDst)
+        {
+            convert(*optDst, otherChainAccountBlob);
+        }
+
         auto sql = fmt::format(
             R"sql(INSERT INTO {table_name}
                   (TransID, LedgerSeq, ClaimID, Success, DeliveredAmt, Bridge,
-                   SendingAccount, RewardAccount, PublicKey, Signature)
+                   SendingAccount, RewardAccount, otherChainAccountBlob, PublicKey, Signature)
                   VALUES
                   (:txnId, :lgrSeq, :claimID, :success, :amt, :bridge,
-                   :sendingAccount, :rewardAccount, :pk, :sig);
+                   :sendingAccount, :rewardAccount, :otherChainAccount, :pk, :sig);
             )sql",
             fmt::arg("table_name", tblName));
 
         auto const rewardAccountStr = ripple::toBase58(rewardAccount);
         *session << sql, soci::use(txnIdHex), soci::use(e.ledgerSeq_),
             soci::use(e.claimID_), soci::use(success), soci::use(amtBlob),
-            soci::use(sidechainBlob), soci::use(sendingAccountBlob),
-            soci::use(rewardAccountBlob), soci::use(publicKeyBlob),
-            soci::use(signatureBlob);
+            soci::use(bridgeBlob), soci::use(sendingAccountBlob),
+            soci::use(rewardAccountBlob), soci::use(otherChainAccountBlob),
+            soci::use(publicKeyBlob), soci::use(signatureBlob);
     }
 }
 

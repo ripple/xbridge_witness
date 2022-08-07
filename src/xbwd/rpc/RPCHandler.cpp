@@ -115,26 +115,30 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         soci::blob bridgeBlob(*session);
         soci::blob sendingAccountBlob(*session);
         soci::blob rewardAccountBlob(*session);
+        soci::blob otherChainAccountBlob(*session);
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
         convert(encodedAmt, amtBlob);
         convert(encodedBridge, bridgeBlob);
         convert(sendingAccount, sendingAccountBlob);
+        if (optDst)
+            convert(*optDst, otherChainAccountBlob);
 
         auto sql = fmt::format(
             R"sql(SELECT Signature, PublicKey, RewardAccount FROM {table_name}
                   WHERE ClaimID = :claimID and
                         DeliveredAmt = :amt and
                         Bridge = :bridge and
-                        SendingAccount = :sendingAccount;
+                        SendingAccount = :sendingAccount and
+                        OtherChainAccount = :otherChainAccount;
             )sql",
             fmt::arg("table_name", tblName));
 
         *session << sql, soci::into(signatureBlob), soci::into(publicKeyBlob),
             soci::into(rewardAccountBlob), soci::use(*optClaimID),
             soci::use(amtBlob), soci::use(bridgeBlob),
-            soci::use(sendingAccountBlob);
+            soci::use(sendingAccountBlob), soci::use(otherChainAccountBlob);
 
         // TODO: Check for multiple values
         if (signatureBlob.get_len() > 0 && publicKeyBlob.get_len() > 0 &&

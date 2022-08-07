@@ -47,22 +47,21 @@ xChainDBInit()
 
         // DeliveredAmt is encoded as a serialized STAmount
         //              this is raw data - no encoded.
-        // Signature is hex encoded (without a leading 0x)
         // Success is a bool (but soci complains about using bools)
-        // Sidechain is encoded as a serialized STXChainBridge
 
         auto const tblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
-                TransID        CHARACTER(64) PRIMARY KEY,
-                LedgerSeq      BIGINT UNSIGNED,
-                ClaimID        BIGINT UNSIGNED,
-                Success        UNSIGNED,
-                DeliveredAmt   BLOB,
-                Bridge         BLOB,
-                SendingAccount BLOB,
-                RewardAccount  BLOB,
-                PublicKey      BLOB,
-                Signature      BLOB);
+                TransID           CHARACTER(64) PRIMARY KEY,
+                LedgerSeq         BIGINT UNSIGNED,
+                ClaimID           BIGINT UNSIGNED,
+                Success           UNSIGNED,
+                DeliveredAmt      BLOB,
+                Bridge            BLOB,
+                SendingAccount    BLOB,
+                RewardAccount     BLOB,
+                OtherChainAccount BLOB,
+                PublicKey         BLOB,
+                Signature         BLOB);
         )sql";
         auto const idxFmtStr = R"sql(
             CREATE INDEX IF NOT EXISTS {table_name}XSeqIdx ON {table_name}(ClaimID);",
