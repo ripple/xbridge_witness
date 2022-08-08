@@ -102,7 +102,7 @@ main(int argc, char** argv)
 
     try
     {
-        auto const config = [&]() -> xbwd::config::Config {
+        std::unique_ptr<xbwd::config::Config> config = [&]() -> auto {
             auto const configFile = [&]() -> std::string {
                 if (vm.count("config"))
                     return vm["config"].as<std::string>();
@@ -117,7 +117,7 @@ main(int argc, char** argv)
             f.open(configFile);
             if (!Json::Reader().parse(f, jv))
                 throw std::runtime_error("config file contains invalid json");
-            return xbwd::config::Config{jv};
+            return std::make_unique<xbwd::config::Config>(jv);
         }();
 
         if (vm.count("json"))
@@ -148,7 +148,7 @@ main(int argc, char** argv)
                 o["method"] = jv;
                 jv = o;
             }
-            return xbwd::rpc_call::fromCommandLine(config, jv);
+            return xbwd::rpc_call::fromCommandLine(*config, jv);
         }
         auto const logLevel = [&]() -> beast::severities::Severity {
             using namespace beast::severities;
@@ -160,8 +160,8 @@ main(int argc, char** argv)
             return kInfo;
         }();
 
-        xbwd::App app(config, logLevel);
-        if (!app.setup(config))
+        xbwd::App app(std::move(config), logLevel);
+        if (!app.setup())
             return EXIT_FAILURE;
 
         app.start();

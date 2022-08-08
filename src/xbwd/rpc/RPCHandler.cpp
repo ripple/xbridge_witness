@@ -469,23 +469,99 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
     }
 }
 
-using CmdFun = std::function<void(App&, Json::Value const&, Json::Value&)>;
+enum class Role {USER, ADMIN};
+
+struct CmdFun
+{
+    std::function<void(App&, Json::Value const&, Json::Value&)> func;
+    Role role;
+};
 
 std::unordered_map<std::string, CmdFun> const handlers = [] {
     using namespace std::literals;
     std::unordered_map<std::string, CmdFun> r;
-    r.emplace("stop"s, doStop);
-    r.emplace("server_info"s, doServerInfo);
-    r.emplace("witness"s, doWitness);
-    r.emplace("witness_account_create"s, doWitnessAccountCreate);
-    r.emplace("select_all_locking"s, doSelectAllLocking);
-    r.emplace("select_all_issuing"s, doSelectAllIssuing);
+    r.emplace("stop"s, CmdFun{doStop, Role::ADMIN});
+    r.emplace("server_info"s, CmdFun{doServerInfo, Role::USER});
+    r.emplace("witness"s, CmdFun{doWitness, Role::USER});
+    r.emplace("witness_account_create"s, CmdFun{doWitnessAccountCreate, Role::USER});
+    r.emplace("select_all_locking"s, CmdFun{doSelectAllLocking, Role::USER});
+    r.emplace("select_all_issuing"s, CmdFun{doSelectAllIssuing, Role::USER});
     return r;
 }();
 }  // namespace
 
+bool
+isAdmin(
+    std::optional<config::AdminConfig> const& adminConf,
+    Json::Value const& params,
+    boost::asio::ip::address const& remoteIp)
+{
+    if (!adminConf)
+    {
+        // allow admin RPCs if admin config was not set
+        return true;
+    }
+
+    auto const& ac = *adminConf;
+    // at least one of them should be set or not empty
+    assert(
+        ac.pass || !ac.addresses.empty() || !ac.netsV4.empty() ||
+        !ac.netsV6.empty());
+
+    // If the pass is set, it will be checked in addition to address
+    // verification, if any.
+    if (ac.pass)
+    {
+        bool userMatch = params.isMember("Username") &&
+            params["Username"].isString() &&
+            params["Username"].asString() == (*ac.pass).user;
+        bool passwordMatch = params.isMember("Password") &&
+            params["Password"].isString() &&
+            params["Password"].asString() == (*ac.pass).password;
+        if (!userMatch || !passwordMatch)
+            return false;
+    }
+
+    // return true if no need to check IP
+    if(ac.addresses.empty() && ac.netsV4.empty() && ac.netsV6.empty())
+        return true;
+
+    if (ac.addresses.count(remoteIp) != 0)
+        return true;
+
+    if (remoteIp.is_v4())
+    {
+        for (auto const& net : ac.netsV4)
+        {
+            if (net.canonical().address() ==
+                boost::asio::ip::network_v4(
+                    remoteIp.to_v4(), net.prefix_length())
+                    .canonical()
+                    .address())
+                return true;
+        }
+    }else{
+        for (auto const& net : ac.netsV6)
+        {
+            if (net.canonical().address() ==
+                boost::asio::ip::network_v6(
+                    remoteIp.to_v6(), net.prefix_length())
+                    .canonical()
+                    .address())
+                return true;
+        }
+    }
+
+    // return false if need to check IP but none matched
+    return false;
+}
+
 void
-doCommand(App& app, Json::Value const& in, Json::Value& result)
+doCommand(
+    App& app,
+    beast::IP::Endpoint const& remoteIPAddress,
+    Json::Value const& in,
+    Json::Value& result)
 {
     auto const cmd = [&]() -> std::string {
         auto const cmd = in[ripple::jss::command];
@@ -502,7 +578,16 @@ doCommand(App& app, Json::Value const& in, Json::Value& result)
         result["error"] = fmt::format("No such method: {}", cmd);
         return;
     }
-    return it->second(app, in, result);
+
+    if (it->second.role == Role::ADMIN &&
+        ! isAdmin(app.config().adminConf, in, remoteIPAddress.address()))
+    {
+        result["error"] =
+            fmt::format("{} method requires ADMIN privilege.", cmd);
+        return;
+    }
+
+    return it->second.func(app, in, result);
 }
 
 }  // namespace rpc

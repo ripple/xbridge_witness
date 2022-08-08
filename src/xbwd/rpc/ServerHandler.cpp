@@ -898,7 +898,11 @@ ServerHandler::processSession(
             return jr;
         }
 
-        rpc::doCommand(app_, jv, jr[ripple::jss::result]);
+        rpc::doCommand(
+            app_,
+            beast::IP::from_asio(session->remote_endpoint().address()),
+            jv,
+            jr[ripple::jss::result]);
     }
     catch (std::exception const& ex)
     {
@@ -1103,7 +1107,7 @@ ServerHandler::processRequest(
         JLOG(j_.trace()) << "doRpcCommand:" << strMethod << ":" << params;
 
         Json::Value result;
-        rpc::doCommand(app_, params, result);
+        rpc::doCommand(app_, remoteIPAddress, params, result);
 
         Json::Value r(Json::objectValue);
         if (result.isMember(ripple::jss::error))

@@ -15,15 +15,18 @@
 
 namespace xbwd {
 
-App::App(config::Config const& config, beast::severities::Severity logLevel)
+App::App(
+    std::unique_ptr<config::Config> config,
+    beast::severities::Severity logLevel)
     : logs_(logLevel)
     , j_(logs_.journal("App"))
     , xChainTxnDB_(
-          config.dataDir,
+          config->dataDir,
           db_init::xChainDBName(),
           db_init::xChainDBPragma(),
           db_init::xChainDBInit())
     , signals_(io_service_)
+    , config_(std::move(config))
 {
     // TODO initialize the public and secret keys
     int numThreads = std::thread::hardware_concurrency();
@@ -44,13 +47,13 @@ App::App(config::Config const& config, beast::severities::Severity logLevel)
         federator_ = make_Federator(
             *this,
             get_io_service(),
-            config.bridge,
-            config.keyType,
-            config.signingKey,
-            config.lockingchainIp,
-            config.issuingchainIp,
-            config.lockingChainRewardAccount,
-            config.issuingChainRewardAccount,
+            config_->bridge,
+            config_->keyType,
+            config_->signingKey,
+            config_->lockingchainIp,
+            config_->issuingchainIp,
+            config_->lockingChainRewardAccount,
+            config_->issuingChainRewardAccount,
             logs_.journal("Federator"));
 
         serverHandler_ = std::make_unique<rpc::ServerHandler>(
@@ -76,7 +79,7 @@ App::~App()
 }
 
 bool
-App::setup(config::Config const& config)
+App::setup()
 {
     // We want to intercept CTRL-C and the standard termination signal
     // SIGTERM and terminate the process. This handler will NEVER be invoked
@@ -103,7 +106,7 @@ App::setup(config::Config const& config)
 
     {
         std::vector<ripple::Port> const ports = [&] {
-            auto const& endpoint = config.rpcEndpoint;
+            auto const& endpoint = config_->rpcEndpoint;
             std::vector<ripple::Port> r;
             ripple::Port p;
             p.ip = endpoint.address();
@@ -173,4 +176,9 @@ App::signalStop()
         stoppingCondition_.notify_all();
 }
 
+config::Config&
+App::config()
+{
+    return *config_;
+}
 }  // namespace xbwd

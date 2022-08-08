@@ -48,6 +48,71 @@ Config::Config(Json::Value const& jv)
     , issuingChainRewardAccount{
           rpc::fromJson<ripple::AccountID>(jv, "IssuingChainRewardAccount")}
 {
+    if (jv.isMember("Admin"))
+    {
+        auto const& admin = jv["Admin"];
+        adminConf = [&]() -> std::optional<AdminConfig> {
+            AdminConfig ac;
+            if (admin.isMember("Username") || admin.isMember("Password"))
+            {
+                // must have none or both of "Username" and "Password"
+                if (!admin.isMember("Username") ||
+                    !admin.isMember("Password") ||
+                    !admin["Username"].isString() ||
+                    !admin["Password"].isString() ||
+                    admin["Username"].asString().empty() ||
+                    admin["Password"].asString().empty())
+                {
+                    throw std::runtime_error(
+                        "Admin config wrong format:" +
+                        admin.asString());
+                }
+
+                ac.pass.emplace(AdminConfig::PasswordAuth{
+                    admin["Username"].asString(),
+                    admin["Password"].asString()});
+            }
+            // may throw while parsing IPs or Subnets
+            if (admin.isMember("IPs") && admin["IPs"].isArray())
+            {
+                for (auto const& s : admin["IPs"])
+                {
+                    ac.addresses.emplace(
+                        boost::asio::ip::make_address(s.asString()));
+                }
+            }
+            if (admin.isMember("Subnets") && admin["Subnets"].isArray())
+            {
+                for (auto const& s : admin["Subnets"])
+                {
+                    // First, see if it's an ipv4 subnet. If not, try ipv6.
+                    // If that throws, then there's nothing we can do with
+                    // the entry.
+                    try
+                    {
+                        ac.netsV4.emplace_back(
+                            boost::asio::ip::make_network_v4(s.asString()));
+                    }
+                    catch (boost::system::system_error const&)
+                    {
+                        ac.netsV6.emplace_back(
+                            boost::asio::ip::make_network_v6(s.asString()));
+                    }
+                }
+            }
+
+            if (ac.pass || !ac.addresses.empty() || !ac.netsV4.empty() ||
+                !ac.netsV6.empty())
+            {
+                return std::optional<AdminConfig>{ac};
+            }
+            else
+            {
+                throw std::runtime_error(
+                    "Admin config wrong format:" + admin.asString());
+            }
+        }();
+    }
 }
 
 }  // namespace config

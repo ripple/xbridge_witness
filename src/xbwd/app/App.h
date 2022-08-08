@@ -51,16 +51,17 @@ class App
     std::condition_variable stoppingCondition_;
     mutable std::mutex stoppingMutex_;
     std::atomic<bool> isTimeToStop_ = false;
+    std::unique_ptr<config::Config> config_;
 
 public:
     explicit App(
-        config::Config const& config,
+        std::unique_ptr<config::Config> config,
         beast::severities::Severity logLevel);
 
     ~App();
 
     bool
-    setup(config::Config const& config);
+    setup();
 
     void
     start();
@@ -79,6 +80,9 @@ public:
 
     boost::asio::io_service&
     get_io_service();
+
+    config::Config&
+    config();
 };
 
 }  // namespace xbwd
