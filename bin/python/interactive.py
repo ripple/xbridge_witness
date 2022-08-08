@@ -1570,25 +1570,25 @@ class SidechainRepl(cmd.Cmd):
         alias = args[0]
         filename = args[1]
 
-        sidechain_dict = None
+        bridge_dict = None
         try:
             with open(filename, "r") as f:
-                sidechain_dict = json.load(f)
+                bridge_dict = json.load(f)
         except:
             print(f"Could not read json file: {filename}")
             return
 
-        sidechain = None
+        bridge = None
         try:
-            sidechain = Bridge(from_rpc_result=sidechain_dict["XChainBridge"])
+            bridge = Bridge(from_rpc_result=bridge_dict["XChainBridge"])
         except Exception as e:
             print(
-                f"Could not create sidechain from dict: {sidechain_dict['sidechain']}\n{e=}",
+                f"Could not create bridge from dict: {bridge_dict['XChainBridge']}\n{e=}",
                 flush=True,
             )
             traceback.print_exc()
             return
-        self.bridge_aliases[alias] = sidechain
+        self.bridge_aliases[alias] = bridge
 
     def complete_new_bridge(self, text, line, begidx, endidx):
         return []
@@ -1691,9 +1691,7 @@ class SidechainRepl(cmd.Cmd):
     def do_bridge_aliases(self, line):
         args = line.split()
         if len(args) > 1:
-            print(
-                f'Error: bridge_aliases at most one argument. Type "help" for help.'
-            )
+            print(f'Error: bridge_aliases at most one argument. Type "help" for help.')
             return
         if len(args) == 1:
             print(f"self.bridge_aliases[args[0]]")
@@ -1701,7 +1699,7 @@ class SidechainRepl(cmd.Cmd):
             print(f"self.bridge_aliases")
 
     def complete_bridge_aliases(self, text, line, begidx, endidx):
-        return self._complete_bridge_alias(test, line, begidx, endidx)
+        return self._complete_bridge_alias(text, line, begidx, endidx)
 
     def help_bridge_aliases(self):
         print(
@@ -1717,11 +1715,103 @@ class SidechainRepl(cmd.Cmd):
     ##################
 
     ##################
-    # sidechain_create
+    # bridge_create
 
-    # TODO: How to specify attestion signatures
+    def do_bridge_create(self, line):
+        args = line.split()
+        if len(args) > 5:
+            print(f'Error: bridge_create at most five arguments. Type "help" for help.')
+            return
+        if len(args) < 4:
+            print(
+                f'Error: bridge_create at least four arguments. Type "help" for help.'
+            )
+            return
 
-    # sidechain_create
+        if args[0] not in ["mainchain", "sidechain"]:
+            print(
+                f'Error: First argument must specify the chain. Type "help" for help.'
+            )
+            return
+
+        if args[0] == "mainchain":
+            chain = self.mc_app
+        else:
+            chain = self.sc_app
+        args.pop(0)
+
+        nickname = args[0]
+        if not chain.is_alias(nickname):
+            print(f"Error: {nickname} is not in the address book")
+            return
+        src_account = chain.account_from_alias(nickname)
+        args.pop(0)
+
+        reward_amt_value = None
+        try:
+            reward_amt_value = int(args[0])
+        except:
+            try:
+                reward_amt_value = float(args[0])
+            except:
+                pass
+
+        if reward_amt_value is None:
+            print(f"Error: {args[0]} is an invalid amount.")
+            return
+        args.pop(0)
+
+        min_create_amt_value = None
+        try:
+            min_create_amt_value = int(args[0])
+        except:
+            try:
+                min_create_amt_value = float(args[0])
+            except:
+                pass
+
+        if min_create_amt_value is None:
+            print(f"Error: {args[0]} is an invalid amount.")
+            return
+        if min_create_amt_value is not none:
+            args.pop(0)
+
+        bridge_alias = args[0]
+        if bridge_alias not in self.bridge_aliases:
+            print(f"Error: {args[0]} is an unknown bridge alias")
+            return
+        args.pop(0)
+        assert not args
+        bridge = self.bridge_aliases[bridge_alias]
+        params = {
+            "account": src_account,
+            "bridge": bridge,
+            "reward": Asset(value=reward_amt_value),
+        }
+        if min_create_amt_value is not None:
+            params["min_account_create"] = Asset(value=min_create_amt_value)
+        chain(XChainCreateBridge(**params))
+
+    def complete_bridge_create(self, text, line, begidx, endidx):
+        args = line.split()
+        arg_num = len(args)
+        if arg_num == 2:  # chain
+            return self._complete_chain(text, line) + self._complete_account(text, line)
+        if arg_num == 3:  # account
+            return self._complete_account(text, line, chain_name=args[1])
+        return self._complete_bridge_alias(text, line, begidx, endidx)
+
+    def help_bridge_create(self):
+        print(
+            "\n".join(
+                [
+                    "bridge_create (mainchain | sidechain) account reward_amt [min_create_amt] bridge_alias",
+                    "Create a new bridge on the given chain",
+                ]
+            )
+        )
+
+    # bridge_create
     ##################
 
     ##################
