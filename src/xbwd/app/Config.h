@@ -18,13 +18,13 @@ namespace config {
 struct Config
 {
 public:
-    beast::IP::Endpoint mainchainIp;
-    beast::IP::Endpoint sidechainIp;
+    beast::IP::Endpoint lockingchainIp;
+    beast::IP::Endpoint issuingchainIp;
     beast::IP::Endpoint rpcEndpoint;
     boost::filesystem::path dataDir;
     ripple::KeyType keyType;
     ripple::SecretKey signingKey;
-    ripple::STXChainBridge sidechain;
+    ripple::STXChainBridge bridge;
     ripple::AccountID lockingChainRewardAccount;
     ripple::AccountID issuingChainRewardAccount;
 

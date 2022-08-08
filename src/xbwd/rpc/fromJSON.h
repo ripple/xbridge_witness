@@ -19,6 +19,8 @@
 namespace xbwd {
 namespace rpc {
 
+// TODO: This is redundant with the `get_or_throw` functions. Remove one set.
+//
 // Construct a T from the specified json field. Throw if the key is not present
 template <class T>
 T

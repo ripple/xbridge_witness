@@ -44,11 +44,11 @@ App::App(config::Config const& config, beast::severities::Severity logLevel)
         federator_ = make_Federator(
             *this,
             get_io_service(),
-            config.sidechain,
+            config.bridge,
             config.keyType,
             config.signingKey,
-            config.mainchainIp,
-            config.sidechainIp,
+            config.lockingchainIp,
+            config.issuingchainIp,
             config.lockingChainRewardAccount,
             config.issuingChainRewardAccount,
             logs_.journal("Federator"));
