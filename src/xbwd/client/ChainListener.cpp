@@ -36,6 +36,7 @@
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/jss.h>
 
+#include <charconv>
 #include <type_traits>
 
 namespace xbwd {
@@ -577,8 +578,49 @@ ChainListener::processMessage(Json::Value const& msg)
         }
         break;
         case TxnType::xChainCreateAccount: {
-            // TODO: Get create count from the metadata
-            std::optional<std::uint64_t> const createCount;
+            auto const createCount = [&]() -> std::optional<std::uint64_t> {
+                try
+                {
+                    auto af = meta[ripple::sfAffectedNodes.getJsonName()];
+                    for (auto const& node : af)
+                    {
+                        try
+                        {
+                            if (node[ripple::sfLedgerEntryType.getJsonName()] !=
+                                ripple::sfXChainBridge.getJsonName())
+                                continue;
+                            auto const& ff =
+                                node[ripple::sfFinalFields.getJsonName()];
+                            auto const& count =
+                                ff[ripple::sfXChainAccountCreateCount
+                                       .getJsonName()];
+                            if (count.isString())
+                            {
+                                auto const s = count.asString();
+                                std::uint64_t val;
+
+                                // TODO: Confirm that this will be encoded as
+                                // hex
+                                auto [p, ec] = std::from_chars(
+                                    s.data(), s.data() + s.size(), val, 16);
+
+                                if (ec != std::errc() ||
+                                    (p != s.data() + s.size()))
+                                    return {};
+                                return val;
+                            }
+                            return count.asUInt();
+                        }
+                        catch (...)
+                        {
+                        }
+                    }
+                }
+                catch (...)
+                {
+                }
+                return {};
+            }();
 
             if (!createCount)
             {
