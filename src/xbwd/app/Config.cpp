@@ -31,22 +31,22 @@ keyTypeFromJson(Json::Value const& jv, char const* key)
 Config::Config(Json::Value const& jv)
     : lockingchainIp{rpc::fromJson<beast::IP::Endpoint>(
           jv,
-          "lockingchain_endpoint")}
+          "LockingChainEndpoint")}
     , issuingchainIp{rpc::fromJson<beast::IP::Endpoint>(
           jv,
-          "issuingchain_endpoint")}
-    , rpcEndpoint{rpc::fromJson<beast::IP::Endpoint>(jv, "rpc_endpoint")}
-    , dataDir{rpc::fromJson<boost::filesystem::path>(jv, "db_dir")}
-    , keyType{keyTypeFromJson(jv, "signing_key_keytype")}
+          "IssuingChainEndpoint")}
+    , rpcEndpoint{rpc::fromJson<beast::IP::Endpoint>(jv, "RPCEndpoint")}
+    , dataDir{rpc::fromJson<boost::filesystem::path>(jv, "DBDir")}
+    , keyType{keyTypeFromJson(jv, "SigningKeyKeyType")}
     , signingKey{ripple::generateSecretKey(
           keyType,
-          rpc::fromJson<ripple::Seed>(jv, "signing_key_seed"))}
-    , bridge{rpc::fromJson<ripple::STXChainBridge>(jv, "bridge")}
+          rpc::fromJson<ripple::Seed>(jv, "SigningKeySeed"))}
+    , bridge{rpc::fromJson<ripple::STXChainBridge>(jv, "XChainBridge")}
     , lockingChainRewardAccount{rpc::fromJson<ripple::AccountID>(
           jv,
-          "lockingchain_reward_account")}
+          "LockingChainRewardAccount")}
     , issuingChainRewardAccount{
-          rpc::fromJson<ripple::AccountID>(jv, "issuingchain_reward_account")}
+          rpc::fromJson<ripple::AccountID>(jv, "IssuingChainRewardAccount")}
 {
 }
 

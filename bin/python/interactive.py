@@ -11,7 +11,7 @@ from typing import Callable, Dict, List, Optional, Union
 
 from app import App, balances_dataframe
 from command import AccountTx, Subscribe
-from common import Account, Asset, XRP, Bridge, XChainClaimProof
+from common import Account, Asset, XRP, Bridge, XChainClaimProof, eprint
 from transaction import (
     SetHook,
     Payment,
@@ -57,7 +57,7 @@ def _removesuffix(self: str, suffix: str) -> str:
         return self[:]
 
 
-class SidechainRepl(cmd.Cmd):
+class BridgeRepl(cmd.Cmd):
     """
     Simple repl for interacting with side chains
     """
@@ -1786,10 +1786,10 @@ class SidechainRepl(cmd.Cmd):
         params = {
             "account": src_account,
             "bridge": bridge,
-            "reward": Asset(value=reward_amt_value),
+            "reward": XRP(reward_amt_value),
         }
         if min_create_amt_value is not None:
-            params["min_account_create"] = Asset(value=min_create_amt_value)
+            params["min_account_create"] = XRP(min_create_amt_value)
         chain(XChainCreateBridge(**params))
         chain.maybe_ledger_accept()
 

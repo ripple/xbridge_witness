@@ -167,9 +167,9 @@ def witness_config_files(
     return result
 
 
-def account_id_from_secret(app: App, key: str) -> str:
+def account_id_from_secret(app: App, key: str, key_type="ed25519") -> str:
     # TODO: keytype should be a parameter from the config file
-    r = app(WalletPropose(seed=key, key_type="ed25519"))
+    r = app(WalletPropose(seed=key, key_type=key_type))
     return r["account_id"]
 
 
@@ -337,21 +337,32 @@ def setup_mainchain(mc_app: App, params: Params, setup_user_accounts: bool = Tru
 
     mc_app.maybe_ledger_accept()
 
-    # create the sidechain object
-    sidechain = Bridge(from_rpc_result=params.witness_configs[0]["XChainBridge"])
+    # create the bridge object
+    bridge = Bridge(from_rpc_result=params.witness_configs[0]["XChainBridge"])
     divide = 4 * len(params.witness_configs)
     by = 5
     quorum = (divide + by - 1) // by
     account_ids = [
-        account_id_from_secret(app=mc_app, key=wc["signing_key_seed"])
+        account_id_from_secret(
+            app=mc_app,
+            key=wc["SigningKeySeed"],
+            key_type=wc["SigningKeyKeyType"],
+        )
         for wc in params.witness_configs
     ]
     r = mc_app(
-        XChainCreateBridge(
+        SignerListSet(
             account=params.mc_door_account,
-            sidechain=sidechain,
             quorum=quorum,
             keys=account_ids,
+        )
+    )
+    r = mc_app(
+        XChainCreateBridge(
+            account=params.mc_door_account,
+            bridge=bridge,
+            reward=XRP(1),
+            min_account_create=XRP(1),
         )
     )
     mc_app.maybe_ledger_accept()
@@ -374,20 +385,31 @@ def setup_sidechain(sc_app: App, params: Params, setup_user_accounts: bool = Tru
     sc_app(LogLevel("fatal"))
 
     # create the sidechain object
-    sidechain = Bridge(from_rpc_result=params.witness_configs[0]["XChainBridge"])
+    bridge = Bridge(from_rpc_result=params.witness_configs[0]["XChainBridge"])
     divide = 4 * len(params.witness_configs)
     by = 5
     quorum = (divide + by - 1) // by
     account_ids = [
-        account_id_from_secret(app=sc_app, key=wc["signing_key_seed"])
+        account_id_from_secret(
+            app=sc_app,
+            key=wc["SigningKeySeed"],
+            key_type=wc["SigningKeyKeyType"],
+        )
         for wc in params.witness_configs
     ]
     sc_app(
-        XChainCreateBridge(
+        SignerListSet(
             account=params.sc_door_account,
-            sidechain=sidechain,
             quorum=quorum,
             keys=account_ids,
+        )
+    )
+    sc_app(
+        XChainCreateBridge(
+            account=params.sc_door_account,
+            bridge=bridge,
+            reward=XRP(1),
+            min_account_create=XRP(1),
         )
     )
     sc_app.maybe_ledger_accept()

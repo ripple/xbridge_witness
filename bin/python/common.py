@@ -342,43 +342,47 @@ class Bridge:
     def __init__(
         self,
         *,
-        lockingchain_door: Optional[Account] = None,
-        lockingchain_issue: Optional[Issue] = None,
-        issuingchain_door: Optional[Account] = None,
-        issuingchain_issue: Optional[Issue] = None,
+        locking_chain_door: Optional[Account] = None,
+        locking_chain_issue: Optional[Issue] = None,
+        issuing_chain_door: Optional[Account] = None,
+        issuing_chain_issue: Optional[Issue] = None,
         from_rpc_result: Optional[dict] = None,
     ):
         is_dict = from_rpc_result is not None
         is_individual = (
-            lockingchain_door is not None
-            and lockingchain_issue is not None
-            and issuingchain_door is not None
-            and issuingchain_issue is not None
+            locking_chain_door is not None
+            and locking_chain_issue is not None
+            and issuing_chain_door is not None
+            and issuing_chain_issue is not None
         )
         assert is_dict != is_individual
 
         if is_dict:
-            self.lockingchain_door = Account(account_id=from_rpc_result["lockingchain_door"])
-            self.lockingchain_issue = Issue(
-                from_rpc_result=from_rpc_result["lockingchain_issue"]
+            self.locking_chain_door = Account(
+                account_id=from_rpc_result["LockingChainDoor"]
             )
-            self.issuingchain_door = Account(account_id=from_rpc_result["issuingchain_door"])
-            self.issuingchain_issue = Issue(
-                from_rpc_result=from_rpc_result["issuingchain_issue"]
+            self.locking_chain_issue = Issue(
+                from_rpc_result=from_rpc_result["LockingChainIssue"]
+            )
+            self.issuing_chain_door = Account(
+                account_id=from_rpc_result["IssuingChainDoor"]
+            )
+            self.issuing_chain_issue = Issue(
+                from_rpc_result=from_rpc_result["IssuingChainIssue"]
             )
         else:
-            self.lockingchain_door = lockingchain_door
-            self.lockingchain_issue = lockingchain_issue
-            self.issuingchain_door = issuingchain_door
-            self.issuingchain_issue = issuingchain_issue
+            self.locking_chain_door = locking_chain_door
+            self.locking_chain_issue = locking_chain_issue
+            self.issuing_chain_door = issuing_chain_door
+            self.issuing_chain_issue = issuing_chain_issue
 
     def to_cmd_obj(self) -> dict:
         """Return an object suitalbe for use in a command"""
         result = {
-            "lockingchain_door": self.lockingchain_door.account_id,
-            "lockingchain_issue": self.lockingchain_issue.to_cmd_obj(),
-            "issuingchain_door": self.issuingchain_door.account_id,
-            "issuingchain_issue": self.issuingchain_issue.to_cmd_obj(),
+            "LockingChainDoor": self.locking_chain_door.account_id,
+            "LockingChainIssue": self.locking_chain_issue.to_cmd_obj(),
+            "IssuingChainDoor": self.issuing_chain_door.account_id,
+            "IssuingChainIssue": self.issuing_chain_issue.to_cmd_obj(),
         }
         return result
 
@@ -410,7 +414,7 @@ class XChainClaimProof:
         if is_dict:
             self.sidechain = Bridge(from_rpc_result=from_rpc_result["sidechain"])
             self.amount = Asset(from_rpc_result=from_rpc_result["amount"])
-            self.wasSrcSend = from_rpc_result["was_lockingchain_send"]
+            self.wasSrcSend = from_rpc_result["was_locking_chain_send"]
             self.signatures = from_rpc_result["signatures"]
             self.xChainSeq = from_rpc_result["xchain_seq"]
         else:
@@ -426,7 +430,7 @@ class XChainClaimProof:
             "sidechain": self.sidechain.to_cmd_obj(),
             "amount": self.amount.to_cmd_obj(),
             "signatures": self.signatures,
-            "was_lockingchain_send": self.wasSrcSend,
+            "was_locking_chain_send": self.wasSrcSend,
             "xchain_seq": self.xChainSeq,
         }
         return result

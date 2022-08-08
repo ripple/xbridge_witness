@@ -424,15 +424,15 @@ class XChainCreateClaimID(Transaction):
         txn = {
             **txn,
             "TransactionType": "XChainCreateClaimID",
-            "Bridge": self.bridge.to_cmd_obj(),
+            "XChainBridge": self.bridge.to_cmd_obj(),
         }
         return txn
 
 
 class XChainCommit(Transaction):
-    def __init__(self, *, sidechain: Bridge, claimID: int, amount: Asset, **rest):
+    def __init__(self, *, bridge: Bridge, claimID: int, amount: Asset, **rest):
         super().__init__(**rest)
-        self.sidechain = sidechain
+        self.bridge = bridge
         self.claimID = claimID
         self.amount = amount
 
@@ -441,7 +441,7 @@ class XChainCommit(Transaction):
         txn = {
             **txn,
             "TransactionType": "XChainCommit",
-            "Bridge": self.sidechain.to_cmd_obj(),
+            "XChainBridge": self.bridge.to_cmd_obj(),
             "Amount": self.amount.to_cmd_obj(),
             "XChainClaimID": self.claimID,
         }

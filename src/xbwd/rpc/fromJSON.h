@@ -153,8 +153,8 @@ fromJson(Json::Value const& jv, char const* key)
             " while constructing an IP::Endpoint");
 
     return beast::IP::Endpoint{
-        fromJson<boost::asio::ip::address>(v, "ip"),
-        fromJson<std::uint16_t>(v, "port")};
+        fromJson<boost::asio::ip::address>(v, "IP"),
+        fromJson<std::uint16_t>(v, "Port")};
 }
 
 template <>

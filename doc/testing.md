@@ -18,27 +18,28 @@ The attestation server uses a json config file. Here's an example:
 
 ```json
 {
-  "mainchain_endpoint": {
-    "ip": "127.0.0.1",
-    "port": 6005
+  "LockingChainEndpoint": {
+    "IP": "127.0.0.1",
+    "Port": 6005
   },
-  "sidechain_endpoint": {
-    "ip": "127.0.0.2",
-    "port": 6007
+  "IssuingChainEndpoint": {
+    "IP": "127.0.0.2",
+    "Port": 6007
   },
-  "rpc_endpoint": {
-    "ip": "127.0.0.3",
-    "port": 6010
+  "RPCEndpoint": {
+    "IP": "127.0.0.3",
+    "Port": 6010
   },
-  "db_dir": "/home/swd/data/witness/witness0/db",
-  "lockingchain_reward_account": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",
-  "issuingchain_reward_account": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
-  "signing_key_seed": "snwitEjg9Mr8n65cnqhATKcd1dQmv",
-  "sidechain": {
-    "src_chain_door": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",
-    "src_chain_issue": "XRP",
-    "dst_chain_door": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
-    "dst_chain_issue": "XRP"
+  "DBDir": "/home/swd/data/witness/witness0/db",
+  "SigningKeySeed": "snwitEjg9Mr8n65cnqhATKcd1dQmv",
+  "SigningKeyKeyType": "ed25519",
+  "LockingChainRewardAccount": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",
+  "IssuingChainRewardAccount": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
+  "XChainBridge": {
+    "LockingChainDoor": "rhWQzvdmhf5vFS35vtKUSUwNZHGT53qQsg",
+    "LockingChainIssue": "XRP",
+    "IssuingChainDoor": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
+    "IssuingChainIssue": "XRP"
   }
 }
 ```
