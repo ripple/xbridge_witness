@@ -1791,6 +1791,7 @@ class SidechainRepl(cmd.Cmd):
         if min_create_amt_value is not None:
             params["min_account_create"] = Asset(value=min_create_amt_value)
         chain(XChainCreateBridge(**params))
+        chain.maybe_ledger_accept()
 
     def complete_bridge_create(self, text, line, begidx, endidx):
         args = line.split()
@@ -1815,13 +1816,13 @@ class SidechainRepl(cmd.Cmd):
     ##################
 
     ##################
-    # xchain_seqnum_create
+    # xchain_claimid_create
 
-    def do_xchain_seqnum_create(self, line):
+    def do_xchain_claimid_create(self, line):
         args = line.split()
         if len(args) != 3:
             print(
-                f'Error: xchain_seqnum_create takes exactly three arguments. Type "help" for help.'
+                f'Error: xchain_claimid_create takes exactly three arguments. Type "help" for help.'
             )
             return
 
@@ -1854,10 +1855,10 @@ class SidechainRepl(cmd.Cmd):
 
         assert not args
 
-        chain(XChainClaimIDCreate(account=src_account, bridge=bridge))
+        chain(XChainCreateClaimID(account=src_account, bridge=bridge))
         chain.maybe_ledger_accept()
 
-    def complete_xchain_seqnum_create(self, text, line, begidx, endidx):
+    def complete_xchain_claimid_create(self, text, line, begidx, endidx):
         args = line.split()
         arg_num = len(args)
         if not text:
@@ -1870,32 +1871,32 @@ class SidechainRepl(cmd.Cmd):
             return self._complete_bridge_alias(text, line, chain_name=args[1])
         return []
 
-    def help_xchain_seqnum_create(self):
+    def help_xchain_claimid_create(self):
         print(
             "\n".join(
                 [
-                    f"xchain_seqnum_create (sidechain | mainchain) src_account bridge_alias",
+                    f"xchain_claimid_create (sidechain | mainchain) src_account bridge_alias",
                     "Create a sidechain sequence number (use get_last_txn_metadata to get the value)",
                 ]
             )
         )
 
-    # xchain_seqnum_create
+    # xchain_claimid_create
     ##################
 
     ##################
-    # xchain_transfer
-    def do_xchain_transfer(self, line):
+    # xchain_commit
+    def do_xchain_commit(self, line):
         try:
             args = line.split()
             if len(args) < 5:
                 print(
-                    f'Error: xchain_transfer takes at least five arguments. Type "help" for help.'
+                    f'Error: xchain_commit takes at least five arguments. Type "help" for help.'
                 )
                 return
             if len(args) > 6:
                 print(
-                    f'Error: xchain_transfer takes at most six arguments. Type "help" for help.'
+                    f'Error: xchain_commit takes at most six arguments. Type "help" for help.'
                 )
                 return
 
@@ -1991,7 +1992,7 @@ class SidechainRepl(cmd.Cmd):
             )
             traceback.print_exc()
 
-    def complete_xchain_transfer(self, text, line, begidx, endidx):
+    def complete_xchain_commit(self, text, line, begidx, endidx):
         args = line.split()
         arg_num = len(args)
         if not text:
@@ -2013,17 +2014,17 @@ class SidechainRepl(cmd.Cmd):
 
         return []
 
-    def help_xchain_transfer(self):
+    def help_xchain_commit(self):
         print(
             "\n".join(
                 [
-                    f"xchain_transfer (sidechain | mainchain) src_account bridge_alias seqnum amount [xrp | drops | iou_alias]",
+                    f"xchain_commit (sidechain | mainchain) src_account bridge_alias claimid amount [xrp | drops | iou_alias]",
                     "Initiate a sidechain transfer. Use xchain_claim to complete the transfer",
                 ]
             )
         )
 
-    # xchain_transfer
+    # xchain_commit
     ##################
 
     ##################
