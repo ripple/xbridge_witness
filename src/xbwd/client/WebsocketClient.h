@@ -38,7 +38,7 @@
 namespace xbwd {
 
 // TODO: Replace this class with `ServerHandler`
-class WebsocketClient
+class WebsocketClient : public std::enable_shared_from_this<WebsocketClient>
 {
     using error_code = boost::system::error_code;
 
@@ -63,9 +63,13 @@ class WebsocketClient
 
     std::atomic<bool> peerClosed_{true};
 
-    std::function<void(Json::Value const&)> callback_;
+    std::function<void(Json::Value const&)> onMessageCallback_;
     std::atomic<std::uint32_t> nextId_{0};
 
+    boost::asio::basic_waitable_timer<std::chrono::steady_clock> timer_;
+    boost::asio::ip::tcp::endpoint const ep_;
+    std::unordered_map<std::string, std::string> const headers_;
+    std::function<void()> onConnectCallback_;
     beast::Journal j_;
 
     void
@@ -74,13 +78,17 @@ class WebsocketClient
 public:
     // callback will be called from a io_service thread
     WebsocketClient(
-        std::function<void(Json::Value const&)> callback,
+        std::function<void(Json::Value const&)> onMessage,
+        std::function<void()> onConnect,
         boost::asio::io_service& ios,
         beast::IP::Endpoint const& ip,
         std::unordered_map<std::string, std::string> const& headers,
         beast::Journal j);
 
     ~WebsocketClient();
+
+    void
+    connect();
 
     // Returns command id that will be returned in the response
     std::uint32_t

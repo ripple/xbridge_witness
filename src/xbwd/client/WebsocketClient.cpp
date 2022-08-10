@@ -36,6 +36,8 @@
 
 namespace xbwd {
 
+auto constexpr CONNECT_TIMEOUT = std::chrono::seconds{5};
+
 template <class ConstBuffers>
 std::string
 WebsocketClient::buffer_string(ConstBuffers const& b)
@@ -52,6 +54,7 @@ void
 WebsocketClient::cleanup()
 {
     ios_.post(strand_.wrap([this] {
+        timer_.cancel();
         if (!peerClosed_)
         {
             {
@@ -83,7 +86,8 @@ WebsocketClient::shutdown()
 }
 
 WebsocketClient::WebsocketClient(
-    std::function<void(Json::Value const&)> callback,
+    std::function<void(Json::Value const&)> onMessage,
+    std::function<void()> onConnect,
     boost::asio::io_service& ios,
     beast::IP::Endpoint const& ip,
     std::unordered_map<std::string, std::string> const& headers,
@@ -92,43 +96,67 @@ WebsocketClient::WebsocketClient(
     , strand_(ios_)
     , stream_(ios_)
     , ws_(stream_)
-    , callback_(callback)
+    , onMessageCallback_(onMessage)
+    , timer_(ios)
+    , ep_(ip.address(), ip.port())
+    , headers_(headers)
+    , onConnectCallback_(onConnect)
     , j_{j}
 {
-    try
-    {
-        // TODO: Change all the beast::IP:Endpoints to boost endpoints
-        boost::asio::ip::tcp::endpoint const ep{ip.address(), ip.port()};
-        stream_.connect(ep);
-        peerClosed_ = false;
-        ws_.set_option(boost::beast::websocket::stream_base::decorator(
-            [&](boost::beast::websocket::request_type& req) {
-                for (auto const& h : headers)
-                    req.set(h.first, h.second);
-            }));
-        ws_.handshake(
-            ep.address().to_string() + ":" + std::to_string(ep.port()), "/");
-        ws_.async_read(
-            rb_,
-            strand_.wrap(std::bind(
-                &WebsocketClient::onReadMsg, this, std::placeholders::_1)));
-    }
-    catch (std::exception& e)
-    {
-        JLOGV(
-            j_.fatal(),
-            "WebsocketClient::exception connecting to endpoint",
-            ripple::jv("what", e.what()),
-            ripple::jv("ip", ip.address()),
-            ripple::jv("port", ip.port()));
-        cleanup();
-        throw;
-    }
 }
 
 WebsocketClient::~WebsocketClient()
 {
     shutdown();
+}
+
+void
+WebsocketClient::connect()
+{
+    std::lock_guard<std::mutex> l(shutdownM_);
+    if (isShutdown_)
+        return;
+
+    try
+    {
+        // TODO: Change all the beast::IP:Endpoints to boost endpoints
+        stream_.connect(ep_);
+        peerClosed_ = false;
+        ws_.set_option(boost::beast::websocket::stream_base::decorator(
+            [&](boost::beast::websocket::request_type& req) {
+              for (auto const& h : headers_)
+                  req.set(h.first, h.second);
+            }));
+        ws_.handshake(
+            ep_.address().to_string() + ":" + std::to_string(ep_.port()), "/");
+        ws_.async_read(
+            rb_,
+            strand_.wrap(std::bind(
+                &WebsocketClient::onReadMsg, this, std::placeholders::_1)));
+        onConnectCallback_();
+        JLOGV(
+            j_.info(),
+            "WebsocketClient connected to",
+            ripple::jv("ip", ep_.address()),
+            ripple::jv("port", ep_.port()));
+    }
+    catch (std::exception& e)
+    {
+        JLOGV(
+            j_.debug(),
+            "WebsocketClient::exception connecting to endpoint",
+            ripple::jv("what", e.what()),
+            ripple::jv("ip", ep_.address()),
+            ripple::jv("port", ep_.port()));
+        std::weak_ptr<WebsocketClient> wptr = shared_from_this();
+        timer_.expires_after(CONNECT_TIMEOUT);
+        timer_.async_wait([wptr](boost::system::error_code const& ec) {
+          if (ec == boost::asio::error::operation_aborted)
+              return;
+          if (auto ptr = wptr.lock(); ptr)
+              ptr->connect();
+        });
+    }
 }
 
 std::uint32_t
@@ -158,6 +186,7 @@ WebsocketClient::onReadMsg(error_code const& ec)
             ripple::jv("ec", ec));
         if (ec == boost::beast::websocket::error::closed)
             peerClosed_ = true;
+        connect();
         return;
     }
 
@@ -166,7 +195,7 @@ WebsocketClient::onReadMsg(error_code const& ec)
     jr.parse(buffer_string(rb_.data()), jval);
     rb_.consume(rb_.size());
     JLOGV(j_.trace(), "WebsocketClient::onReadMsg", ripple::jv("msg", jval));
-    callback_(jval);
+    onMessageCallback_(jval);
 
     std::lock_guard l{m_};
     ws_.async_read(

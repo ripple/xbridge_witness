@@ -49,7 +49,7 @@ private:
     mutable std::mutex m_;
     beast::Journal j_;
 
-    std::unique_ptr<WebsocketClient> wsClient_;
+    std::shared_ptr<WebsocketClient> wsClient_;
     mutable std::mutex callbacksMtx_;
 
     using RpcCallback = std::function<void(Json::Value const&)>;
@@ -96,6 +96,9 @@ public:
 private:
     void
     onMessage(Json::Value const& msg) EXCLUDES(callbacksMtx_);
+
+    void
+    onConnect();
 
     std::string const&
     chainName() const;

@@ -63,15 +63,22 @@ ChainListener::~ChainListener() = default;
 void
 ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
 {
-    wsClient_ = std::make_unique<WebsocketClient>(
+    wsClient_ = std::make_shared<WebsocketClient>(
         [self = shared_from_this()](Json::Value const& msg) {
             self->onMessage(msg);
         },
+        [self = shared_from_this()]() { self->onConnect(); },
         ios,
         ip,
         /*headers*/ std::unordered_map<std::string, std::string>{},
         j_);
 
+    wsClient_->connect();
+}
+
+void
+ChainListener::onConnect()
+{
     Json::Value params;
     params[ripple::jss::account_history_tx_stream] = Json::objectValue;
     params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
