@@ -1,3 +1,5 @@
+#include "ripple/protocol/SField.h"
+#include <soci/soci-backend.h>
 #include <xbwd/rpc/RPCHandler.h>
 
 #include <xbwd/app/App.h>
@@ -27,7 +29,9 @@ doStop(App& app, Json::Value const& in, Json::Value& result)
 {
     // TODO: This is a privilated command.
     result["request"] = in;
-    result["result"] = "stopping";
+    Json::Value status;
+    status["status"] = "stopping";
+    result["result"] = status;
     app.signalStop();
 }
 
@@ -35,7 +39,131 @@ void
 doServerInfo(App& app, Json::Value const& in, Json::Value& result)
 {
     result["request"] = in;
-    result["result"] = "normal";
+    Json::Value status;
+    status["status"] = "normal";
+    result["result"] = status;
+}
+
+void
+doSelectAll(
+    App& app,
+    Json::Value const& in,
+    Json::Value& result,
+    bool const wasLockingChainSend)
+
+{
+    // TODO: Remove me
+    //
+
+    result["request"] = in;
+
+    auto const& tblName = wasLockingChainSend
+        ? db_init::xChainLockingToIssuingTableName()
+        : db_init::xChainIssuingToLockingTableName();
+
+    {
+        auto session = app.getXChainTxnDB().checkoutDb();
+        soci::blob amtBlob(*session);
+        soci::blob bridgeBlob(*session);
+        soci::blob sendingAccountBlob(*session);
+        soci::blob rewardAccountBlob(*session);
+        soci::blob otherChainAccountBlob(*session);
+        soci::blob publicKeyBlob(*session);
+        soci::blob signatureBlob(*session);
+
+        std::string transID;
+        int ledgerSeq;
+        int claimID;
+        int success;
+
+        auto sql = fmt::format(
+            R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
+                         Bridge, SendingAccount, RewardAccount, OtherChainAccount,
+                         PublicKey, Signature FROM {table_name};
+            )sql",
+            fmt::arg("table_name", tblName));
+
+        soci::indicator otherChainAccountInd;
+        soci::statement st =
+            ((*session).prepare << sql,
+             soci::into(transID),
+             soci::into(ledgerSeq),
+             soci::into(claimID),
+             soci::into(success),
+             soci::into(amtBlob),
+             soci::into(bridgeBlob),
+             soci::into(sendingAccountBlob),
+             soci::into(rewardAccountBlob),
+             soci::into(otherChainAccountBlob, otherChainAccountInd),
+             soci::into(publicKeyBlob),
+             soci::into(signatureBlob));
+        st.execute();
+
+        std::vector<ripple::AttestationBatch::AttestationClaim> claims;
+        ripple::STXChainBridge bridge;
+        std::optional<ripple::STXChainBridge> firstBridge;
+        while (st.fetch())
+        {
+            ripple::PublicKey signingPK;
+            convert(publicKeyBlob, signingPK);
+
+            ripple::Buffer sigBuf;
+            convert(signatureBlob, sigBuf);
+
+            ripple::STAmount sendingAmount;
+            convert(amtBlob, sendingAmount, ripple::sfAmount);
+
+            ripple::AccountID sendingAccount;
+            convert(sendingAccountBlob, sendingAccount);
+
+            ripple::AccountID rewardAccount;
+            convert(rewardAccountBlob, rewardAccount);
+
+            std::optional<ripple::AccountID> optDst;
+            if (otherChainAccountInd == soci::i_ok)
+            {
+                optDst.emplace();
+                convert(otherChainAccountBlob, *optDst);
+            }
+
+            convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            if (!firstBridge)
+            {
+                firstBridge = bridge;
+            }
+            else
+            {
+                assert(bridge == *firstBridge);
+            }
+
+            claims.emplace_back(
+                signingPK,
+                sigBuf,
+                sendingAccount,
+                sendingAmount,
+                rewardAccount,
+                wasLockingChainSend,
+                claimID,
+                optDst);
+        }
+
+        ripple::STXChainAttestationBatch batch{
+            bridge, claims.begin(), claims.end()};
+        result["result"]["XChainAttestationBatch"] =
+            batch.getJson(ripple::JsonOptions::none);
+    }
+}
+
+void
+doSelectAllLocking(App& app, Json::Value const& in, Json::Value& result)
+{
+    return doSelectAll(app, in, result, /*wasLockingSend*/ true);
+}
+
+void
+doSelectAllIssuing(App& app, Json::Value const& in, Json::Value& result)
+{
+    return doSelectAll(app, in, result, /*wasLockingSend*/ false);
 }
 
 void
@@ -48,8 +176,6 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
     auto optDoor = optFromJson<ripple::AccountID>(in, "door");
     auto optSendingAccount =
         optFromJson<ripple::AccountID>(in, "sending_account");
-    auto optRewardAccount =
-        optFromJson<ripple::AccountID>(in, "reward_account");
     auto optDst = optFromJson<ripple::AccountID>(in, "destination");
     {
         auto const missingOrInvalidField = [&]() -> std::string {
@@ -63,8 +189,6 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                 return "door";
             if (!optSendingAccount)
                 return "sending_account";
-            if (!optRewardAccount)
-                return "reward_account";
             return {};
         }();
         if (!missingOrInvalidField.empty())
@@ -79,7 +203,6 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
     auto const& sendingAccount = *optSendingAccount;
     auto const& bridge = *optBridge;
     auto const& sendingAmount = *optAmt;
-    auto const& rewardAccount = *optRewardAccount;
     auto const& claimID = *optClaimID;
 
     bool const wasLockingChainSend =
@@ -98,17 +221,6 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         ? db_init::xChainLockingToIssuingTableName()
         : db_init::xChainIssuingToLockingTableName();
 
-    std::vector<std::uint8_t> const encodedBridge = [&] {
-        ripple::Serializer s;
-        bridge.add(s);
-        return std::move(s.modData());
-    }();
-
-    auto const encodedAmt = [&]() -> std::vector<std::uint8_t> {
-        ripple::Serializer s;
-        sendingAmount.add(s);
-        return std::move(s.modData());
-    }();
     {
         auto session = app.getXChainTxnDB().checkoutDb();
         soci::blob amtBlob(*session);
@@ -119,14 +231,16 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
-        convert(encodedAmt, amtBlob);
-        convert(encodedBridge, bridgeBlob);
+        convert(sendingAmount, amtBlob);
+        convert(bridge, bridgeBlob);
         convert(sendingAccount, sendingAccountBlob);
+        soci::indicator sigInd;
         if (optDst)
+        {
             convert(*optDst, otherChainAccountBlob);
 
-        auto sql = fmt::format(
-            R"sql(SELECT Signature, PublicKey, RewardAccount FROM {table_name}
+            auto sql = fmt::format(
+                R"sql(SELECT Signature, PublicKey, RewardAccount FROM {table_name}
                   WHERE ClaimID = :claimID and
                         Success = 1 and
                         DeliveredAmt = :amt and
@@ -134,15 +248,42 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                         SendingAccount = :sendingAccount and
                         OtherChainAccount = :otherChainAccount;
             )sql",
-            fmt::arg("table_name", tblName));
+                fmt::arg("table_name", tblName));
 
-        *session << sql, soci::into(signatureBlob), soci::into(publicKeyBlob),
-            soci::into(rewardAccountBlob), soci::use(*optClaimID),
-            soci::use(amtBlob), soci::use(bridgeBlob),
-            soci::use(sendingAccountBlob), soci::use(otherChainAccountBlob);
+            *session << sql, soci::into(signatureBlob, sigInd),
+                soci::into(publicKeyBlob), soci::into(rewardAccountBlob),
+                soci::use(*optClaimID), soci::use(amtBlob),
+                soci::use(bridgeBlob), soci::use(sendingAccountBlob),
+                soci::use(otherChainAccountBlob);
+        }
+        else
+        {
+            auto sql = fmt::format(
+                R"sql(SELECT Signature, PublicKey, RewardAccount, OtherChainAccount FROM {table_name}
+                  WHERE ClaimID = :claimID and
+                        Success = 1 and
+                        DeliveredAmt = :amt and
+                        Bridge = :bridge and
+                        SendingAccount = :sendingAccount;
+            )sql",
+                fmt::arg("table_name", tblName));
+
+            soci::indicator otherChainAccountInd;
+            *session << sql, soci::into(signatureBlob, sigInd),
+                soci::into(publicKeyBlob), soci::into(rewardAccountBlob),
+                soci::into(otherChainAccountBlob, otherChainAccountInd),
+                soci::use(*optClaimID), soci::use(amtBlob),
+                soci::use(bridgeBlob), soci::use(sendingAccountBlob);
+
+            if (otherChainAccountInd == soci::i_ok)
+            {
+                optDst.emplace();
+                convert(otherChainAccountBlob, *optDst);
+            }
+        }
 
         // TODO: Check for multiple values
-        if (signatureBlob.get_len() > 0 && publicKeyBlob.get_len() > 0 &&
+        if (sigInd == soci::i_ok && publicKeyBlob.get_len() > 0 &&
             rewardAccountBlob.get_len() > 0)
         {
             ripple::AccountID rewardAccount;
@@ -337,6 +478,8 @@ std::unordered_map<std::string, CmdFun> const handlers = [] {
     r.emplace("server_info"s, doServerInfo);
     r.emplace("witness"s, doWitness);
     r.emplace("witness_account_create"s, doWitnessAccountCreate);
+    r.emplace("select_all_locking"s, doSelectAllLocking);
+    r.emplace("select_all_issuing"s, doSelectAllIssuing);
     return r;
 }();
 }  // namespace

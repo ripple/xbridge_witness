@@ -1,6 +1,7 @@
 import binascii
 import datetime
 import logging
+import json
 from typing import List, Optional, Union
 import pandas as pd
 import pytz
@@ -337,7 +338,7 @@ class Issue:
 
 
 class Bridge:
-    """Parameters for a sidechain"""
+    """Parameters for an xchain bridge"""
 
     def __init__(
         self,
@@ -385,6 +386,12 @@ class Bridge:
             "IssuingChainIssue": self.issuing_chain_issue.to_cmd_obj(),
         }
         return result
+
+    def __str__(self) -> str:
+        return json.dumps(self.to_cmd_obj(), indent=1)
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 class XChainClaimProof:

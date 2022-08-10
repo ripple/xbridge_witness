@@ -415,9 +415,13 @@ class XChainCreateBridge(Transaction):
 
 
 class XChainCreateClaimID(Transaction):
-    def __init__(self, *, bridge: Bridge, **rest):
+    def __init__(
+        self, *, bridge: Bridge, reward: Asset, other_chain_account: Account, **rest
+    ):
         super().__init__(**rest)
         self.bridge = bridge
+        self.reward = reward
+        self.other_chain_account = other_chain_account
 
     def to_cmd_obj(self) -> dict:
         txn = super().to_cmd_obj()
@@ -425,6 +429,8 @@ class XChainCreateClaimID(Transaction):
             **txn,
             "TransactionType": "XChainCreateClaimID",
             "XChainBridge": self.bridge.to_cmd_obj(),
+            "SignatureReward": self.reward.to_cmd_obj(),
+            "OtherChainAccount": self.other_chain_account.account_id,
         }
         return txn
 

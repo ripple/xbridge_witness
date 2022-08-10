@@ -264,20 +264,19 @@ ChainListener::processMessage(Json::Value const& msg)
     auto const meta = msg[ripple::jss::meta];
 
     auto const txnBridge = [&]() -> std::optional<ripple::STXChainBridge> {
-        if (msg.isMember(ripple::jss::XChainBridge))
+        try
         {
-            try
-            {
-                if (!msg.isMember(ripple::jss::transaction))
-                    return {};
-                auto const txn = msg[ripple::jss::transaction];
-                return ripple::STXChainBridge(txn[ripple::jss::XChainBridge]);
-            }
-            catch (...)
-            {
-            }
+            if (!msg.isMember(ripple::jss::transaction))
+                return {};
+            auto const txn = msg[ripple::jss::transaction];
+            if (!txn.isMember(ripple::jss::XChainBridge))
+                return {};
+            return ripple::STXChainBridge(txn[ripple::jss::XChainBridge]);
         }
-        return std::nullopt;
+        catch (...)
+        {
+        }
+        return {};
     }();
 
     enum class TxnType { xChainCommit, xChainClaim, xChainCreateAccount };

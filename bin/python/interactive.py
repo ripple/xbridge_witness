@@ -57,6 +57,12 @@ def _removesuffix(self: str, suffix: str) -> str:
         return self[:]
 
 
+def _other_chain_name(chain_name: str) -> str:
+    if chain_name == "mainchain":
+        return "sidechain"
+    return "mainchain"
+
+
 class BridgeRepl(cmd.Cmd):
     """
     Simple repl for interacting with side chains
@@ -1694,9 +1700,9 @@ class BridgeRepl(cmd.Cmd):
             print(f'Error: bridge_aliases at most one argument. Type "help" for help.')
             return
         if len(args) == 1:
-            print(f"self.bridge_aliases[args[0]]")
+            print(f"{self.bridge_aliases[args[0]]}")
         else:
-            print(f"self.bridge_aliases")
+            print(f"{self.bridge_aliases}")
 
     def complete_bridge_aliases(self, text, line, begidx, endidx):
         return self._complete_bridge_alias(text, line, begidx, endidx)
@@ -1820,7 +1826,7 @@ class BridgeRepl(cmd.Cmd):
 
     def do_xchain_claimid_create(self, line):
         args = line.split()
-        if len(args) != 3:
+        if len(args) != 5:
             print(
                 f'Error: xchain_claimid_create takes exactly three arguments. Type "help" for help.'
             )
@@ -1835,8 +1841,10 @@ class BridgeRepl(cmd.Cmd):
 
         if args[0] == "mainchain":
             chain = self.mc_app
+            other_chain = self.sc_app
         else:
             chain = self.sc_app
+            other_chain = self.mc_app
         args.pop(0)
 
         nickname = args[0]
@@ -1844,6 +1852,27 @@ class BridgeRepl(cmd.Cmd):
             print(f"Error: {nickname} is not in the address book")
             return
         src_account = chain.account_from_alias(nickname)
+        args.pop(0)
+
+        nickname = args[0]
+        if not other_chain.is_alias(nickname):
+            print(f"Error: {nickname} is not in the address book")
+            return
+        other_chain_account = other_chain.account_from_alias(nickname)
+        args.pop(0)
+
+        reward_amt_value = None
+        try:
+            reward_amt_value = int(args[0])
+        except:
+            try:
+                reward_amt_value = float(args[0])
+            except:
+                pass
+
+        if reward_amt_value is None:
+            print(f"Error: {args[0]} is an invalid amount.")
+            return
         args.pop(0)
 
         bridge_alias = args[0]
@@ -1855,7 +1884,14 @@ class BridgeRepl(cmd.Cmd):
 
         assert not args
 
-        chain(XChainCreateClaimID(account=src_account, bridge=bridge))
+        chain(
+            XChainCreateClaimID(
+                account=src_account,
+                other_chain_account=other_chain_account,
+                bridge=bridge,
+                reward=XRP(reward_amt_value),
+            )
+        )
         chain.maybe_ledger_accept()
 
     def complete_xchain_claimid_create(self, text, line, begidx, endidx):
@@ -1867,7 +1903,13 @@ class BridgeRepl(cmd.Cmd):
             return self._complete_chain(text, line)
         elif arg_num == 3:  # account
             return self._complete_account(text, line, chain_name=args[1])
-        elif arg_num == 4:  # sidechain
+        elif arg_num == 4:  # account
+            return self._complete_account(
+                text, line, chain_name=_other_chain_name(args[1])
+            )
+        elif arg_num == 5:  # reward
+            pass
+        elif arg_num == 6:  # bridge
             return self._complete_bridge_alias(text, line, chain_name=args[1])
         return []
 
@@ -1875,7 +1917,7 @@ class BridgeRepl(cmd.Cmd):
         print(
             "\n".join(
                 [
-                    f"xchain_claimid_create (sidechain | mainchain) src_account bridge_alias",
+                    f"xchain_claimid_create (sidechain | mainchain) src_account other_chain_account, reward bridge_alias",
                     "Create a sidechain sequence number (use get_last_txn_metadata to get the value)",
                 ]
             )
@@ -1932,15 +1974,15 @@ class BridgeRepl(cmd.Cmd):
 
             bridge_alias = args[0]
             if not bridge_alias in self.bridge_aliases:
-                print(f"Error: {sidechain} is not a known sidechain")
+                print(f"Error: {bridge_alias} is not a known bridge")
                 return
             args.pop(0)
-            sidechain = self.bridge_aliases[bridge_alias]
+            bridge = self.bridge_aliases[bridge_alias]
 
             try:
-                xchain_seq = int(args[0])
+                claim_id = int(args[0])
             except:
-                print(f"Error: Expected the xchain_seqnum: {args[0]} to be an integer")
+                print(f"Error: Expected the claim_id: {args[0]} to be an integer")
                 return
             args.pop(0)
 
@@ -1979,8 +2021,8 @@ class BridgeRepl(cmd.Cmd):
             chain(
                 XChainCommit(
                     account=src_account,
-                    sidechain=sidechain,
-                    xChainSeq=xchain_seq,
+                    bridge=bridge,
+                    claimID=claim_id,
                     amount=amt,
                 )
             )

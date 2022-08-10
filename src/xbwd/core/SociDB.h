@@ -37,6 +37,8 @@
 #include <ripple/basics/Log.h>
 #include <ripple/basics/base_uint.h>
 #include <ripple/protocol/PublicKey.h>
+#include <ripple/protocol/STAmount.h>
+#include <ripple/protocol/STXChainBridge.h>
 
 #define SOCI_USE_BOOST
 #include <cstdint>
@@ -93,6 +95,18 @@ convert(ripple::PublicKey const& from, soci::blob& to);
 
 void
 convert(soci::blob& from, ripple::PublicKey& to);
+
+void
+convert(ripple::STAmount const& from, soci::blob& to);
+
+void
+convert(soci::blob& from, ripple::STAmount& to, ripple::SField const& f);
+
+void
+convert(ripple::STXChainBridge const& from, soci::blob& to);
+
+void
+convert(soci::blob& from, ripple::STXChainBridge& to, ripple::SField const& f);
 
 template <std::size_t Bits, class Tag = void>
 void

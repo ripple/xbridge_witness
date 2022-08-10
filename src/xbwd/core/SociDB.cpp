@@ -19,6 +19,8 @@
 
 #include "ripple/basics/Slice.h"
 #include "ripple/protocol/PublicKey.h"
+#include "ripple/protocol/SField.h"
+#include "ripple/protocol/Serializer.h"
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated"
@@ -31,6 +33,8 @@
 #include <ripple/core/DatabaseCon.h>
 #include <ripple/core/SociDB.h>
 #include <ripple/protocol/PublicKey.h>
+#include <ripple/protocol/STAmount.h>
+#include <ripple/protocol/STXChainBridge.h>
 
 #include <boost/filesystem.hpp>
 
@@ -179,6 +183,40 @@ convert(soci::blob& from, ripple::PublicKey& to)
     std::vector<std::uint8_t> tmp;
     convert(from, tmp);
     to = ripple::PublicKey{ripple::makeSlice(tmp)};
+}
+
+void
+convert(ripple::STAmount const& from, soci::blob& to)
+{
+    ripple::Serializer s;
+    from.add(s);
+    to.write(0, reinterpret_cast<char const*>(s.data()), s.size());
+}
+
+void
+convert(soci::blob& from, ripple::STAmount& to, ripple::SField const& f)
+{
+    std::vector<std::uint8_t> tmp;
+    convert(from, tmp);
+    ripple::SerialIter s(tmp.data(), tmp.size());
+    to = ripple::STAmount{s, f};
+}
+
+void
+convert(ripple::STXChainBridge const& from, soci::blob& to)
+{
+    ripple::Serializer s;
+    from.add(s);
+    to.write(0, reinterpret_cast<char const*>(s.data()), s.size());
+}
+
+void
+convert(soci::blob& from, ripple::STXChainBridge& to, ripple::SField const& f)
+{
+    std::vector<std::uint8_t> tmp;
+    convert(from, tmp);
+    ripple::SerialIter s(tmp.data(), tmp.size());
+    to = ripple::STXChainBridge{s, f};
 }
 
 }  // namespace xbwd
