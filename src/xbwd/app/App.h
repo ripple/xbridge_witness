@@ -4,6 +4,7 @@
 #include "ripple/protocol/STXChainBridge.h"
 #include <xbwd/app/Config.h>
 #include <xbwd/core/DatabaseCon.h>
+#include <xbwd/rpc/ServerHandler.h>
 
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/protocol/PublicKey.h>
@@ -26,13 +27,26 @@ class STAmount;
 namespace xbwd {
 
 class Federator;
-class ServerHandler;
 
-namespace rpc {
-class ServerHandler;
-}
+class BasicApp
+{
+protected:
+    std::optional<boost::asio::io_service::work> work_;
+    std::vector<std::thread> threads_;
+    boost::asio::io_service io_service_;
 
-class App
+public:
+    BasicApp(std::size_t numberOfThreads);
+    ~BasicApp();
+
+    boost::asio::io_service&
+    get_io_service()
+    {
+        return io_service_;
+    }
+};
+
+class App : public BasicApp
 {
     ripple::Logs logs_;
     beast::Journal j_;
@@ -40,9 +54,6 @@ class App
     // Database for cross chain transactions
     DatabaseCon xChainTxnDB_;
 
-    std::optional<boost::asio::io_service::work> work_;
-    std::vector<std::thread> threads_;
-    boost::asio::io_service io_service_;
     boost::asio::signal_set signals_;
 
     std::shared_ptr<Federator> federator_;
@@ -58,7 +69,6 @@ public:
         std::unique_ptr<config::Config> config,
         beast::severities::Severity logLevel);
 
-    ~App();
 
     bool
     setup();
@@ -78,8 +88,6 @@ public:
     DatabaseCon&
     getXChainTxnDB();
 
-    boost::asio::io_service&
-    get_io_service();
 
     config::Config&
     config();

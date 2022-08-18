@@ -15,10 +15,34 @@
 
 namespace xbwd {
 
+BasicApp::BasicApp(std::size_t numberOfThreads)
+{
+    work_.emplace(io_service_);
+    threads_.reserve(numberOfThreads);
+
+    while (numberOfThreads--)
+    {
+        threads_.emplace_back([this, numberOfThreads]() {
+            beast::setCurrentThreadName(
+                "io svc #" + std::to_string(numberOfThreads));
+            this->io_service_.run();
+        });
+    }
+}
+
+BasicApp::~BasicApp()
+{
+    work_.reset();
+
+    for (auto& t : threads_)
+        t.join();
+}
+
 App::App(
     std::unique_ptr<config::Config> config,
     beast::severities::Severity logLevel)
-    : logs_(logLevel)
+    : BasicApp(std::thread::hardware_concurrency())
+    , logs_(logLevel)
     , j_(logs_.journal("App"))
     , xChainTxnDB_(
           config->dataDir,
@@ -29,18 +53,6 @@ App::App(
     , config_(std::move(config))
 {
     // TODO initialize the public and secret keys
-    int numThreads = std::thread::hardware_concurrency();
-    work_.emplace(io_service_);
-    threads_.reserve(numThreads);
-
-    while (numThreads--)
-    {
-        threads_.emplace_back([this, numThreads]() {
-            beast::setCurrentThreadName(
-                "io svc #" + std::to_string(numThreads));
-            this->io_service_.run();
-        });
-    }
 
     try
     {
@@ -68,14 +80,6 @@ App::App(
         work_.reset();
         throw;
     }
-}
-
-App::~App()
-{
-    work_.reset();
-
-    for (auto& t : threads_)
-        t.join();
 }
 
 bool
@@ -163,11 +167,6 @@ App::getXChainTxnDB()
     return xChainTxnDB_;
 }
 
-boost::asio::io_service&
-App::get_io_service()
-{
-    return io_service_;
-}
 
 void
 App::signalStop()
