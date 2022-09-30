@@ -102,13 +102,34 @@ struct XChainTransferResult
     toJson() const;
 };
 
+struct XChainAttestsResult
+{
+    ChainType chainType_;
+    std::uint32_t accountSqn_;
+    ripple::TER ter_;
+
+    Json::Value
+    toJson() const;
+};
+
+struct NewLedger
+{
+    ChainType chainType_;
+    std::uint32_t ledgerIndex_;
+    std::uint32_t fee_;
+
+    Json::Value
+    toJson() const;
+};
 }  // namespace event
 
 using FederatorEvent = std::variant<
     event::XChainCommitDetected,
     event::XChainAccountCreateCommitDetected,
     event::HeartbeatTimer,
-    event::XChainTransferResult>;
+    event::XChainTransferResult,
+    event::XChainAttestsResult,
+    event::NewLedger>;
 
 Json::Value
 toJson(FederatorEvent const& event);

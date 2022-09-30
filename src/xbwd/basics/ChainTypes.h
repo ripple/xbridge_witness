@@ -34,6 +34,12 @@ to_string(ChainDir cd)
     return r;
 }
 
+inline ChainType
+otherChain(ChainType ct)
+{
+    return ct == ChainType::locking ? ChainType::issuing : ChainType::locking;
+}
+
 // Array indexed by an enum class
 template <class T>
 class ChainArray

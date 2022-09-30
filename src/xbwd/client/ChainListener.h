@@ -43,8 +43,9 @@ public:
     enum class IsMainchain { no, yes };
 
 private:
-    bool const isMainchain_;
+    bool const isMainchain_;  // TODO change to isLockingChain?
     ripple::STXChainBridge const bridge_;
+    std::string witnessAccountStr_;
     std::weak_ptr<Federator> federator_;
     mutable std::mutex m_;
     beast::Journal j_;
@@ -58,7 +59,8 @@ private:
 public:
     ChainListener(
         IsMainchain isMainchain,
-        ripple::STXChainBridge const sidechain_,
+        ripple::STXChainBridge const sidechain,
+        std::optional<ripple::AccountID> submitAccountOpt,
         std::weak_ptr<Federator>&& federator,
         beast::Journal j);
 

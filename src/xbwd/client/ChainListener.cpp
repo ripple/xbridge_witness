@@ -46,10 +46,14 @@ class Federator;
 ChainListener::ChainListener(
     IsMainchain isMainchain,
     ripple::STXChainBridge const sidechain,
+    std::optional<ripple::AccountID> submitAccountOpt,
     std::weak_ptr<Federator>&& federator,
     beast::Journal j)
     : isMainchain_{isMainchain == IsMainchain::yes}
     , bridge_{sidechain}
+    , witnessAccountStr_(
+          submitAccountOpt ? ripple::toBase58(*submitAccountOpt)
+                           : std::string{})
     , federator_{std::move(federator)}
     , j_{j}
 {
@@ -85,6 +89,13 @@ ChainListener::onConnect()
         ripple::toBase58(
             isMainchain_ ? bridge_.lockingChainDoor()
                          : bridge_.issuingChainDoor());
+    if (!witnessAccountStr_.empty())
+    {
+        params[ripple::jss::streams] = Json::arrayValue;
+        params[ripple::jss::streams].append("ledger");
+        params[ripple::jss::accounts] = Json::arrayValue;
+        params[ripple::jss::accounts].append(witnessAccountStr_);
+    }
     send("subscribe", params);
 }
 
@@ -180,9 +191,8 @@ ChainListener::onMessage(Json::Value const& msg)
         JLOGV(
             j_.trace(),
             "ChainListener onMessage, reply to a callback",
-            ripple::jv("msg", msg));
-        assert(msg.isMember(ripple::jss::result));
-        (*callbackOpt)(msg[ripple::jss::result]);
+            ripple::jv("msg", msg.toStyledString()));
+        (*callbackOpt)(msg);
     }
     else
     {
@@ -199,9 +209,76 @@ ChainListener::processMessage(Json::Value const& msg)
 
     JLOGV(
         j_.trace(),
-        "chain listener message",
-        ripple::jv("msg", msg),
+        "chain listener process message",
+        ripple::jv("msg", msg.toStyledString()),
         ripple::jv("isMainchain", isMainchain_));
+
+    // TODO two formats, consider only use 2nd
+    /*
+    {"msg": "{
+       "id" : 0,
+       "jsonrpc" : "2.0",
+       "result" : {
+          "fee_base" : 10,
+          "fee_ref" : 10,
+          "ledger_hash" :
+    "ABEF4002A5656F61AD2AF8C324DFB88993A2707EF8F2680065306A3AE1DD5572",
+          "ledger_index" : 24,
+          "ledger_time" : 718263410,
+          "reserve_base" : 5000000,
+          "reserve_inc" : 1000000,
+          "validated_ledgers" : "2-24",
+          "warning" : "account_history_tx_stream is an experimental feature and
+    likely to be removed in the future"
+       },
+       "ripplerpc" : "2.0",
+       "status" : "success",
+       "type" : "response"
+    }
+    ", "isMainchain": true, "jlogId": 213}
+
+     {"msg": "{
+       "fee_base" : 10,
+       "fee_ref" : 10,
+       "ledger_hash" :
+    "9DE7A38E33F87566C7E120D3A3D327E4F792FB8730E792DEB39E3D3D4F2B2406",
+       "ledger_index" : 25,
+       "ledger_time" : 718263950,
+       "reserve_base" : 5000000,
+       "reserve_inc" : 1000000,
+       "txn_count" : 1,
+       "type" : "ledgerClosed", //not always have
+       "validated_ledgers" : "2-25"
+    }
+    ", "isMainchain": true, "jlogId": 213}
+    */
+
+    auto tryPushNewLedgerEvent = [&](Json::Value const& result) -> bool {
+        if (result.isMember(ripple::jss::fee_base) &&
+            result[ripple::jss::fee_base].isIntegral() &&
+            result.isMember(ripple::jss::ledger_index) &&
+            result[ripple::jss::ledger_index].isIntegral() &&
+            result.isMember(ripple::jss::reserve_base) &&
+            result.isMember(ripple::jss::reserve_inc) &&
+            result.isMember(ripple::jss::fee_ref) &&
+            result.isMember(ripple::jss::validated_ledgers))
+        {
+            using namespace event;
+            NewLedger e{
+                isMainchain_ ? ChainType::locking : ChainType::issuing,
+                result[ripple::jss::ledger_index].asUInt(),
+                result[ripple::jss::fee_base].asUInt()};
+            pushEvent(std::move(e));
+            return true;
+        }
+        return false;
+    };
+
+    if (msg.isMember(ripple::jss::result) &&
+        tryPushNewLedgerEvent(msg[ripple::jss::result]))
+        return;
+    else if (tryPushNewLedgerEvent(msg))
+        return;
 
     if (!msg.isMember(ripple::jss::validated) ||
         !msg[ripple::jss::validated].asBool())
@@ -221,17 +298,6 @@ ChainListener::processMessage(Json::Value const& msg)
             j_.trace(),
             "ignoring listener message",
             ripple::jv("reason", "no engine result code"),
-            ripple::jv("msg", msg),
-            ripple::jv("chain_name", chainName()));
-        return;
-    }
-
-    if (!msg.isMember(ripple::jss::account_history_tx_index))
-    {
-        JLOGV(
-            j_.trace(),
-            "ignoring listener message",
-            ripple::jv("reason", "no account history tx index"),
             ripple::jv("msg", msg),
             ripple::jv("chain_name", chainName()));
         return;
@@ -264,6 +330,40 @@ ChainListener::processMessage(Json::Value const& msg)
     }();
 
     bool const txnSuccess = ripple::isTesSuccess(txnTER);
+
+    if (fieldMatchesStr(msg, ripple::jss::type, ripple::jss::transaction))
+    {
+        auto const txn = msg[ripple::jss::transaction];
+        if (fieldMatchesStr(
+                txn,
+                ripple::jss::TransactionType,
+                ripple::jss::XChainAddAttestation) &&
+            fieldMatchesStr(
+                txn, ripple::jss::Account, witnessAccountStr_.c_str()) &&
+            txn.isMember(ripple::jss::Sequence) &&
+            txn[ripple::jss::Sequence].isIntegral())
+        {
+            auto const txnSeq = txn[ripple::jss::Sequence].asUInt();
+            using namespace event;
+            XChainAttestsResult e{
+                isMainchain_ ? ChainType::locking : ChainType::issuing,
+                txnSeq,
+                txnTER};
+            pushEvent(std::move(e));
+            return;
+        }
+    }
+
+    if (!msg.isMember(ripple::jss::account_history_tx_index))
+    {
+        JLOGV(
+            j_.trace(),
+            "ignoring listener message",
+            ripple::jv("reason", "no account history tx index"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName()));
+        return;
+    }
 
     // values < 0 are historical txns. values >= 0 are new transactions. Only
     // the initial sync needs historical txns.

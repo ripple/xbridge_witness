@@ -38,6 +38,7 @@ getTxn(
     ripple::AccountID const& acc,
     ripple::STXChainAttestationBatch const& batch,
     std::uint32_t seq,
+    std::uint32_t lastLedgerSeq,
     ripple::XRPAmount const& fee)
 {
     using namespace ripple;
@@ -49,7 +50,7 @@ getTxn(
         batch.getJson(JsonOptions::none);
     txnJson[jss::Sequence] = seq;
     txnJson[jss::Fee] = to_string(fee);
-
+    txnJson[jss::LastLedgerSequence] = lastLedgerSeq;
     return txnJson;
 };
 
@@ -58,6 +59,7 @@ getSignedTxn(
     ripple::AccountID const& acc,
     ripple::STXChainAttestationBatch const& batch,
     std::uint32_t seq,
+    std::uint32_t lastLedgerSeq,
     ripple::XRPAmount const& fee,
     ripple::PublicKey const& pk,
     ripple::SecretKey const& sk,
@@ -65,7 +67,7 @@ getSignedTxn(
 {
     using namespace ripple;
 
-    auto const txnJson = getTxn(acc, batch, seq, fee);
+    auto const txnJson = getTxn(acc, batch, seq, lastLedgerSeq, fee);
 
     try
     {

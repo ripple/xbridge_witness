@@ -124,8 +124,8 @@ WebsocketClient::connect()
         peerClosed_ = false;
         ws_.set_option(boost::beast::websocket::stream_base::decorator(
             [&](boost::beast::websocket::request_type& req) {
-              for (auto const& h : headers_)
-                  req.set(h.first, h.second);
+                for (auto const& h : headers_)
+                    req.set(h.first, h.second);
             }));
         ws_.handshake(
             ep_.address().to_string() + ":" + std::to_string(ep_.port()), "/");
@@ -153,10 +153,10 @@ WebsocketClient::connect()
         std::weak_ptr<WebsocketClient> wptr = shared_from_this();
         timer_.expires_after(CONNECT_TIMEOUT);
         timer_.async_wait([wptr](boost::system::error_code const& ec) {
-          if (ec == boost::asio::error::operation_aborted)
-              return;
-          if (auto ptr = wptr.lock(); ptr)
-              ptr->connect();
+            if (ec == boost::asio::error::operation_aborted)
+                return;
+            if (auto ptr = wptr.lock(); ptr)
+                ptr->connect();
         });
     }
 }

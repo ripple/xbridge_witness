@@ -96,6 +96,28 @@ XChainTransferResult::toJson() const
     return result;
 }
 
+Json::Value
+XChainAttestsResult::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["eventType"] = "XChainAttestsResult";
+    result["chainType"] = to_string(chainType_);
+    result["accountSequence"] = accountSqn_;
+    result["ter"] = transHuman(ter_);
+    return result;
+}
+
+Json::Value
+NewLedger::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["eventType"] = "NewLedger";
+    result["chainType"] = to_string(chainType_);
+    result["ledgerIndex"] = ledgerIndex_;
+    result["fee"] = fee_;
+    return result;
+}
+
 }  // namespace event
 
 Json::Value
