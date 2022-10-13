@@ -101,6 +101,9 @@ private:
     void
     onReadMsg(error_code const& ec) EXCLUDES(m_);
 
+    void
+    reconnect();
+
     // Called when the read op terminates
     void
     onReadDone();

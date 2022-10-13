@@ -55,6 +55,7 @@ struct ChainConfig
     ripple::AccountID rewardAccount;
     std::optional<TxnSubmit> txnSubmit;
     bool ignoreSignerList = false;
+    std::optional<ripple::uint256> lastAttestedCommitTx;
     explicit ChainConfig(Json::Value const& jv);
 };
 

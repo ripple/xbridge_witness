@@ -148,16 +148,7 @@ WebsocketClient::connect()
             ripple::jv("what", e.what()),
             ripple::jv("ip", ep_.address()),
             ripple::jv("port", ep_.port()));
-        boost::system::error_code ecc;
-        stream_.close(ecc);
-        std::weak_ptr<WebsocketClient> wptr = shared_from_this();
-        timer_.expires_after(CONNECT_TIMEOUT);
-        timer_.async_wait([wptr](boost::system::error_code const& ec) {
-            if (ec == boost::asio::error::operation_aborted)
-                return;
-            if (auto ptr = wptr.lock(); ptr)
-                ptr->connect();
-        });
+        reconnect();
     }
 }
 
@@ -171,9 +162,17 @@ WebsocketClient::send(std::string const& cmd, Json::Value params)
     auto const id = nextId_++;
     params[ripple::jss::id] = id;
     auto const s = to_string(params);
-
-    std::lock_guard l{m_};
-    ws_.write_some(true, boost::asio::buffer(s));
+    JLOGV(j_.trace(), "WebsocketClient::send", ripple::jv("msg", params));
+    try
+    {
+        std::lock_guard l{m_};
+        ws_.write_some(true, boost::asio::buffer(s));
+    }
+    catch (...)
+    {
+        std::lock_guard<std::mutex> l(shutdownM_);
+        reconnect();
+    }
     return id;
 }
 
@@ -188,7 +187,9 @@ WebsocketClient::onReadMsg(error_code const& ec)
             ripple::jv("ec", ec));
         if (ec == boost::beast::websocket::error::closed)
             peerClosed_ = true;
-        connect();
+
+        std::lock_guard<std::mutex> l(shutdownM_);
+        reconnect();
         return;
     }
 
@@ -204,6 +205,23 @@ WebsocketClient::onReadMsg(error_code const& ec)
         rb_,
         strand_.wrap(std::bind(
             &WebsocketClient::onReadMsg, this, std::placeholders::_1)));
+}
+
+void
+WebsocketClient::reconnect()
+{
+    if (isShutdown_)
+        return;
+    boost::system::error_code ecc;
+    stream_.close(ecc);
+    std::weak_ptr<WebsocketClient> wptr = shared_from_this();
+    timer_.expires_after(CONNECT_TIMEOUT);
+    timer_.async_wait([wptr](boost::system::error_code const& ec) {
+        if (ec == boost::asio::error::operation_aborted)
+            return;
+        if (auto ptr = wptr.lock(); ptr)
+            ptr->connect();
+    });
 }
 
 // Called when the read op terminates

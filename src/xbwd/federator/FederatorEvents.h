@@ -122,6 +122,14 @@ struct NewLedger
     toJson() const;
 };
 
+struct EndOfHistory
+{
+    ChainType chainType_;
+
+    Json::Value
+    toJson() const;
+};
+
 // Signer list changed on chain account
 struct XChainSignerListSet
 {
@@ -142,7 +150,8 @@ using FederatorEvent = std::variant<
     event::XChainTransferResult,
     event::XChainAttestsResult,
     event::NewLedger,
-    event::XChainSignerListSet>;
+    event::XChainSignerListSet,
+    event::EndOfHistory>;
 
 Json::Value
 toJson(FederatorEvent const& event);

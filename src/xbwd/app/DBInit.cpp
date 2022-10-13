@@ -96,6 +96,13 @@ xChainDBInit()
             CREATE INDEX IF NOT EXISTS {table_name}CreateCountIdx ON {table_name}(CreateCount);",
         )sql";
 
+        auto const syncTblFmtStr = R"sql(
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                ChainType         UNSIGNED PRIMARY KEY,
+                TransID           CHARACTER(64),
+                LedgerSeq         BIGINT UNSIGNED);
+        )sql";
+
         for (auto cd : {ChainDir::lockingToIssuing, ChainDir::issuingToLocking})
         {
             r.push_back(fmt::format(
@@ -110,6 +117,9 @@ xChainDBInit()
                 createAccIdxFmtStr,
                 fmt::arg("table_name", xChainCreateAccountTableName(cd))));
         }
+
+        r.push_back(fmt::format(
+            syncTblFmtStr, fmt::arg("table_name", xChainSyncTable)));
 
         r.push_back("END TRANSACTION;");
         return r;

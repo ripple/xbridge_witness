@@ -89,6 +89,9 @@ public:
 
     config::Config&
     config();
+
+    Json::Value
+    getInfo() const;
 };
 
 }  // namespace xbwd

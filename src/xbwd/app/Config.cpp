@@ -113,7 +113,11 @@ ChainConfig::ChainConfig(Json::Value const& jv)
     {
         txnSubmit.emplace(jv["TxnSubmit"]);
     }
-
+    if (jv.isMember("LastAttestedCommitTx"))
+    {
+        lastAttestedCommitTx.emplace(
+            rpc::fromJson<ripple::uint256>(jv, "LastAttestedCommitTx"));
+    }
     if (jv.isMember("IgnoreSignerList"))
         ignoreSignerList = jv["IgnoreSignerList"].asBool();
 }

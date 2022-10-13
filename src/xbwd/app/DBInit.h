@@ -11,6 +11,8 @@
 namespace xbwd {
 namespace db_init {
 
+std::string const xChainSyncTable("XChainSync");
+
 std::string const&
 xChainDBName();
 

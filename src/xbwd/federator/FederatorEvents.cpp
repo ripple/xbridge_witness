@@ -119,6 +119,15 @@ NewLedger::toJson() const
 }
 
 Json::Value
+EndOfHistory::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["eventType"] = "EndOfHistory";
+    result["chainType"] = to_string(chainType_);
+    return result;
+}
+
+Json::Value
 XChainSignerListSet::toJson() const
 {
     Json::Value result{Json::objectValue};

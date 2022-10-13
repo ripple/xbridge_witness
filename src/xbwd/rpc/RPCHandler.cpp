@@ -42,6 +42,7 @@ doServerInfo(App& app, Json::Value const& in, Json::Value& result)
     Json::Value status;
     status["status"] = "normal";
     result["result"] = status;
+    result["info"] = app.getInfo();
 }
 
 void

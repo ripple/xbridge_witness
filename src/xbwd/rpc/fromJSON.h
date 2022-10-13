@@ -190,6 +190,23 @@ fromJson(Json::Value const& jv, char const* key)
 }
 
 template <>
+inline ripple::uint256
+fromJson(Json::Value const& jv, char const* key)
+{
+    using namespace std::literals;
+    auto const v = jv[key];
+    if (v.isNull())
+        throw std::runtime_error(
+            "Expected json key: "s + key + " while constructing a hash");
+
+    ripple::uint256 h;
+    if (!h.parseHex(v.asString()))
+        throw std::runtime_error("Invalid hash hex");
+
+    return h;
+}
+
+template <>
 inline ripple::STXChainBridge
 fromJson(Json::Value const& jv, char const* key)
 {

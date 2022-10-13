@@ -178,4 +178,14 @@ App::config()
 {
     return *config_;
 }
+
+Json::Value
+App::getInfo() const
+{
+    if (federator_)
+        return federator_->getInfo();
+    // TODO adding info from DB and serverHandler_? probably not
+    return {};
+}
+
 }  // namespace xbwd
