@@ -96,7 +96,9 @@ make_Federator(
 }
 
 Federator::Chain::Chain(config::ChainConfig const& config)
-    : rewardAccount_{config.rewardAccount}, txnSubmit_(config.txnSubmit)
+    : rewardAccount_{config.rewardAccount}
+    , txnSubmit_(config.txnSubmit)
+    , ignoreSignerList_(config.ignoreSignerList)
 {
 }
 
@@ -503,18 +505,17 @@ Federator::onEvent(event::HeartbeatTimer const& e)
     JLOG(j_.trace()) << "HeartbeatTimer";
 }
 
-static std::unordered_set<ripple::TERUnderlyingType> SkippableTec({
-    ripple::tesSUCCESS,
-    ripple::tecXCHAIN_NO_CLAIM_ID,
-    ripple::tecXCHAIN_SENDING_ACCOUNT_MISMATCH,
-    ripple::tecXCHAIN_ACCOUNT_CREATE_PAST,
-    ripple::tecXCHAIN_WRONG_CHAIN,
-    ripple::tecXCHAIN_PROOF_UNKNOWN_KEY,
-    ripple::tecXCHAIN_NO_SIGNERS_LIST,
-    ripple::tecBAD_XCHAIN_TRANSFER_ISSUE,
-    ripple::tecINSUFFICIENT_RESERVE,
-    ripple::tecNO_DST_INSUF_XRP
-});
+static std::unordered_set<ripple::TERUnderlyingType> SkippableTec(
+    {ripple::tesSUCCESS,
+     ripple::tecXCHAIN_NO_CLAIM_ID,
+     ripple::tecXCHAIN_SENDING_ACCOUNT_MISMATCH,
+     ripple::tecXCHAIN_ACCOUNT_CREATE_PAST,
+     ripple::tecXCHAIN_WRONG_CHAIN,
+     ripple::tecXCHAIN_PROOF_UNKNOWN_KEY,
+     ripple::tecXCHAIN_NO_SIGNERS_LIST,
+     ripple::tecBAD_XCHAIN_TRANSFER_ISSUE,
+     ripple::tecINSUFFICIENT_RESERVE,
+     ripple::tecNO_DST_INSUF_XRP});
 
 void
 Federator::onEvent(event::XChainAttestsResult const& e)
@@ -592,12 +593,45 @@ Federator::onEvent(event::NewLedger const& e)
 }
 
 void
+Federator::onEvent(event::XChainSignerListSet const& e)
+{
+    static const auto federatorAcc = calcAccountID(signingPK_);
+    static const auto encFederatorAcc = ripple::toBase58(federatorAcc);
+
+    auto& inSignList(inSignerList_[e.chainType_]);
+    const auto ignoreSignerList(chains_[e.chainType_].ignoreSignerList_);
+
+    inSignList = IsInSignerList::iis_false;
+    for (const auto acc : e.entries_)
+    {
+        if (acc == federatorAcc)
+        {
+            inSignList = IsInSignerList::iis_true;
+            break;
+        }
+    }
+
+    JLOGV(
+        j_.info(),
+        "event::XChainSignerListSet",
+        ripple::jv("Federator_ID", encFederatorAcc),
+        ripple::jv("Door_ID", ripple::toBase58(e.account_)),
+        ripple::jv("ChainType", to_string(e.chainType_)),
+        ripple::jv("inSignList", static_cast<int>(inSignList)),
+        ripple::jv("ignoreSignerList", ignoreSignerList));
+
+}  // Federator::onEvent(event::XChainSignerListSet const& e)
+
+void
 Federator::pushAttOnSubmitTxn(
     ripple::STXChainBridge const& bridge,
     ChainType chainType)
 {
     // batch mutex must already be held
     bool notify = false;
+    const auto inSignList = inSignerList_[chainType];
+    if (chains_[chainType].ignoreSignerList_ or
+        (inSignList != IsInSignerList::iis_false))
     {
         std::lock_guard tl{txnsMutex_};
         notify = txns_[ChainType::locking].empty() &&
@@ -614,12 +648,26 @@ Federator::pushAttOnSubmitTxn(
         curClaimAtts_[chainType].clear();
         curCreateAtts_[chainType].clear();
     }
+    else
+    {
+        {
+            std::lock_guard tl{txnsMutex_};
+            curClaimAtts_[chainType].clear();
+            curCreateAtts_[chainType].clear();
+        }
+
+        JLOGV(
+            j_.info(),
+            "pushAttOnSubmitTxn, not in signer list, atestations dropped",
+            ripple::jv("ChainType", to_string(chainType)));
+    }
+
     if (notify)
     {
         std::lock_guard l(cvMutexes_[lt_event]);
         cvs_[lt_event].notify_one();
     }
-}
+}  // Federator::pushAttOnSubmitTxn
 
 void
 Federator::pushAtt(
@@ -843,7 +891,8 @@ Federator::txnSubmitLoop()
             accountInfo[ripple::jss::result].isMember("account_data"))
         {
             auto const ad = accountInfo[ripple::jss::result]["account_data"];
-            if (ad.isMember(ripple::jss::Sequence) && ad[ripple::jss::Sequence].isIntegral())
+            if (ad.isMember(ripple::jss::Sequence) &&
+                ad[ripple::jss::Sequence].isIntegral())
             {
                 accountSqns_[chain] = ad[ripple::jss::Sequence].asUInt();
                 return true;

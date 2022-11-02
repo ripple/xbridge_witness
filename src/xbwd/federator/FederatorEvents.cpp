@@ -118,6 +118,19 @@ NewLedger::toJson() const
     return result;
 }
 
+Json::Value
+XChainSignerListSet::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["eventType"] = "XChainSignerListSet";
+    result["account"] = toBase58(account_);
+    auto& jAcc = (result["entries"] = Json::arrayValue);
+    for (auto const& acc : entries_)
+        jAcc.append(toBase58(acc));
+
+    return result;
+}
+
 }  // namespace event
 
 Json::Value

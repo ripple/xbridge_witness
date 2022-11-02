@@ -121,6 +121,19 @@ struct NewLedger
     Json::Value
     toJson() const;
 };
+
+
+// Signer list changed on chain account
+struct XChainSignerListSet
+{    
+    ChainType chainType_ = ChainType::locking;
+    ripple::AccountID account_;
+    std::vector<ripple::AccountID> entries_;
+
+    Json::Value
+    toJson() const;
+};
+
 }  // namespace event
 
 using FederatorEvent = std::variant<
@@ -129,7 +142,8 @@ using FederatorEvent = std::variant<
     event::HeartbeatTimer,
     event::XChainTransferResult,
     event::XChainAttestsResult,
-    event::NewLedger>;
+    event::NewLedger,
+    event::XChainSignerListSet>;
 
 Json::Value
 toJson(FederatorEvent const& event);

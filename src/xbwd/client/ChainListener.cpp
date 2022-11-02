@@ -39,6 +39,8 @@
 #include <charconv>
 #include <type_traits>
 
+#include <fmt/format.h>
+
 namespace xbwd {
 
 class Federator;
@@ -83,20 +85,34 @@ ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
 void
 ChainListener::onConnect()
 {
+    const auto encodedDoorAccId = ripple::toBase58(
+        isMainchain_ ? bridge_.lockingChainDoor() : bridge_.issuingChainDoor());
+
     Json::Value params;
     params[ripple::jss::account_history_tx_stream] = Json::objectValue;
     params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
-        ripple::toBase58(
-            isMainchain_ ? bridge_.lockingChainDoor()
-                         : bridge_.issuingChainDoor());
+        encodedDoorAccId;
+
+    params[ripple::jss::streams] = Json::arrayValue;
     if (!witnessAccountStr_.empty())
     {
-        params[ripple::jss::streams] = Json::arrayValue;
         params[ripple::jss::streams].append("ledger");
         params[ripple::jss::accounts] = Json::arrayValue;
         params[ripple::jss::accounts].append(witnessAccountStr_);
     }
+    params[ripple::jss::streams].append("transactions_proposed");
     send("subscribe", params);
+
+    Json::Value params2;
+    params2[ripple::jss::account] = encodedDoorAccId;
+    params2[ripple::jss::signer_lists] = true;
+
+    send(
+        "account_info",
+        params2,
+        [self = shared_from_this()](Json::Value const& v) {
+            self->processAccountInfo(v);
+        });
 }
 
 void
@@ -274,6 +290,35 @@ ChainListener::processMessage(Json::Value const& msg)
         return false;
     };
 
+    auto fieldMatchesStr =
+        [](Json::Value const& val, char const* field, char const* toMatch) {
+            if (!val.isMember(field))
+                return false;
+            auto const f = val[field];
+            if (!f.isString())
+                return false;
+            return f.asString() == toMatch;
+        };
+
+    if (fieldMatchesStr(msg, ripple::jss::status, "proposed"))
+    {
+        // subscribed for proposed_transaction only for SignerListSet
+        // if you need other transaction - modify return condition here
+
+        if (msg.isMember(ripple::jss::transaction))
+        {
+            const auto& jtrans = msg[ripple::jss::transaction];
+            if (fieldMatchesStr(
+                    jtrans,
+                    ripple::jss::TransactionType,
+                    ripple::jss::SignerListSet))
+            {
+                processSignerListSet(jtrans);
+            }
+            return;
+        }
+    }  // if (fieldMatchesStr(msg, ripple::jss::status, "proposed"))
+
     if (msg.isMember(ripple::jss::result) &&
         tryPushNewLedgerEvent(msg[ripple::jss::result]))
         return;
@@ -313,16 +358,6 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName()));
         return;
     }
-
-    auto fieldMatchesStr =
-        [](Json::Value const& val, char const* field, char const* toMatch) {
-            if (!val.isMember(field))
-                return false;
-            auto const f = val[field];
-            if (!f.isString())
-                return false;
-            return f.asString() == toMatch;
-        };
 
     ripple::TER const txnTER = [&msg] {
         return ripple::TER::fromInt(
@@ -822,6 +857,360 @@ ChainListener::processMessage(Json::Value const& msg)
         break;
     }
 }
+
+static bool
+processSignerListSetHlp(
+    event::XChainSignerListSet& e,
+    Json::Value const& msg,
+    beast::Journal& logs)
+{
+    const std::string chainName = to_string(e.chainType_);
+    const unsigned signerQuorum =
+        msg.isMember("SignerQuorum") ? msg["SignerQuorum"].asUInt() : 0;
+    if (!signerQuorum)
+    {
+        JLOGV(
+            logs.warn(),
+            "processSignerListSetHlp",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, doesn't contain '{}' member",
+                    "SignerQuorum")),
+            ripple::jv("chain_name", chainName));
+        return false;
+    }
+
+    if (!msg.isMember("SignerEntries"))
+    {
+        JLOGV(
+            logs.warn(),
+            "processSignerListSetHlp",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, doesn't contain '{}' member",
+                    "SignerEntries")),
+            ripple::jv("chain_name", chainName));
+        return false;
+    }
+    const auto& signerEntries = msg["SignerEntries"];
+    if (!signerEntries.isArray())
+    {
+        JLOGV(
+            logs.warn(),
+            "processSignerListSetHlp",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, {} is not an array", "SignerEntries")),
+            ripple::jv("chain_name", chainName));
+        return false;
+    }
+
+    e.entries_.reserve(signerEntries.size());
+    for (const auto& superEntry : signerEntries)
+    {
+        if (!superEntry.isMember("SignerEntry"))
+        {
+            JLOGV(
+                logs.warn(),
+                "processSignerListSetHlp",
+                ripple::jv(
+                    "warning",
+                    fmt::format(
+                        "Invalid MSG, doesn't contain '{}' member",
+                        "SignerEntry")),
+                ripple::jv("chain_name", chainName));
+            return false;
+        }
+        const auto& entry = superEntry["SignerEntry"];
+
+        if (!entry.isMember(ripple::jss::Account))
+        {
+            JLOGV(
+                logs.warn(),
+                "processSignerListSetHlp",
+                ripple::jv(
+                    "warning",
+                    fmt::format(
+                        "Invalid MSG, entry doesn't contain '{}' member",
+                        ripple::jss::Account)),
+                ripple::jv("chain_name", chainName));
+            return false;
+        }
+        const auto& jAcc = entry[ripple::jss::Account];
+        try
+        {
+            auto parsed =
+                ripple::parseBase58<ripple::AccountID>(jAcc.asString());
+            if (!parsed)
+            {
+                JLOGV(
+                    logs.warn(),
+                    "processSignerListSetHlp",
+                    ripple::jv(
+                        "warning",
+                        fmt::format(
+                            "Invalid MSG, can't parse '{}':'{}' to valid "
+                            "account "
+                            "ID",
+                            ripple::jss::Account,
+                            jAcc.asString())),
+                    ripple::jv("chain_name", chainName));
+                return false;
+            }
+
+            e.entries_.push_back(parsed.value());
+        }
+        catch (...)
+        {
+            JLOGV(
+                logs.warn(),
+                "processSignerListSetHlp",
+                ripple::jv(
+                    "warning",
+                    fmt::format(
+                        "Invalid MSG, can't parse '{}':'{}' to valid account "
+                        "ID(exception)",
+                        ripple::jss::Account,
+                        jAcc.asString())),
+                ripple::jv("chain_name", chainName));
+            return false;
+        }
+    }  // for (const auto& superEntry : signerEntries)
+
+    return true;
+
+}  // processSignerListSetHlp(event::XChainSignerListSet& e, Json::Value const&
+
+void
+ChainListener::processAccountInfo(Json::Value const& msg) EXCLUDES(m_)
+{
+    std::lock_guard l{m_};
+
+    if (!msg.isMember(ripple::jss::result))
+    {
+        JLOGV(
+            j_.warn(),
+            "processAccountInfo",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, doesn't contain '{}' member",
+                    ripple::jss::result)),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+    const auto& jres = msg[ripple::jss::result];
+
+    if (!jres.isMember(ripple::jss::account_data))
+    {
+        JLOGV(
+            j_.warn(),
+            "processAccountInfo",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, doesn't contain '{}' member",
+                    ripple::jss::account_data)),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+    const auto& jaccData = jres[ripple::jss::account_data];
+
+    if (!jaccData.isMember(ripple::jss::Account))
+    {
+        JLOGV(
+            j_.warn(),
+            "processAccountInfo",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, doesn't contain '{}' member",
+                    ripple::jss::Account)),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+    const auto& jAcc = jaccData[ripple::jss::Account];
+
+    event::XChainSignerListSet evSignSet{
+        .chainType_ = isMainchain_ ? ChainType::locking : ChainType::issuing,
+    };
+
+    try
+    {
+        auto parsed = ripple::parseBase58<ripple::AccountID>(jAcc.asString());
+        if (!parsed)
+        {
+            JLOGV(
+                j_.warn(),
+                "processAccountInfo",
+                ripple::jv(
+                    "warning",
+                    fmt::format(
+                        "Invalid MSG, can't parse '{}':'{}' to valid account "
+                        "ID",
+                        ripple::jss::Account,
+                        jAcc.asString())),
+                ripple::jv("isMainchain", isMainchain_));
+            return;
+        }
+
+        evSignSet.account_ = parsed.value();
+    }
+    catch (...)
+    {
+        JLOGV(
+            j_.warn(),
+            "processAccountInfo",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, can't parse '{}':'{}' to valid account "
+                    "ID(exception)",
+                    ripple::jss::Account,
+                    jAcc.asString())),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+
+    if (!jaccData.isMember(ripple::jss::signer_lists))
+    {
+        JLOGV(
+            j_.warn(),
+            "processAccountInfo",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, doesn't contain '{}' member",
+                    ripple::jss::signer_lists)),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+    const auto& jslArray = jaccData[ripple::jss::signer_lists];
+
+    if (!jslArray.isArray() || jslArray.size() != 1)
+    {
+        JLOGV(
+            j_.warn(),
+            "processAccountInfo",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, '{}' isn't array of size 1",
+                    ripple::jss::signer_lists)),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+
+    const auto& jsl = jslArray[0u];
+    if (processSignerListSetHlp(evSignSet, jsl, j_))
+        pushEvent(std::move(evSignSet));
+
+}  // ChainListener::processSignerList(Json::Value const& msg) EXCLUDES(m_)
+
+void
+ChainListener::processSignerListSet(Json::Value const& msg) EXCLUDES(m_)
+{
+    static const auto encodedLockingDoorAccId =
+        ripple::toBase58(bridge_.lockingChainDoor());
+    static const auto encodedIssuingDoorAccId =
+        ripple::toBase58(bridge_.issuingChainDoor());
+
+    if (!msg.isMember(ripple::jss::Account))
+    {
+        JLOGV(
+            j_.warn(),
+            "processSignerListSet",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, doesn't contain '{}' member",
+                    ripple::jss::Account)),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+    const auto& jAcc = msg[ripple::jss::Account];
+    const auto encodedTransAccount = jAcc.asString();
+
+    if ((encodedTransAccount != encodedLockingDoorAccId) &&
+        (encodedTransAccount != encodedIssuingDoorAccId))
+    {
+        JLOGV(
+            j_.warn(),
+            "processSignerListSet",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Signer list set for unknown account: '{}'",
+                    encodedTransAccount)),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+
+    event::XChainSignerListSet evSignSet{
+        .chainType_ = encodedTransAccount == encodedLockingDoorAccId
+            ? ChainType::locking
+            : ChainType::issuing};
+    const auto currentChain =
+        isMainchain_ ? ChainType::locking : ChainType::issuing;
+    if (evSignSet.chainType_ != currentChain)
+    {
+        JLOGV(
+            j_.warn(),
+            "processSignerListSet",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Chain listener type: '{}' != transaction account type: "
+                    "'{}'",
+                    to_string(currentChain),
+                    to_string(evSignSet.chainType_))));
+    }
+
+    try
+    {
+        auto parsed =
+            ripple::parseBase58<ripple::AccountID>(encodedTransAccount);
+        if (!parsed)
+        {
+            JLOGV(
+                j_.warn(),
+                "processSignerListSet",
+                ripple::jv(
+                    "warning",
+                    fmt::format(
+                        "Invalid MSG, can't parse '{}':'{}' to valid account "
+                        "ID",
+                        ripple::jss::Account,
+                        jAcc.asString())),
+                ripple::jv("isMainchain", isMainchain_));
+            return;
+        }
+
+        evSignSet.account_ = parsed.value();
+    }
+    catch (...)
+    {
+        JLOGV(
+            j_.warn(),
+            "processSignerListSet",
+            ripple::jv(
+                "warning",
+                fmt::format(
+                    "Invalid MSG, can't parse '{}':'{}' to valid account "
+                    "ID(exception)",
+                    ripple::jss::Account,
+                    jAcc.asString())),
+            ripple::jv("isMainchain", isMainchain_));
+        return;
+    }
+
+    if (processSignerListSetHlp(evSignSet, msg, j_))
+        pushEvent(std::move(evSignSet));
+
+}  // ChainListener::processSignerListSet(Json::Value const& msg) EXCLUDES(m_)
 
 Json::Value
 ChainListener::getInfo() const

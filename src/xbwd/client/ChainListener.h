@@ -108,6 +108,11 @@ private:
     void
     processMessage(Json::Value const& msg) EXCLUDES(m_);
 
+    void
+    processAccountInfo(Json::Value const& msg) EXCLUDES(m_);
+    void
+    processSignerListSet(Json::Value const& msg) EXCLUDES(m_);
+
     template <class E>
     void
     pushEvent(E&& e) REQUIRES(m_);

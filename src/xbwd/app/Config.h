@@ -54,6 +54,7 @@ struct ChainConfig
     beast::IP::Endpoint chainIp;
     ripple::AccountID rewardAccount;
     std::optional<TxnSubmit> txnSubmit;
+    bool ignoreSignerList = false;
     explicit ChainConfig(Json::Value const& jv);
 };
 

@@ -113,6 +113,9 @@ ChainConfig::ChainConfig(Json::Value const& jv)
     {
         txnSubmit.emplace(jv["TxnSubmit"]);
     }
+
+    if (jv.isMember("IgnoreSignerList"))
+        ignoreSignerList = jv["IgnoreSignerList"].asBool();
 }
 
 Config::Config(Json::Value const& jv)
