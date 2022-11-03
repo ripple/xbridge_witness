@@ -18,6 +18,7 @@
 */
 //==============================================================================
 
+#include <xbwd/basics/ChainTypes.h>
 #include <xbwd/basics/ThreadSaftyAnalysis.h>
 
 #include <ripple/beast/net/IPEndpoint.h>
@@ -39,11 +40,10 @@ class WebsocketClient;
 
 class ChainListener : public std::enable_shared_from_this<ChainListener>
 {
-public:
-    enum class IsMainchain { no, yes };
-
 private:
-    bool const isMainchain_;  // TODO change to isLockingChain?
+    const ChainType chainType_;
+    const std::string chainName_;
+
     ripple::STXChainBridge const bridge_;
     std::string witnessAccountStr_;
     std::weak_ptr<Federator> federator_;
@@ -58,7 +58,7 @@ private:
 
 public:
     ChainListener(
-        IsMainchain isMainchain,
+        ChainType chainType,
         ripple::STXChainBridge const sidechain,
         std::optional<ripple::AccountID> submitAccountOpt,
         std::weak_ptr<Federator>&& federator,
@@ -101,9 +101,6 @@ private:
 
     void
     onConnect();
-
-    std::string const&
-    chainName() const;
 
     void
     processMessage(Json::Value const& msg) EXCLUDES(m_);

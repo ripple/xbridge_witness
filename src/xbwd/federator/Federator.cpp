@@ -73,14 +73,14 @@ make_Federator(
 
     std::shared_ptr<ChainListener> mainchainListener =
         std::make_shared<ChainListener>(
-            ChainListener::IsMainchain::yes,
+            ChainType::locking,
             config.bridge,
             getSubmitAccount(ChainType::locking),
             r,
             j);
     std::shared_ptr<ChainListener> sidechainListener =
         std::make_shared<ChainListener>(
-            ChainListener::IsMainchain::no,
+            ChainType::issuing,
             config.bridge,
             getSubmitAccount(ChainType::issuing),
             r,
