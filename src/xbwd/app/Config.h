@@ -69,6 +69,10 @@ public:
     ripple::STXChainBridge bridge;
     std::optional<AdminConfig> adminConfig;
 
+    std::string logFile;
+    std::string logLevel;
+    bool logSilent;
+
     explicit Config(Json::Value const& jv);
 };
 

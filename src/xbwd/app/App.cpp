@@ -97,6 +97,15 @@ App::setup()
                 signalStop();
         });
 
+    if (!config_->logFile.empty())
+    {
+        if (!logs_.open(config_->logFile))
+            std::cerr << "Can't open log file " << config_->logFile
+                      << std::endl;
+    }
+    // Optionally turn off logging to console.
+    logs_.silent(config_->logSilent);
+
     {
         std::vector<ripple::Port> const ports = [&] {
             auto const& endpoint = config_->rpcEndpoint;

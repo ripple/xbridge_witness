@@ -26,6 +26,18 @@
 #include <Windows.h>
 #endif
 
+static const std::unordered_map<std::string, beast::severities::Severity>
+    g_severityMap{
+        {"All", beast::severities::kAll},
+        {"Trace", beast::severities::kTrace},
+        {"Debug", beast::severities::kDebug},
+        {"Info", beast::severities::kInfo},
+        {"Warning", beast::severities::kWarning},
+        {"Error", beast::severities::kError},
+        {"Fatal", beast::severities::kFatal},
+        {"Disabled", beast::severities::kDisabled},
+        {"None", beast::severities::kNone}};
+
 void
 printHelp(const boost::program_options::options_description& desc)
 {
@@ -102,7 +114,8 @@ main(int argc, char** argv)
 
     try
     {
-        std::unique_ptr<xbwd::config::Config> config = [&]() -> auto {
+        std::unique_ptr<xbwd::config::Config> config = [&]() -> auto
+        {
             auto const configFile = [&]() -> std::string {
                 if (vm.count("config"))
                     return vm["config"].as<std::string>();
@@ -118,7 +131,8 @@ main(int argc, char** argv)
             if (!Json::Reader().parse(f, jv))
                 throw std::runtime_error("config file contains invalid json");
             return std::make_unique<xbwd::config::Config>(jv);
-        }();
+        }
+        ();
 
         if (vm.count("json"))
         {
@@ -157,6 +171,12 @@ main(int argc, char** argv)
                 return kFatal;
             else if (vm.count("verbose"))
                 return kTrace;
+            else if (!config->logLevel.empty())
+            {
+                const auto i = g_severityMap.find(config->logLevel);
+                if (i != g_severityMap.end())
+                    return i->second;
+            }
             return kInfo;
         }();
 
