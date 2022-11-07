@@ -106,9 +106,16 @@ private:
     processMessage(Json::Value const& msg) EXCLUDES(m_);
 
     void
-    processAccountInfo(Json::Value const& msg) EXCLUDES(m_);
+    processAccountInfo(Json::Value const& msg) noexcept;
+
     void
-    processSignerListSet(Json::Value const& msg) EXCLUDES(m_);
+    processAccountInfoHlp(Json::Value const& msg);
+
+    void
+    processSignerListSet(Json::Value const& msg) noexcept;
+
+    void
+    processSignerListSetHlp(Json::Value const& msg);
 
     template <class E>
     void

@@ -595,8 +595,8 @@ Federator::onEvent(event::NewLedger const& e)
 void
 Federator::onEvent(event::XChainSignerListSet const& e)
 {
-    static const auto federatorAcc = calcAccountID(signingPK_);
-    static const auto encFederatorAcc = ripple::toBase58(federatorAcc);
+    const auto federatorAcc = calcAccountID(signingPK_);
+    const auto encFederatorAcc = ripple::toBase58(federatorAcc);
 
     auto& inSignList(inSignerList_[e.chainType_]);
     const auto ignoreSignerList(chains_[e.chainType_].ignoreSignerList_);
@@ -619,8 +619,7 @@ Federator::onEvent(event::XChainSignerListSet const& e)
         ripple::jv("ChainType", to_string(e.chainType_)),
         ripple::jv("inSignList", static_cast<int>(inSignList)),
         ripple::jv("ignoreSignerList", ignoreSignerList));
-
-}  // Federator::onEvent(event::XChainSignerListSet const& e)
+}
 
 void
 Federator::pushAttOnSubmitTxn(
