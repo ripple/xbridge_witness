@@ -49,7 +49,7 @@ that clients will use to connect to this server ("rpc_endpoint"), the directory
 to store the sql database ("db_dir"), the secret key used to sign attestations
 ("signing_key_seed") and the sidechain spec.
 
-The server knows the location of this file by using the `--config` command line
+The server knows the location of this file by using the `--conf` command line
 argument.
 
 # rippled config 
