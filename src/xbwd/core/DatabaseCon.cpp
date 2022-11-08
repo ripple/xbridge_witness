@@ -39,6 +39,19 @@ DatabaseCon::DatabaseCon(
     std::vector<std::string> const& initSQL)
     : session_(std::make_shared<soci::session>())
 {
+    const auto pParent = pPath.parent_path();
+    boost::system::error_code ec;
+    if (!boost::filesystem::exists(pParent, ec))
+    {
+        boost::filesystem::create_directories(pParent, ec);
+        if (ec)
+        {
+            std::cerr << "Can't create path: " << pParent
+                      << ", error: " << ec.value() << " " << ec.message()
+                      << std::endl;
+        }
+    }
+
     open(*session_, "sqlite", pPath.string());
 
     if (commonPragma)
