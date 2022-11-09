@@ -1,16 +1,7 @@
 cmake_minimum_required (VERSION 3.11)
 project (xbridge_witnessd)
 
-set(CONAN_PATHS_1 ${CMAKE_BINARY_DIR}/conan_paths.cmake)
-set(CONAN_PATHS_2 ${CMAKE_BINARY_DIR}/conan-dependencies/conan_paths.cmake)
-
-if(EXISTS "${CONAN_PATHS_1}")
-    include(${CONAN_PATHS_1})
-elseif(EXISTS "${CONAN_PATHS_2}")
-    include(${CONAN_PATHS_2})
-else()
-    message(FATAL_ERROR  " conan_paths.cmake not found")
-endif()
+include(${CMAKE_BINARY_DIR}/conan_paths.cmake)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
@@ -165,3 +156,8 @@ if (has_parent)
   set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_ALL ON)
   set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
 endif ()
+
+#fix for MAC
+get_target_property(FMT_INC_DIRS fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
+list (GET FMT_INC_DIRS 0 FMT_INC_DIR)
+target_include_directories(xbridge_witnessd BEFORE PRIVATE ${FMT_INC_DIR})

@@ -72,7 +72,7 @@ struct Submission
 
 class Federator : public std::enable_shared_from_this<Federator>
 {
-    enum class IsInSignerList: int {iis_not_init = -1, iis_false = 0, iis_true};
+    enum class KeySignerListStatus : int { unknown = -1, absent = 0, present };
 
     enum LoopTypes { lt_event, lt_txnSubmit, lt_last };
     std::array<std::thread, lt_last> threads_;
@@ -106,8 +106,9 @@ class Federator : public std::enable_shared_from_this<Federator>
     ripple::PublicKey const signingPK_;
     ripple::SecretKey const signingSK_;
 
-    ChainArray<IsInSignerList>  inSignerList_ =
-        ChainArray<IsInSignerList>(IsInSignerList::iis_not_init, IsInSignerList::iis_not_init);
+    ChainArray<KeySignerListStatus> inSignerList_{
+        KeySignerListStatus::unknown,
+        KeySignerListStatus::unknown};
 
     // Use a condition variable to prevent busy waiting when the queue is
     // empty

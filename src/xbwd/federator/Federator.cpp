@@ -595,30 +595,27 @@ Federator::onEvent(event::NewLedger const& e)
 void
 Federator::onEvent(event::XChainSignerListSet const& e)
 {
-    const auto federatorAcc = calcAccountID(signingPK_);
-    const auto encFederatorAcc = ripple::toBase58(federatorAcc);
-
-    auto& inSignList(inSignerList_[e.chainType_]);
+    const auto signingAcc = calcAccountID(signingPK_);
     const auto ignoreSignerList(chains_[e.chainType_].ignoreSignerList_);
+    auto& inSignerList = inSignerList_[e.chainType_];
 
-    inSignList = IsInSignerList::iis_false;
-    for (const auto acc : e.entries_)
-    {
-        if (acc == federatorAcc)
+    inSignerList = [&] {
+        for (const auto& acc : e.entries_)
         {
-            inSignList = IsInSignerList::iis_true;
-            break;
+            if (acc == signingAcc)
+                return KeySignerListStatus::present;
         }
-    }
+        return KeySignerListStatus::absent;
+    }();
 
     JLOGV(
         j_.info(),
         "event::XChainSignerListSet",
-        ripple::jv("Federator_ID", encFederatorAcc),
-        ripple::jv("Door_ID", ripple::toBase58(e.account_)),
+        ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
+        ripple::jv("DoorID", ripple::toBase58(e.account_)),
         ripple::jv("ChainType", to_string(e.chainType_)),
-        ripple::jv("inSignList", static_cast<int>(inSignList)),
-        ripple::jv("ignoreSignerList", ignoreSignerList));
+        ripple::jv("Active", inSignerList == KeySignerListStatus::present),
+        ripple::jv("IgnoreSignerList", ignoreSignerList));
 }
 
 void
@@ -629,8 +626,8 @@ Federator::pushAttOnSubmitTxn(
     // batch mutex must already be held
     bool notify = false;
     const auto inSignList = inSignerList_[chainType];
-    if (chains_[chainType].ignoreSignerList_ or
-        (inSignList != IsInSignerList::iis_false))
+    if (chains_[chainType].ignoreSignerList_ ||
+        (inSignList != KeySignerListStatus::absent))
     {
         std::lock_guard tl{txnsMutex_};
         notify = txns_[ChainType::locking].empty() &&

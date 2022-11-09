@@ -102,7 +102,8 @@ main(int argc, char** argv)
 
     try
     {
-        std::unique_ptr<xbwd::config::Config> config = [&]() -> auto {
+        std::unique_ptr<xbwd::config::Config> config = [&]() -> auto
+        {
             auto const configFile = [&]() -> std::string {
                 if (vm.count("config"))
                     return vm["config"].as<std::string>();
@@ -118,7 +119,8 @@ main(int argc, char** argv)
             if (!Json::Reader().parse(f, jv))
                 throw std::runtime_error("config file contains invalid json");
             return std::make_unique<xbwd::config::Config>(jv);
-        }();
+        }
+        ();
 
         if (vm.count("json"))
         {

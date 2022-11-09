@@ -42,7 +42,6 @@ class ChainListener : public std::enable_shared_from_this<ChainListener>
 {
 private:
     const ChainType chainType_;
-    const std::string chainName_;
 
     ripple::STXChainBridge const bridge_;
     std::string witnessAccountStr_;
@@ -109,13 +108,7 @@ private:
     processAccountInfo(Json::Value const& msg) noexcept;
 
     void
-    processAccountInfoHlp(Json::Value const& msg);
-
-    void
     processSignerListSet(Json::Value const& msg) noexcept;
-
-    void
-    processSignerListSetHlp(Json::Value const& msg);
 
     template <class E>
     void

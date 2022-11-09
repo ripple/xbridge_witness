@@ -122,10 +122,9 @@ struct NewLedger
     toJson() const;
 };
 
-
 // Signer list changed on chain account
 struct XChainSignerListSet
-{    
+{
     ChainType chainType_ = ChainType::locking;
     ripple::AccountID account_;
     std::vector<ripple::AccountID> entries_;
