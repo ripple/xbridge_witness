@@ -46,7 +46,8 @@ App::App(
           config->dataDir,
           db_init::xChainDBName(),
           db_init::xChainDBPragma(),
-          db_init::xChainDBInit())
+          db_init::xChainDBInit(),
+          j_)
     , signals_(io_service_)
     , config_(std::move(config))
 {

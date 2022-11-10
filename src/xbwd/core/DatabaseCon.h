@@ -88,8 +88,9 @@ public:
         boost::filesystem::path const& dataDir,
         std::string const& dbName,
         std::vector<std::string> const& pragma,
-        std::vector<std::string> const& initSQL)
-        : DatabaseCon(dataDir / dbName, nullptr, pragma, initSQL)
+        std::vector<std::string> const& initSQL,
+        beast::Journal j)
+        : DatabaseCon(dataDir / dbName, nullptr, pragma, initSQL, j)
     {
     }
 
@@ -112,7 +113,8 @@ private:
         boost::filesystem::path const& pPath,
         std::vector<std::string> const* commonPragma,
         std::vector<std::string> const& pragma,
-        std::vector<std::string> const& initSQL);
+        std::vector<std::string> const& initSQL,
+        beast::Journal j);
 
     LockedSociSession::mutex lock_;
 
@@ -123,6 +125,8 @@ private:
     // the checkpointer can keep a weak_ptr) and the checkpointer is a
     // shared_ptr in this class. session_ will never be null.
     std::shared_ptr<soci::session> const session_;
+
+    beast::Journal j_;
 };
 
 }  // namespace xbwd

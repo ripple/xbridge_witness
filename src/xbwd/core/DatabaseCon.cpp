@@ -36,8 +36,9 @@ DatabaseCon::DatabaseCon(
     boost::filesystem::path const& pPath,
     std::vector<std::string> const* commonPragma,
     std::vector<std::string> const& pragma,
-    std::vector<std::string> const& initSQL)
-    : session_(std::make_shared<soci::session>())
+    std::vector<std::string> const& initSQL,
+    beast::Journal j)
+    : session_(std::make_shared<soci::session>()), j_(j)
 {
     const auto pParent = pPath.parent_path();
     boost::system::error_code ec;
@@ -46,9 +47,14 @@ DatabaseCon::DatabaseCon(
         boost::filesystem::create_directories(pParent, ec);
         if (ec)
         {
-            std::cerr << "Can't create path: " << pParent
-                      << ", error: " << ec.value() << " " << ec.message()
-                      << std::endl;
+            JLOGV(
+                j_.fatal(),
+                "can't create db path",
+                ripple::jv("error", ec.message()),
+                ripple::jv("path", pParent.string()));
+
+            throw std::runtime_error(
+                "can't create db path, error: " + ec.message());
         }
     }
 
