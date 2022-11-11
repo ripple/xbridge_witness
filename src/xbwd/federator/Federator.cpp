@@ -646,15 +646,12 @@ Federator::pushAttOnSubmitTxn(
     }
     else
     {
-        {
-            std::lock_guard tl{txnsMutex_};
-            curClaimAtts_[chainType].clear();
-            curCreateAtts_[chainType].clear();
-        }
+        curClaimAtts_[chainType].clear();
+        curCreateAtts_[chainType].clear();
 
         JLOGV(
             j_.info(),
-            "pushAttOnSubmitTxn, not in signer list, atestations dropped",
+            "not in signer list, atestations dropped",
             ripple::jv("ChainType", to_string(chainType)));
     }
 
@@ -663,7 +660,7 @@ Federator::pushAttOnSubmitTxn(
         std::lock_guard l(cvMutexes_[lt_event]);
         cvs_[lt_event].notify_one();
     }
-}  // Federator::pushAttOnSubmitTxn
+}
 
 void
 Federator::pushAtt(
