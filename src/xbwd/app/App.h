@@ -90,8 +90,8 @@ public:
     config::Config&
     config();
 
-    Json::Value
-    getInfo() const;
+    std::shared_ptr<Federator>
+    federator();
 };
 
 }  // namespace xbwd

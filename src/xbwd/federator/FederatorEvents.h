@@ -47,7 +47,7 @@ struct XChainCommitDetected
     std::uint32_t ledgerSeq_;
     ripple::uint256 txnHash_;
     ripple::TER status_;
-    std::int32_t rpcOrder_;
+    std::optional<std::int32_t> rpcOrder_;
     bool ledgerBoundary_;
 
     Json::Value
@@ -69,7 +69,7 @@ struct XChainAccountCreateCommitDetected
     std::uint32_t ledgerSeq_;
     ripple::uint256 txnHash_;
     ripple::TER status_;
-    std::int32_t rpcOrder_;
+    std::optional<std::int32_t> rpcOrder_;
     bool ledgerBoundary_;
 
     Json::Value
@@ -96,7 +96,7 @@ struct XChainTransferResult
     // Txn hash transaction on the dst chain
     ripple::uint256 txnHash_;
     ripple::TER ter_;
-    std::int32_t rpcOrder_;
+    std::optional<std::int32_t> rpcOrder_;
 
     Json::Value
     toJson() const;

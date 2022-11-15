@@ -2,6 +2,7 @@
 
 #include <xbwd/app/App.h>
 #include <xbwd/app/DBInit.h>
+#include <xbwd/federator/Federator.h>
 #include <xbwd/rpc/fromJSON.h>
 
 #include <ripple/json/json_value.h>
@@ -39,10 +40,16 @@ void
 doServerInfo(App& app, Json::Value const& in, Json::Value& result)
 {
     result["request"] = in;
-    Json::Value status;
-    status["status"] = "normal";
-    result["result"] = status;
-    result["info"] = app.getInfo();
+    auto const f = app.federator();
+    if (!f)
+    {
+        result["error"] = "internal error";
+        return;
+    }
+
+    Json::Value inner;
+    inner["info"] = f->getInfo();
+    result["result"] = inner;
 }
 
 void
@@ -471,6 +478,41 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
     }
 }
 
+void
+doAttestTx(App& app, Json::Value const& in, Json::Value& result)
+{
+    result["request"] = in;
+    auto const f = app.federator();
+    if (!f)
+    {
+        result["error"] = "internal error";
+        return;
+    }
+
+    auto optBridge = optFromJson<ripple::STXChainBridge>(in, "bridge");
+    auto optChainType = optFromJson<ChainType>(in, "chain_type");
+    auto optTxHash = optFromJson<ripple::uint256>(in, "tx_hash");
+    {
+        auto const missingOrInvalidField = [&]() -> std::string {
+            if (!optBridge)
+                return "bridge";
+            if (!optChainType)
+                return "chain_type";
+            if (!optTxHash)
+                return "tx_hash";
+            return {};
+        }();
+        if (!missingOrInvalidField.empty())
+        {
+            result["error"] = fmt::format(
+                "Missing or invalid field: {}", missingOrInvalidField);
+            return;
+        }
+    }
+
+    f->pullTx(*optBridge, *optChainType, *optTxHash, result);
+}
+
 enum class Role { USER, ADMIN };
 
 struct CmdFun
@@ -489,6 +531,7 @@ std::unordered_map<std::string, CmdFun> const handlers = [] {
         "witness_account_create"s, CmdFun{doWitnessAccountCreate, Role::USER});
     r.emplace("select_all_locking"s, CmdFun{doSelectAllLocking, Role::USER});
     r.emplace("select_all_issuing"s, CmdFun{doSelectAllIssuing, Role::USER});
+    r.emplace("attest_tx"s, CmdFun{doAttestTx, Role::ADMIN});
     return r;
 }();
 }  // namespace

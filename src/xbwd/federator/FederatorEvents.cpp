@@ -50,7 +50,8 @@ XChainCommitDetected::toJson() const
             deliveredAmt_->getJson(ripple::JsonOptions::none);
     result["claimID"] = to_hex(claimID_);
     result["txnHash"] = to_string(txnHash_);
-    result["rpcOrder"] = rpcOrder_;
+    if (rpcOrder_)
+        result["rpcOrder"] = *rpcOrder_;
     return result;
 }
 
@@ -67,7 +68,8 @@ XChainAccountCreateCommitDetected::toJson() const
     result["rewardAmt"] = rewardAmt_.getJson(ripple::JsonOptions::none);
     result["createCount"] = to_hex(createCount_);
     result["txnHash"] = to_string(txnHash_);
-    result["rpcOrder"] = rpcOrder_;
+    if (rpcOrder_)
+        result["rpcOrder"] = *rpcOrder_;
     return result;
 }
 
@@ -92,7 +94,8 @@ XChainTransferResult::toJson() const
     result["claimID"] = to_hex(claimID_);
     result["txnHash"] = to_string(txnHash_);
     result["ter"] = transHuman(ter_);
-    result["rpcOrder"] = rpcOrder_;
+    if (rpcOrder_)
+        result["rpcOrder"] = *rpcOrder_;
     return result;
 }
 

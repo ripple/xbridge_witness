@@ -180,13 +180,10 @@ App::config()
     return *config_;
 }
 
-Json::Value
-App::getInfo() const
+std::shared_ptr<Federator>
+App::federator()
 {
-    if (federator_)
-        return federator_->getInfo();
-    // TODO adding info from DB and serverHandler_? probably not
-    return {};
+    return federator_;
 }
 
 }  // namespace xbwd

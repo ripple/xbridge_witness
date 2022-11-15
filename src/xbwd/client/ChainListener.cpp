@@ -267,16 +267,17 @@ ChainListener::processMessage(Json::Value const& msg)
         return;
     }
 
-    if (!msg.isMember(ripple::jss::engine_result_code))
+    if (!msg.isMember(ripple::jss::transaction))
     {
         JLOGV(
             j_.trace(),
             "ignoring listener message",
-            ripple::jv("reason", "no engine result code"),
+            ripple::jv("reason", "no tx"),
             ripple::jv("msg", msg),
             ripple::jv("chain_name", chainName));
         return;
     }
+    auto const transaction = msg[ripple::jss::transaction];
 
     if (!msg.isMember(ripple::jss::meta))
     {
@@ -288,72 +289,35 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
+    auto const meta = msg[ripple::jss::meta];
 
+    if (!msg.isMember(ripple::jss::engine_result_code))
+    {
+        JLOGV(
+            j_.trace(),
+            "ignoring listener message",
+            ripple::jv("reason", "no engine result code"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+        return;
+    }
     ripple::TER const txnTER = [&msg] {
         return ripple::TER::fromInt(
             msg[ripple::jss::engine_result_code].asInt());
     }();
-
     bool const txnSuccess = ripple::isTesSuccess(txnTER);
 
-    auto fieldMatchesStr =
-        [](Json::Value const& val, char const* field, char const* toMatch) {
-            if (!val.isMember(field))
-                return false;
-            auto const f = val[field];
-            if (!f.isString())
-                return false;
-            return f.asString() == toMatch;
-        };
-
-    enum class TxnType {
-        xChainCommit,
-        xChainClaim,
-        xChainCreateAccount,
-        xChainAttestation,
-        SignerListSet,
-        AccountSet,
-        SetRegularKey
-    };
-    auto txnTypeOpt = [&]() -> std::optional<TxnType> {
-        using enum TxnType;
-
-        if (!fieldMatchesStr(msg, ripple::jss::type, ripple::jss::transaction))
+    auto txnHistoryIndex = [&]() -> std::optional<std::int32_t> {
+        // only history stream messages have the index
+        if (!msg.isMember(ripple::jss::account_history_tx_index) ||
+            !msg[ripple::jss::account_history_tx_index].isIntegral())
             return {};
-
-        if (!msg.isMember(ripple::jss::transaction))
-            return {};
-
-        auto const txn = msg[ripple::jss::transaction];
-
-        static std::unordered_map<std::string, TxnType> const candidates{{
-            {ripple::jss::XChainCommit.c_str(), xChainCommit},
-            {ripple::jss::XChainClaim.c_str(), xChainClaim},
-            {ripple::jss::XChainAccountCreateCommit.c_str(),
-             xChainCreateAccount},
-            {ripple::jss::XChainAddAttestation.c_str(), xChainAttestation},
-            {ripple::jss::SignerListSet.c_str(), SignerListSet},
-            {ripple::jss::AccountSet.c_str(), AccountSet},
-            {ripple::jss::SetRegularKey.c_str(), SetRegularKey},
-        }};
-
-        Json::Value const& val = txn;
-        char const* field = ripple::jss::TransactionType;
-        if (!val.isMember(field))
-            return {};
-        auto const f = val[field];
-        if (!f.isString())
-            return {};
-        auto const& txnTypeName = f.asString();
-
-        if (auto const it = candidates.find(txnTypeName);
-            it != candidates.end())
-        {
-            return it->second;
-        }
-        return std::nullopt;
+        // values < 0 are historical txns. values >= 0 are new transactions.
+        // Only the initial sync needs historical txns.
+        return msg[ripple::jss::account_history_tx_index].asInt();
     }();
 
+    auto txnTypeOpt = rpcResultParse::parseXChainTxnType(transaction);
     if (!txnTypeOpt)
     {
         JLOGV(
@@ -365,67 +329,7 @@ ChainListener::processMessage(Json::Value const& msg)
         return;
     }
 
-    if (txnTypeOpt == TxnType::xChainAttestation)
-    {
-        auto const& txn = msg[ripple::jss::transaction];
-        if (fieldMatchesStr(
-                txn, ripple::jss::Account, witnessAccountStr_.c_str()) &&
-            txn.isMember(ripple::jss::Sequence) &&
-            txn[ripple::jss::Sequence].isIntegral())
-        {
-            auto const txnSeq = txn[ripple::jss::Sequence].asUInt();
-            using namespace event;
-            XChainAttestsResult e{chainType_, txnSeq, txnTER};
-            pushEvent(std::move(e));
-            return;
-        }
-        else
-        {
-            JLOGV(
-                j_.trace(),
-                "ignoring listener message",
-                ripple::jv(
-                    "reason", "not an attestation sent from this server"),
-                ripple::jv("msg", msg),
-                ripple::jv("chain_name", chainName));
-            return;
-        }
-    }
-
-    if (!msg.isMember(ripple::jss::account_history_tx_index))
-    {
-        JLOGV(
-            j_.trace(),
-            "ignoring listener message",
-            ripple::jv("reason", "no account history tx index"),
-            ripple::jv("msg", msg),
-            ripple::jv("chain_name", chainName));
-        return;
-    }
-
-    // values < 0 are historical txns. values >= 0 are new transactions. Only
-    // the initial sync needs historical txns.
-    int const txnHistoryIndex =
-        msg[ripple::jss::account_history_tx_index].asInt();
-
-    auto const meta = msg[ripple::jss::meta];
-
-    auto const txnBridge = [&]() -> std::optional<ripple::STXChainBridge> {
-        try
-        {
-            if (!msg.isMember(ripple::jss::transaction))
-                return {};
-            auto const txn = msg[ripple::jss::transaction];
-            if (!txn.isMember(ripple::jss::XChainBridge))
-                return {};
-            return ripple::STXChainBridge(txn[ripple::jss::XChainBridge]);
-        }
-        catch (...)
-        {
-        }
-        return {};
-    }();
-
+    auto const txnBridge = rpcResultParse::parseBridge(transaction);
     if (txnBridge && *txnBridge != bridge_)
     {
         // Only keep transactions to or from the door account.
@@ -450,21 +354,7 @@ ChainListener::processMessage(Json::Value const& msg)
         return;
     }
 
-    auto const txnHash = [&]() -> std::optional<ripple::uint256> {
-        try
-        {
-            ripple::uint256 result;
-            if (result.parseHex(msg[ripple::jss::transaction][ripple::jss::hash]
-                                    .asString()))
-                return result;
-        }
-        catch (...)
-        {
-        }
-        // TODO: this is an insane input stream
-        // Detect and connect to another server
-        return {};
-    }();
+    auto const txnHash = rpcResultParse::parseTxHash(transaction);
     if (!txnHash)
     {
         JLOGV(
@@ -476,19 +366,7 @@ ChainListener::processMessage(Json::Value const& msg)
         return;
     }
 
-    auto const txnSeq = [&]() -> std::optional<std::uint32_t> {
-        try
-        {
-            return msg[ripple::jss::transaction][ripple::jss::Sequence]
-                .asUInt();
-        }
-        catch (...)
-        {
-            // TODO: this is an insane input stream
-            // Detect and connect to another server
-            return {};
-        }
-    }();
+    auto const txnSeq = rpcResultParse::parseTxSeq(transaction);
     if (!txnSeq)
     {
         JLOGV(
@@ -499,21 +377,8 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
-    auto const lgrSeq = [&]() -> std::optional<std::uint32_t> {
-        try
-        {
-            if (msg.isMember(ripple::jss::ledger_index))
-            {
-                return msg[ripple::jss::ledger_index].asUInt();
-            }
-        }
-        catch (...)
-        {
-        }
-        // TODO: this is an insane input stream
-        // Detect and connect to another server
-        return {};
-    }();
+
+    auto const lgrSeq = rpcResultParse::parseLedgerSeq(msg);
     if (!lgrSeq)
     {
         JLOGV(
@@ -524,37 +389,8 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
-    TxnType const txnType = *txnTypeOpt;
 
-    std::optional<ripple::STAmount> deliveredAmt;
-    if (meta.isMember(ripple::jss::delivered_amount))
-    {
-        deliveredAmt = amountFromJson(
-            ripple::sfGeneric,
-            msg[ripple::jss::transaction][ripple::jss::delivered_amount]);
-    }
-    // TODO: Add delivered amount to the txn data; for now override with
-    // amount
-    if (msg[ripple::jss::transaction].isMember(ripple::jss::Amount))
-    {
-        deliveredAmt = amountFromJson(
-            ripple::sfGeneric,
-            msg[ripple::jss::transaction][ripple::jss::Amount]);
-    }
-
-    auto const src = [&]() -> std::optional<ripple::AccountID> {
-        try
-        {
-            return ripple::parseBase58<ripple::AccountID>(
-                msg[ripple::jss::transaction][ripple::jss::Account].asString());
-        }
-        catch (...)
-        {
-        }
-        // TODO: this is an insane input stream
-        // Detect and connect to another server
-        return {};
-    }();
+    auto const src = rpcResultParse::parseSrcAccount(transaction);
     if (!src)
     {
         JLOGV(
@@ -565,32 +401,8 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
-    auto const dst = [&]() -> std::optional<ripple::AccountID> {
-        try
-        {
-            switch (txnType)
-            {
-                case TxnType::xChainCreateAccount:
-                    [[fallthrough]];
-                case TxnType::xChainClaim:
-                    return ripple::parseBase58<ripple::AccountID>(
-                        msg[ripple::jss::transaction]
-                           [ripple::sfDestination.getJsonName()]
-                               .asString());
-                case TxnType::xChainCommit:
-                    return ripple::parseBase58<ripple::AccountID>(
-                        msg[ripple::jss::transaction]
-                           [ripple::sfOtherChainDestination.getJsonName()]
-                               .asString());
-                default:
-                    return {};
-            }
-        }
-        catch (...)
-        {
-        }
-        return {};
-    }();
+
+    auto const dst = rpcResultParse::parseDstAccount(transaction, *txnTypeOpt);
 
     auto const ledgerBoundary = [&]() -> bool {
         if (msg.isMember(ripple::jss::account_history_ledger_boundary) &&
@@ -607,6 +419,9 @@ ChainListener::processMessage(Json::Value const& msg)
         return false;
     }();
 
+    std::optional<ripple::STAmount> deliveredAmt =
+        rpcResultParse::parseDeliveredAmt(transaction, meta);
+
     auto const [chainDir, oppositeChainDir] =
         [&]() -> std::pair<ChainDir, ChainDir> {
         using enum ChainDir;
@@ -615,11 +430,11 @@ ChainListener::processMessage(Json::Value const& msg)
         return {lockingToIssuing, issuingToLocking};
     }();
 
-    switch (txnType)
+    switch (*txnTypeOpt)
     {
-        case TxnType::xChainClaim: {
+        case XChainTxnType::xChainClaim: {
             auto const claimID = Json::getOptional<std::uint64_t>(
-                msg[ripple::jss::transaction], ripple::sfXChainClaimID);
+                transaction, ripple::sfXChainClaimID);
 
             if (!claimID)
             {
@@ -654,9 +469,9 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
-        case TxnType::xChainCommit: {
+        case XChainTxnType::xChainCommit: {
             auto const claimID = Json::getOptional<std::uint64_t>(
-                msg[ripple::jss::transaction], ripple::sfXChainClaimID);
+                transaction, ripple::sfXChainClaimID);
 
             if (!claimID)
             {
@@ -694,53 +509,8 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
-        case TxnType::xChainCreateAccount: {
-            auto const createCount = [&]() -> std::optional<std::uint64_t> {
-                try
-                {
-                    auto af = meta[ripple::sfAffectedNodes.getJsonName()];
-                    for (auto const& outerNode : af)
-                    {
-                        try
-                        {
-                            auto const node =
-                                outerNode[ripple::sfModifiedNode.getJsonName()];
-                            if (node[ripple::sfLedgerEntryType.getJsonName()] !=
-                                ripple::jss::Bridge)
-                                continue;
-                            auto const& ff =
-                                node[ripple::sfFinalFields.getJsonName()];
-                            auto const& count =
-                                ff[ripple::sfXChainAccountCreateCount
-                                       .getJsonName()];
-                            if (count.isString())
-                            {
-                                auto const s = count.asString();
-                                std::uint64_t val;
-
-                                // TODO: Confirm that this will be encoded
-                                // as hex
-                                auto [p, ec] = std::from_chars(
-                                    s.data(), s.data() + s.size(), val, 16);
-
-                                if (ec != std::errc() ||
-                                    (p != s.data() + s.size()))
-                                    return {};
-                                return val;
-                            }
-                            return count.asUInt();
-                        }
-                        catch (...)
-                        {
-                        }
-                    }
-                }
-                catch (...)
-                {
-                }
-                return {};
-            }();
-
+        case XChainTxnType::xChainCreateAccount: {
+            auto const createCount = rpcResultParse::parseCreateCount(meta);
             if (!createCount)
             {
                 JLOGV(
@@ -761,17 +531,7 @@ ChainListener::processMessage(Json::Value const& msg)
                     ripple::jv("chain_name", chainName));
                 return;
             }
-            auto const rewardAmt = [&]() -> std::optional<ripple::STAmount> {
-                if (msg[ripple::jss::transaction].isMember(
-                        ripple::sfSignatureReward.getJsonName()))
-                {
-                    return amountFromJson(
-                        ripple::sfGeneric,
-                        msg[ripple::jss::transaction]
-                           [ripple::sfSignatureReward.getJsonName()]);
-                }
-                return {};
-            }();
+            auto const rewardAmt = rpcResultParse::parseRewardAmt(transaction);
             if (!rewardAmt)
             {
                 JLOGV(
@@ -810,19 +570,43 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
-        case TxnType::SignerListSet: {
+        case XChainTxnType::xChainAttestation: {
+            if (rpcResultParse::fieldMatchesStr(
+                    transaction,
+                    ripple::jss::Account,
+                    witnessAccountStr_.c_str()) &&
+                txnSeq)
+            {
+                pushEvent(
+                    event::XChainAttestsResult{chainType_, *txnSeq, txnTER});
+                return;
+            }
+            else
+            {
+                JLOGV(
+                    j_.trace(),
+                    "ignoring listener message",
+                    ripple::jv(
+                        "reason", "not an attestation sent from this server"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName));
+                return;
+            }
+        }
+        break;
+        case XChainTxnType::SignerListSet: {
             if (txnSuccess && txnHistoryIndex >= 0)
                 processSignerListSet(msg[ripple::jss::transaction]);
             return;
         }
         break;
-        case TxnType::AccountSet: {
+        case XChainTxnType::AccountSet: {
             if (txnSuccess && txnHistoryIndex >= 0)
                 processAccountSet(msg[ripple::jss::transaction]);
             return;
         }
         break;
-        case TxnType::SetRegularKey: {
+        case XChainTxnType::SetRegularKey: {
             if (txnSuccess && txnHistoryIndex >= 0)
                 processSetRegularKey(msg[ripple::jss::transaction]);
             return;
@@ -1235,4 +1019,219 @@ ChainListener::getInfo() const
     return ret;
 }
 
+namespace rpcResultParse {
+bool
+fieldMatchesStr(Json::Value const& val, char const* field, char const* toMatch)
+{
+    if (!val.isMember(field))
+        return false;
+    auto const f = val[field];
+    if (!f.isString())
+        return false;
+    return f.asString() == toMatch;
+}
+
+std::optional<std::uint64_t>
+parseCreateCount(Json::Value const& meta)
+{
+    try
+    {
+        auto af = meta[ripple::sfAffectedNodes.getJsonName()];
+        for (auto const& outerNode : af)
+        {
+            try
+            {
+                auto const node =
+                    outerNode[ripple::sfModifiedNode.getJsonName()];
+                if (node[ripple::sfLedgerEntryType.getJsonName()] !=
+                    ripple::jss::Bridge)
+                    continue;
+                auto const& ff = node[ripple::sfFinalFields.getJsonName()];
+                auto const& count =
+                    ff[ripple::sfXChainAccountCreateCount.getJsonName()];
+                if (count.isString())
+                {
+                    auto const s = count.asString();
+                    std::uint64_t val;
+
+                    // TODO: Confirm that this will be encoded as
+                    // hex
+                    auto [p, ec] =
+                        std::from_chars(s.data(), s.data() + s.size(), val, 16);
+
+                    if (ec != std::errc() || (p != s.data() + s.size()))
+                        return {};
+                    return val;
+                }
+                return count.asUInt();
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
+std::optional<ripple::STAmount>
+parseRewardAmt(Json::Value const& transaction)
+{
+    if (transaction.isMember(ripple::sfSignatureReward.getJsonName()))
+    {
+        return amountFromJson(
+            ripple::sfGeneric,
+            transaction[ripple::sfSignatureReward.getJsonName()]);
+    }
+    return {};
+}
+
+std::optional<xbwd::XChainTxnType>
+parseXChainTxnType(Json::Value const& transaction)
+{
+    using enum xbwd::XChainTxnType;
+    static std::unordered_map<std::string, XChainTxnType> const candidates{{
+        {ripple::jss::XChainCommit.c_str(), xChainCommit},
+        {ripple::jss::XChainClaim.c_str(), xChainClaim},
+        {ripple::jss::XChainAccountCreateCommit.c_str(), xChainCreateAccount},
+        {ripple::jss::XChainAddAttestation.c_str(), xChainAttestation},
+        {ripple::jss::SignerListSet.c_str(), SignerListSet},
+        {ripple::jss::AccountSet.c_str(), AccountSet},
+        {ripple::jss::SetRegularKey.c_str(), SetRegularKey},
+    }};
+
+    if (!transaction.isMember(ripple::jss::TransactionType) ||
+        !transaction[ripple::jss::TransactionType].isString())
+        return {};
+
+    if (auto const it = candidates.find(
+            transaction[ripple::jss::TransactionType].asString());
+        it != candidates.end())
+    {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+std::optional<ripple::AccountID>
+parseDstAccount(Json::Value const& transaction, XChainTxnType txnType)
+{
+    try
+    {
+        switch (txnType)
+        {
+            case XChainTxnType::xChainCreateAccount:
+                [[fallthrough]];
+            case XChainTxnType::xChainClaim:
+                return ripple::parseBase58<ripple::AccountID>(
+                    transaction[ripple::sfDestination.getJsonName()]
+                        .asString());
+            case XChainTxnType::xChainCommit:
+                return ripple::parseBase58<ripple::AccountID>(
+                    transaction[ripple::sfOtherChainDestination.getJsonName()]
+                        .asString());
+        }
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
+std::optional<ripple::AccountID>
+parseSrcAccount(Json::Value const& transaction)
+{
+    try
+    {
+        return ripple::parseBase58<ripple::AccountID>(
+            transaction[ripple::jss::Account].asString());
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
+std::optional<ripple::STXChainBridge>
+parseBridge(Json::Value const& transaction)
+{
+    try
+    {
+        if (!transaction.isMember(ripple::jss::XChainBridge))
+            return {};
+        return ripple::STXChainBridge(transaction[ripple::jss::XChainBridge]);
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
+std::optional<ripple::uint256>
+parseTxHash(Json::Value const& transaction)
+{
+    try
+    {
+        ripple::uint256 result;
+        if (result.parseHex(transaction[ripple::jss::hash].asString()))
+            return result;
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
+std::optional<std::uint32_t>
+parseTxSeq(Json::Value const& transaction)
+{
+    try
+    {
+        if (!transaction.isMember(ripple::jss::Sequence) ||
+            !transaction[ripple::jss::Sequence].isIntegral())
+            return {};
+        return transaction[ripple::jss::Sequence].asUInt();
+    }
+    catch (...)
+    {
+        return {};
+    }
+}
+
+std::optional<std::uint32_t>
+parseLedgerSeq(Json::Value const& msg)
+{
+    try
+    {
+        if (msg.isMember(ripple::jss::ledger_index))
+        {
+            return msg[ripple::jss::ledger_index].asUInt();
+        }
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
+std::optional<ripple::STAmount>
+parseDeliveredAmt(Json::Value const& transaction, Json::Value const& meta)
+{
+    std::optional<ripple::STAmount> deliveredAmt;
+    if (meta.isMember(ripple::jss::delivered_amount))
+    {
+        deliveredAmt = amountFromJson(
+            ripple::sfGeneric, meta[ripple::jss::delivered_amount]);
+    }
+    // TODO: Add delivered amount to the txn data; for now override with amount
+    if (transaction.isMember(ripple::jss::Amount))
+    {
+        deliveredAmt =
+            amountFromJson(ripple::sfGeneric, transaction[ripple::jss::Amount]);
+    }
+    return deliveredAmt;
+}
+}  // namespace rpcResultParse
 }  // namespace xbwd

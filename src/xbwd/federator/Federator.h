@@ -196,6 +196,13 @@ public:
     Json::Value
     getInfo() const;
 
+    void
+    pullTx(
+        ripple::STXChainBridge const& bridge,
+        ChainType ct,
+        ripple::uint256 const& txHash,
+        Json::Value& result);
+
 private:
     // Two phase init needed for shared_from this.
     // Only called from `make_Federator`
