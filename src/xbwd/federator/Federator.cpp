@@ -111,6 +111,10 @@ Federator::Federator(
     : app_{app}
     , bridge_{config.bridge}
     , chains_{Chain{config.lockingChainConfig}, Chain{config.issuingChainConfig}}
+    , autoSubmit_{chains_[ChainType::locking].txnSubmit_ &&
+                  chains_[ChainType::locking].txnSubmit_->shouldSubmit,
+                  chains_[ChainType::issuing].txnSubmit_ &&
+                  chains_[ChainType::issuing].txnSubmit_->shouldSubmit}
     , keyType_{config.keyType}
     , signingPK_{derivePublicKey(config.keyType, config.signingKey)}
     , signingSK_{config.signingKey}
@@ -118,9 +122,6 @@ Federator::Federator(
 {
     std::fill(loopLocked_.begin(), loopLocked_.end(), true);
     events_.reserve(16);
-    for (auto ct : {ChainType::locking, ChainType::issuing})
-        autoSubmit_[ct] =
-            chains_[ct].txnSubmit_ && chains_[ct].txnSubmit_->shouldSubmit;
 }
 
 void
@@ -132,87 +133,111 @@ Federator::init(
     std::shared_ptr<ChainListener>&& sidechainListener)
 {
     auto fillLastTxHash = [&]() -> bool {
-        auto session = app_.getXChainTxnDB().checkoutDb();
-        auto sql = fmt::format(
-            R"sql(SELECT ChainType, TransID, LedgerSeq FROM {table_name};
-            )sql",
-            fmt::arg("table_name", db_init::xChainSyncTable));
-
-        std::uint32_t chainType = 0;
-        std::string transID;
-        std::uint32_t ledgerSeq = 0;
-        int rows = 0;
-        soci::statement st =
-            ((*session).prepare << sql,
-             soci::into(chainType),
-             soci::into(transID),
-             soci::into(ledgerSeq));
-        st.execute();
-        while (st.fetch())
+        try
         {
-            if (chainType != static_cast<std::uint32_t>(ChainType::issuing) &&
-                chainType != static_cast<std::uint32_t>(ChainType::locking))
-            {
-                JLOG(j_.error())
-                    << "error reading database: unknown chain type "
-                    << chainType << ". Recreating init sync table.";
-                return false;
-            }
-            auto ct = static_cast<ChainType>(chainType);
+            auto session = app_.getXChainTxnDB().checkoutDb();
+            auto const sql = fmt::format(
+                R"sql(SELECT ChainType, TransID, LedgerSeq FROM {table_name};
+            )sql",
+                fmt::arg("table_name", db_init::xChainSyncTable));
 
-            if (!initSyncDBTxnHashes_[ct].parseHex(transID))
+            std::uint32_t chainType = 0;
+            std::string transID;
+            std::uint32_t ledgerSeq = 0;
+            int rows = 0;
+            soci::statement st =
+                ((*session).prepare << sql,
+                 soci::into(chainType),
+                 soci::into(transID),
+                 soci::into(ledgerSeq));
+            st.execute();
+            while (st.fetch())
             {
-                JLOG(j_.error())
-                    << "error reading database: cannot parse transation hash "
-                    << transID << ". Recreating init sync table.";
-                return false;
-            }
+                if (chainType !=
+                        static_cast<std::uint32_t>(ChainType::issuing) &&
+                    chainType != static_cast<std::uint32_t>(ChainType::locking))
+                {
+                    JLOG(j_.error())
+                        << "error reading database: unknown chain type "
+                        << chainType << ". Recreating init sync table.";
+                    return false;
+                }
+                auto const ct = static_cast<ChainType>(chainType);
 
-            initSyncDBLedgerSqns_[ct] = ledgerSeq;
-            ++rows;
+                if (!initSync_[ct].dbTxnHash_.parseHex(transID))
+                {
+                    JLOG(j_.error())
+                        << "error reading database: cannot parse transation "
+                           "hash "
+                        << transID << ". Recreating init sync table.";
+                    return false;
+                }
+
+                initSync_[ct].dbLedgerSqn_ = ledgerSeq;
+                ++rows;
+            }
+            return rows == 2;  // both chainTypes
         }
-        return rows == 2;  // both chainTypes
+        catch (std::exception& e)
+        {
+            JLOGV(
+                j_.error(),
+                "error reading init sync table.",
+                ripple::jv("what", e.what()));
+            return false;
+        }
     };
 
     auto initializeInitSyncTable = [&]() {
+        try
         {
-            auto session = app_.getXChainTxnDB().checkoutDb();
-            auto sql = fmt::format(
-                R"sql(DELETE FROM {table_name};
+            {
+                auto session = app_.getXChainTxnDB().checkoutDb();
+                auto const sql = fmt::format(
+                    R"sql(DELETE FROM {table_name};
             )sql",
-                fmt::arg("table_name", db_init::xChainSyncTable));
-            *session << sql;
-        }
-        for (auto ct : {ChainType::locking, ChainType::issuing})
-        {
-            initSyncDBLedgerSqns_[ct] = 0u;
-            initSyncDBTxnHashes_[ct] = {};
-            auto const txnIdHex = ripple::strHex(
-                initSyncDBTxnHashes_[ct].begin(),
-                initSyncDBTxnHashes_[ct].end());
-            auto session = app_.getXChainTxnDB().checkoutDb();
-            auto sql = fmt::format(
-                R"sql(INSERT INTO {table_name}
+                    fmt::arg("table_name", db_init::xChainSyncTable));
+                *session << sql;
+            }
+            for (auto const ct : {ChainType::locking, ChainType::issuing})
+            {
+                initSync_[ct].dbLedgerSqn_ = 0u;
+                initSync_[ct].dbTxnHash_ = {};
+                auto const txnIdHex = ripple::strHex(
+                    initSync_[ct].dbTxnHash_.begin(),
+                    initSync_[ct].dbTxnHash_.end());
+                auto session = app_.getXChainTxnDB().checkoutDb();
+                auto const sql = fmt::format(
+                    R"sql(INSERT INTO {table_name}
                       (ChainType, TransID, LedgerSeq)
                       VALUES
                       (:ct, :txnId, :lgrSeq);
                 )sql",
-                fmt::arg("table_name", db_init::xChainSyncTable));
-            *session << sql, soci::use(static_cast<std::uint32_t>(ct)),
-                soci::use(txnIdHex), soci::use(initSyncDBLedgerSqns_[ct]);
+                    fmt::arg("table_name", db_init::xChainSyncTable));
+                *session << sql, soci::use(static_cast<std::uint32_t>(ct)),
+                    soci::use(txnIdHex), soci::use(initSync_[ct].dbLedgerSqn_);
+            }
+            JLOG(j_.info()) << "created DB table for initial sync, "
+                            << db_init::xChainSyncTable;
         }
-        JLOG(j_.info()) << "created DB table for initial sync, "
-                        << db_init::xChainSyncTable;
+        catch (std::exception& e)
+        {
+            JLOGV(
+                j_.fatal(),
+                "error creating init sync table.",
+                ripple::jv("what", e.what()));
+            throw e;
+        }
     };
 
     if (!fillLastTxHash())
         initializeInitSyncTable();
 
-    for (auto ct : {ChainType::locking, ChainType::issuing})
+    for (auto const ct : {ChainType::locking, ChainType::issuing})
     {
         JLOG(j_.trace()) << "Prepare init sync " << to_string(ct)
-                         << " DB ledgerSqn " << initSyncDBLedgerSqns_[ct]
-                         << " DB txHash " << initSyncDBTxnHashes_[ct]
+                         << " DB ledgerSqn " << initSync_[ct].dbLedgerSqn_
+                         << " DB txHash " << initSync_[ct].dbTxnHash_
                          << (chains_[ct].lastAttestedCommitTx_
                                  ? (" config txHash " +
                                     to_string(
@@ -229,12 +254,14 @@ Federator::init(
 void
 Federator::sendDBAttests(ChainType ct)
 {
-    auto chainDir = ct == ChainType::locking ? ChainDir::issuingToLocking
-                                             : ChainDir::lockingToIssuing;
-    int commitCount = 0;
-    int createCount = 0;
+    auto const chainDir = ct == ChainType::locking ? ChainDir::issuingToLocking
+                                                   : ChainDir::lockingToIssuing;
+    int commits = 0;
+    int creates = 0;
+
+    try
     {
-        auto tblName = db_init::xChainTableName(chainDir);
+        auto const& tblName = db_init::xChainTableName(chainDir);
         auto session = app_.getXChainTxnDB().checkoutDb();
         soci::blob amtBlob(*session);
         soci::blob bridgeBlob(*session);
@@ -249,7 +276,7 @@ Federator::sendDBAttests(ChainType ct)
         int claimID;
         int success;
 
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
                      Bridge, SendingAccount, RewardAccount, OtherChainDst,
                      PublicKey, Signature FROM {table_name} ORDER BY ClaimID;
@@ -310,15 +337,25 @@ Federator::sendDBAttests(ChainType ct)
                     sendingAmount,
                     rewardAccount,
                     chainDir == ChainDir::lockingToIssuing,
-                    (std::uint64_t)claimID,
+                    static_cast<std::uint64_t>(claimID),
                     optDst},
                 ct,
                 true);
-            ++commitCount;
+            ++commits;
         }
     }
+    catch (std::exception& e)
     {
-        auto tblName = db_init::xChainCreateAccountTableName(chainDir);
+        JLOGV(
+            j_.fatal(),
+            "sendDBAttests error reading commit table.",
+            ripple::jv("what", e.what()));
+        throw e;
+    }
+
+    try
+    {
+        auto const& tblName = db_init::xChainCreateAccountTableName(chainDir);
         auto session = app_.getXChainTxnDB().checkoutDb();
         soci::blob amtBlob(*session);
         soci::blob rewardAmtBlob(*session);
@@ -334,7 +371,7 @@ Federator::sendDBAttests(ChainType ct)
         int createCount;
         int success;
 
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(SELECT TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, RewardAmt,
                      Bridge, SendingAccount, RewardAccount, OtherChainDst,
                      PublicKey, Signature FROM {table_name} ORDER BY CreateCount;
@@ -396,15 +433,24 @@ Federator::sendDBAttests(ChainType ct)
                     rewardAmount,
                     rewardAccount,
                     chainDir == ChainDir::lockingToIssuing,
-                    (std::uint64_t)createCount,
+                    static_cast<std::uint64_t>(createCount),
                     dstAccount},
                 ct,
                 true);
-            ++createCount;
+            ++creates;
         }
     }
+    catch (std::exception& e)
+    {
+        JLOGV(
+            j_.fatal(),
+            "sendDBAttests error reading createAccount table.",
+            ripple::jv("what", e.what()));
+        throw e;
+    }
+
     JLOG(j_.trace()) << "sendDBAttests " << to_string(ct) << " commit "
-                     << commitCount << " create account " << createCount;
+                     << commits << " create account " << creates;
 }
 
 Federator::~Federator()
@@ -471,24 +517,24 @@ void
 Federator::initSync(
     ChainType const ct,
     ripple::uint256 const& eHash,
-    std::int32_t rpcOrder,
+    std::int32_t const rpcOrder,
     FederatorEvent const& e)
 {
-    if (!initSyncHistoryDone_[ct])
+    if (!initSync_[ct].historyDone_)
     {
-        if (initSyncDBTxnHashes_[ct] == eHash ||
+        if (initSync_[ct].dbTxnHash_ == eHash ||
             (chains_[otherChain(ct)].lastAttestedCommitTx_ &&
              *chains_[otherChain(ct)].lastAttestedCommitTx_ == eHash))
         {
-            initSyncHistoryDone_[ct] = true;
-            initSyncRpcOrder_[ct] = rpcOrder;
+            initSync_[ct].historyDone_ = true;
+            initSync_[ct].rpcOrder_ = rpcOrder;
             JLOG(j_.trace()) << "initSync found previous tx " << to_string(ct)
                              << " " << eHash;
         }
     }
 
-    bool historical = rpcOrder < 0;
-    bool skip = historical && initSyncHistoryDone_[ct];
+    bool const historical = rpcOrder < 0;
+    bool const skip = historical && initSync_[ct].historyDone_;
     if (!skip)
     {
         {
@@ -525,14 +571,14 @@ Federator::initSync(
 }
 
 void
-Federator::tryFinishInitSync(const ChainType ct)
+Federator::tryFinishInitSync(ChainType const ct)
 {
-    if (!initSyncHistoryDone_[ct] || !initSyncOldTxExpired_[ct])
+    if (!initSync_[ct].historyDone_ || !initSync_[ct].oldTxExpired_)
         return;
 
     JLOG(j_.debug()) << "initSyncDone " << to_string(ct) << ", "
                      << replays_[ct].size() << " events to replay";
-    initSync_[ct] = false;
+    initSync_[ct].syncing_ = false;
     chains_[otherChain(ct)].listener_->stopHistoricalTxns();
     if (autoSubmit_[ct])
         sendDBAttests(ct);
@@ -555,12 +601,12 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         ripple::jv("chain", to_string(dstChain)),
         ripple::jv("event", e.toJson()));
 
-    if (initSync_[dstChain])
+    if (initSync_[dstChain].syncing_)
     {
         initSync(dstChain, e.txnHash_, e.rpcOrder_, e);
         return;
     }
-    else if (e.rpcOrder_ < initSyncRpcOrder_[dstChain])
+    else if (e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
         // don't need older ones
         return;
@@ -570,7 +616,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(SELECT count(*) FROM {table_name} WHERE TransID = "{tx_hex}";)sql",
             fmt::arg("table_name", tblName),
             fmt::arg("tx_hex", txnIdHex));
@@ -676,7 +722,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             convert(*optDst, otherChainDstBlob);
         }
 
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(INSERT INTO {table_name}
                   (TransID, LedgerSeq, ClaimID, Success, DeliveredAmt, Bridge,
                    SendingAccount, RewardAccount, OtherChainDst, PublicKey, Signature)
@@ -694,11 +740,11 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     }
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(UPDATE {table_name} SET TransID = :tx_hash WHERE ChainType = :chain_type;
             )sql",
             fmt::arg("table_name", db_init::xChainSyncTable));
-        auto chainType = static_cast<std::uint32_t>(dstChain);
+        auto const chainType = static_cast<std::uint32_t>(dstChain);
         *session << sql, soci::use(txnIdHex), soci::use(chainType);
     }
 
@@ -721,12 +767,12 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
         ripple::jv("chain", to_string(dstChain)),
         ripple::jv("event", e.toJson()));
 
-    if (initSync_[dstChain])
+    if (initSync_[dstChain].syncing_)
     {
         initSync(dstChain, e.txnHash_, e.rpcOrder_, e);
         return;
     }
-    else if (e.rpcOrder_ < initSyncRpcOrder_[dstChain])
+    else if (e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
         // don't need older ones
         return;
@@ -736,7 +782,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(SELECT count(*) FROM {table_name} WHERE TransID = "{tx_hex}";)sql",
             fmt::arg("table_name", tblName),
             fmt::arg("tx_hex", txnIdHex));
@@ -849,7 +895,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
                 ripple::jv("reward_account", rewardAccount),
                 ripple::jv("other_chain_dst", dst));
 
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(INSERT INTO {table_name}
                   (TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, RewardAmt, Bridge,
                    SendingAccount, RewardAccount, otherChainDst, PublicKey, Signature)
@@ -868,11 +914,11 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     }
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto sql = fmt::format(
+        auto const sql = fmt::format(
             R"sql(UPDATE {table_name} SET TransID = :tx_hash WHERE ChainType = :chain_type;
             )sql",
             fmt::arg("table_name", db_init::xChainSyncTable));
-        auto chainType = static_cast<std::uint32_t>(dstChain);
+        auto const chainType = static_cast<std::uint32_t>(dstChain);
         *session << sql, soci::use(txnIdHex), soci::use(chainType);
     }
     if (autoSubmit_[dstChain] && createOpt)
@@ -898,10 +944,10 @@ void
 Federator::onEvent(event::EndOfHistory const& e)
 {
     JLOG(j_.trace()) << "init EndOfHistory " << to_string(e.chainType_);
-    auto ct = otherChain(e.chainType_);
-    if (initSync_[ct])
+    auto const ct = otherChain(e.chainType_);
+    if (initSync_[ct].syncing_)
     {
-        initSyncHistoryDone_[ct] = true;
+        initSync_[ct].historyDone_ = true;
         tryFinishInitSync(ct);
     }
 }
@@ -976,7 +1022,7 @@ Federator::onEvent(event::XChainAttestsResult const& e)
                 [&](auto const& i) { return i.accountSqn_ == e.accountSqn_; });
             i != subs.end())
         {
-            auto attestedIDs = forAttestIDs(
+            auto const attestedIDs = forAttestIDs(
                 i->batch_,
                 [&](std::uint64_t id) {
                     deleteFromDB(e.chainType_, id, false);
@@ -1012,10 +1058,10 @@ Federator::onEvent(event::NewLedger const& e)
     ledgerIndexes_[e.chainType_].store(e.ledgerIndex_);
     ledgerFees_[e.chainType_].store(e.fee_);
 
-    if (initSync_[e.chainType_])
+    if (initSync_[e.chainType_].syncing_)
     {
-        initSyncOldTxExpired_[e.chainType_] =
-            e.ledgerIndex_ > initSyncDBLedgerSqns_[e.chainType_];
+        initSync_[e.chainType_].oldTxExpired_ =
+            e.ledgerIndex_ > initSync_[e.chainType_].dbLedgerSqn_;
         tryFinishInitSync(e.chainType_);
         return;
     }
@@ -1034,7 +1080,7 @@ Federator::onEvent(event::NewLedger const& e)
             });
         while (subs.begin() != notInclude)
         {
-            assert(!initSync_[e.chainType_]);
+            assert(!initSync_[e.chainType_].syncing_);
             auto& front = subs.front();
             if (front.retriesAllowed_ > 0)
             {
@@ -1045,7 +1091,7 @@ Federator::onEvent(event::NewLedger const& e)
             }
             else
             {
-                auto attestedIDs = forAttestIDs(front.batch_);
+                auto const attestedIDs = forAttestIDs(front.batch_);
                 JLOGV(
                     j_.warn(),
                     "Giving up after repeated retries",
@@ -1184,7 +1230,7 @@ Federator::pushAtt(
 void
 Federator::submitTxn(Submission const& submission, ChainType dstChain)
 {
-    auto attestedIDs = forAttestIDs(submission.batch_);
+    auto const attestedIDs = forAttestIDs(submission.batch_);
     JLOGV(
         j_.trace(),
         "Submitting transaction",
@@ -1247,7 +1293,7 @@ Federator::submitTxn(Submission const& submission, ChainType dstChain)
                                     });
                                 i != subs.end())
                             {
-                                auto attestedIDs =
+                                auto const attestedIDs =
                                     forAttestIDs(submission.batch_);
                                 JLOGV(
                                     j_.warn(),
@@ -1469,12 +1515,12 @@ Federator::txnSubmitLoop()
             {
                 // TODO move out of submit loop
                 auto session = app_.getXChainTxnDB().checkoutDb();
-                auto sql = fmt::format(
+                auto const sql = fmt::format(
                     R"sql(UPDATE {table_name} SET LedgerSeq = :ledger_sqn WHERE ChainType = :chain_type;
             )sql",
                     fmt::arg("table_name", db_init::xChainSyncTable));
                 JLOG(j_.trace()) << "syncDB_SQL " << sql;
-                auto chainType = static_cast<std::uint32_t>(submitChain);
+                auto const chainType = static_cast<std::uint32_t>(submitChain);
                 *session << sql, soci::use(txn.lastLedgerSeq_),
                     soci::use(chainType);
                 JLOGV(
@@ -1517,7 +1563,7 @@ Federator::getInfo() const
     for (ChainType ct : {ChainType::locking, ChainType::issuing})
     {
         Json::Value side{Json::objectValue};
-        side["initiating"] = initSync_[ct] ? "True" : "False";
+        side["initiating"] = initSync_[ct].syncing_ ? "True" : "False";
         side["ledger_index"] = ledgerIndexes_[ct].load();
         side["fee"] = ledgerFees_[ct].load();
 
@@ -1607,7 +1653,7 @@ void
 Federator::deleteFromDB(ChainType ct, std::uint64_t id, bool isCreateAccount)
 {
     auto session = app_.getXChainTxnDB().checkoutDb();
-    auto tblName = [&]() {
+    auto const & tblName = [&]() {
         if (isCreateAccount)
             return db_init::xChainCreateAccountTableName(
                 ct == ChainType::locking ? ChainDir::issuingToLocking
@@ -1618,7 +1664,7 @@ Federator::deleteFromDB(ChainType ct, std::uint64_t id, bool isCreateAccount)
                                          : ChainDir::lockingToIssuing);
     }();
 
-    auto sql = [&]() {
+    auto const sql = [&]() {
         if (isCreateAccount)
             return fmt::format(
                 R"sql(DELETE FROM {table_name} WHERE CreateCount = :cid;

@@ -302,9 +302,7 @@ ChainListener::processMessage(Json::Value const& msg)
     if (msg.isMember(ripple::jss::account_history_tx_first) &&
         msg[ripple::jss::account_history_tx_first].asBool())
     {
-        using namespace event;
-        EndOfHistory e{chainType_};
-        pushEvent(std::move(e));
+        pushEvent(event::EndOfHistory {chainType_});
         return;
     }
 
@@ -651,9 +649,10 @@ ChainListener::processMessage(Json::Value const& msg)
 
     auto const [chainDir, oppositeChainDir] =
         [&]() -> std::pair<ChainDir, ChainDir> {
+        using enum ChainDir;
         if (chainType_ == ChainType::locking)
-            return {ChainDir::issuingToLocking, ChainDir::lockingToIssuing};
-        return {ChainDir::lockingToIssuing, ChainDir::issuingToLocking};
+            return {issuingToLocking, lockingToIssuing};
+        return {lockingToIssuing, issuingToLocking};
     }();
 
     switch (txnType)

@@ -94,7 +94,7 @@ class Federator : public std::enable_shared_from_this<Federator>
     };
 
     ChainArray<Chain> chains_;
-    ChainArray<bool> autoSubmit_;  // event thread only
+    ChainArray<bool const> const autoSubmit_;  // event thread only
 
     mutable std::mutex eventsMutex_;
     std::vector<FederatorEvent> GUARDED_BY(eventsMutex_) events_;
@@ -140,15 +140,17 @@ class Federator : public std::enable_shared_from_this<Federator>
     ChainArray<std::atomic<std::uint32_t>> ledgerFees_{0u, 0u};
     ChainArray<std::uint32_t> accountSqns_{0u, 0u};  // tx submit thread only
 
-    ChainArray<std::atomic<bool>> initSync_{true, true};
-    ChainArray<ripple::uint256> initSyncDBTxnHashes_;
-    ChainArray<std::uint32_t> initSyncDBLedgerSqns_{0u, 0u};
-    ChainArray<bool> initSyncHistoryDone_{false, false};
-    ChainArray<bool> initSyncOldTxExpired_{false, false};
-    ChainArray<std::int32_t> initSyncRpcOrder_{
-        std::numeric_limits<std::int32_t>::min(),
-        std::numeric_limits<std::int32_t>::min()};
+    struct InitSync
+    {
+        std::atomic<bool> syncing_{true};
+        ripple::uint256 dbTxnHash_;
+        std::uint32_t dbLedgerSqn_{0u};
+        bool historyDone_{false};
+        bool oldTxExpired_{false};
+        std::int32_t rpcOrder_{std::numeric_limits<std::int32_t>::min()};
+    };
 
+    ChainArray<InitSync> initSync_;
     ChainArray<std::deque<FederatorEvent>> replays_;
     beast::Journal j_;
 
@@ -227,9 +229,9 @@ private:
 
     void
     initSync(
-        ChainType ct,
+        ChainType const ct,
         ripple::uint256 const& eHash,
-        std::int32_t rpcOrder,
+        std::int32_t const rpcOrder,
         FederatorEvent const& e);
 
     void

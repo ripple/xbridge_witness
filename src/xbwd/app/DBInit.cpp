@@ -96,7 +96,7 @@ xChainDBInit()
             CREATE INDEX IF NOT EXISTS {table_name}CreateCountIdx ON {table_name}(CreateCount);",
         )sql";
 
-        auto const syncTblFmtStr = R"sql(
+        auto constexpr syncTblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
                 ChainType         UNSIGNED PRIMARY KEY,
                 TransID           CHARACTER(64),

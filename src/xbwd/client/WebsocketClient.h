@@ -102,7 +102,7 @@ private:
     onReadMsg(error_code const& ec) EXCLUDES(m_);
 
     void
-    reconnect();
+    reconnect() REQUIRES(shutdownM_);
 
     // Called when the read op terminates
     void
