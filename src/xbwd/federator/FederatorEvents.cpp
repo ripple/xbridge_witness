@@ -132,10 +132,40 @@ XChainSignerListSet::toJson() const
 {
     Json::Value result{Json::objectValue};
     result["eventType"] = "XChainSignerListSet";
-    result["account"] = toBase58(account_);
-    auto& jAcc = (result["entries"] = Json::arrayValue);
-    for (auto const& acc : entries_)
-        jAcc.append(toBase58(acc));
+    result["masterDoorID"] = masterDoorID_.isNonZero()
+        ? ripple::toBase58(masterDoorID_)
+        : std::string();
+    auto& jEntries = (result["entries"] = Json::arrayValue);
+    for (auto const& acc : signerList_)
+        jEntries.append(toBase58(acc));
+
+    return result;
+}
+
+Json::Value
+XChainSetRegularKey::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["eventType"] = "XChainSetRegularKey";
+    result["masterDoorID"] = masterDoorID_.isNonZero()
+        ? ripple::toBase58(masterDoorID_)
+        : std::string();
+    result["regularDoorID"] = regularDoorID_.isNonZero()
+        ? ripple::toBase58(regularDoorID_)
+        : std::string();
+
+    return result;
+}
+
+Json::Value
+XChainAccountSet::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["eventType"] = "XChainAccountSet";
+    result["masterDoorID"] = masterDoorID_.isNonZero()
+        ? ripple::toBase58(masterDoorID_)
+        : std::string();
+    result["disableMaster"] = disableMaster_;
 
     return result;
 }

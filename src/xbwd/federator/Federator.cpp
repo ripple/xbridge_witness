@@ -99,7 +99,6 @@ Federator::Chain::Chain(config::ChainConfig const& config)
     : rewardAccount_{config.rewardAccount}
     , txnSubmit_(config.txnSubmit)
     , lastAttestedCommitTx_(config.lastAttestedCommitTx)
-    , ignoreSignerList_(config.ignoreSignerList)
 {
 }
 
@@ -120,6 +119,11 @@ Federator::Federator(
     , signingSK_{config.signingKey}
     , j_(j)
 {
+    signerListsInfo_[ChainType::locking].ignoreSignerList_ =
+        config.lockingChainConfig.ignoreSignerList;
+    signerListsInfo_[ChainType::issuing].ignoreSignerList_ =
+        config.issuingChainConfig.ignoreSignerList;
+
     std::fill(loopLocked_.begin(), loopLocked_.end(), true);
     events_.reserve(16);
 }
@@ -1122,29 +1126,89 @@ Federator::onEvent(event::NewLedger const& e)
 }
 
 void
+Federator::updateSignerListStatus(ChainType const chainType)
+{
+    auto const signingAcc = calcAccountID(signingPK_);
+    auto& signerListInfo(signerListsInfo_[chainType]);
+
+    // check signer list
+    signerListInfo.status_ = signerListInfo.presentInSignerList_
+        ? SignerListInfo::present
+        : SignerListInfo::absent;
+
+    // check master key
+    if ((signerListInfo.status_ != SignerListInfo::present) &&
+        !signerListInfo.disableMaster_)
+    {
+        auto const& masterDoorID = ChainType::locking == chainType
+            ? bridge_.lockingChainDoor()
+            : bridge_.issuingChainDoor();
+        if (masterDoorID == signingAcc)
+            signerListInfo.status_ = SignerListInfo::present;
+    }
+
+    // check regular key
+    if ((signerListInfo.status_ != SignerListInfo::present) &&
+        signerListInfo.regularDoorID_.isNonZero() &&
+        (signerListInfo.regularDoorID_ == signingAcc))
+    {
+        signerListInfo.status_ = SignerListInfo::present;
+    }
+}
+
+void
 Federator::onEvent(event::XChainSignerListSet const& e)
 {
-    const auto signingAcc = calcAccountID(signingPK_);
-    const auto ignoreSignerList(chains_[e.chainType_].ignoreSignerList_);
-    auto& inSignerList = inSignerList_[e.chainType_];
+    auto const signingAcc = calcAccountID(signingPK_);
+    auto& signerListInfo(signerListsInfo_[e.chainType_]);
 
-    inSignerList = [&] {
-        for (const auto& acc : e.entries_)
-        {
-            if (acc == signingAcc)
-                return KeySignerListStatus::present;
-        }
-        return KeySignerListStatus::absent;
-    }();
+    signerListInfo.presentInSignerList_ =
+        e.signerList_.find(signingAcc) != e.signerList_.end();
+    updateSignerListStatus(e.chainType_);
 
     JLOGV(
         j_.info(),
         "event::XChainSignerListSet",
         ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
-        ripple::jv("DoorID", ripple::toBase58(e.account_)),
+        ripple::jv("DoorID", ripple::toBase58(e.masterDoorID_)),
         ripple::jv("ChainType", to_string(e.chainType_)),
-        ripple::jv("Active", inSignerList == KeySignerListStatus::present),
-        ripple::jv("IgnoreSignerList", ignoreSignerList));
+        ripple::jv("SignerListInfo", signerListInfo.toJson()));
+}
+
+void
+Federator::onEvent(event::XChainSetRegularKey const& e)
+{
+    auto const signingAcc = calcAccountID(signingPK_);
+    auto& signerListInfo(signerListsInfo_[e.chainType_]);
+
+    signerListInfo.regularDoorID_ = e.regularDoorID_;
+    updateSignerListStatus(e.chainType_);
+
+    JLOGV(
+        j_.info(),
+        "event::XChainSetRegularKey",
+        ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
+        ripple::jv("DoorID", ripple::toBase58(e.masterDoorID_)),
+        ripple::jv("ChainType", to_string(e.chainType_)),
+        ripple::jv("SignerListInfo", signerListInfo.toJson()));
+}
+
+void
+Federator::onEvent(event::XChainAccountSet const& e)
+{
+    auto const signingAcc = calcAccountID(signingPK_);
+    auto& signerListInfo(signerListsInfo_[e.chainType_]);
+
+    signerListInfo.disableMaster_ = e.disableMaster_;
+    updateSignerListStatus(e.chainType_);
+
+    JLOGV(
+        j_.info(),
+        "event::XChainAccountSet",
+        ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
+        ripple::jv("DoorID", ripple::toBase58(e.masterDoorID_)),
+        ripple::jv("ChainType", to_string(e.chainType_)),
+        ripple::jv("SignerListInfo", signerListInfo.toJson()));
 }
 
 void
@@ -1154,10 +1218,15 @@ Federator::pushAttOnSubmitTxn(
 {
     // batch mutex must already be held
     bool notify = false;
-    const auto inSignList = inSignerList_[chainType];
-    if (chains_[chainType].ignoreSignerList_ ||
-        (inSignList != KeySignerListStatus::absent))
+    auto const& signerListInfo(signerListsInfo_[chainType]);
+    if (signerListInfo.ignoreSignerList_ ||
+        (signerListInfo.status_ != SignerListInfo::absent))
     {
+        JLOGV(
+            j_.debug(),
+            "in signer list, atestations proceed",
+            ripple::jv("ChainType", to_string(chainType)));
+
         std::lock_guard tl{txnsMutex_};
         notify = txns_[ChainType::locking].empty() &&
             txns_[ChainType::issuing].empty();

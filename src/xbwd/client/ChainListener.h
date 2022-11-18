@@ -53,7 +53,8 @@ private:
     mutable std::mutex callbacksMtx_;
 
     using RpcCallback = std::function<void(Json::Value const&)>;
-    std::map<std::uint32_t, RpcCallback> GUARDED_BY(callbacksMtx_) callbacks_;
+    std::unordered_map<std::uint32_t, RpcCallback> GUARDED_BY(callbacksMtx_)
+        callbacks_;
 
 public:
     ChainListener(
@@ -109,6 +110,12 @@ private:
 
     void
     processSignerListSet(Json::Value const& msg) noexcept;
+
+    void
+    processAccountSet(Json::Value const& msg) noexcept;
+
+    void
+    processSetRegularKey(Json::Value const& msg) noexcept;
 
     template <class E>
     void

@@ -134,8 +134,28 @@ struct EndOfHistory
 struct XChainSignerListSet
 {
     ChainType chainType_ = ChainType::locking;
-    ripple::AccountID account_;
-    std::vector<ripple::AccountID> entries_;
+    ripple::AccountID masterDoorID_;
+    std::unordered_set<ripple::AccountID> signerList_;
+
+    Json::Value
+    toJson() const;
+};
+
+struct XChainSetRegularKey
+{
+    ChainType chainType_ = ChainType::locking;
+    ripple::AccountID masterDoorID_;
+    ripple::AccountID regularDoorID_;
+
+    Json::Value
+    toJson() const;
+};
+
+struct XChainAccountSet
+{
+    ChainType chainType_ = ChainType::locking;
+    ripple::AccountID masterDoorID_;
+    bool disableMaster_ = false;
 
     Json::Value
     toJson() const;
@@ -151,6 +171,8 @@ using FederatorEvent = std::variant<
     event::XChainAttestsResult,
     event::NewLedger,
     event::XChainSignerListSet,
+    event::XChainSetRegularKey,
+    event::XChainAccountSet,
     event::EndOfHistory>;
 
 Json::Value
