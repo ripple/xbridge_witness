@@ -73,8 +73,8 @@ main(int argc, char** argv)
     general.add_options()("help,h", "Display this message.")(
         "conf", po::value<std::string>(), "Specify the config file.")(
         "json", po::value<std::string>(), "Handle the provided json request")(
-        "quiet,q", "quiet")("verbose,v", "verbose")(
-        "unittest,u", "Perform unit tests.")(
+        "quiet,q", "quiet")("silent", "log to file only")(
+        "verbose,v", "verbose")("unittest,u", "Perform unit tests.")(
         "version", "Display the build version.");
 
     po::options_description cmdline_options;
@@ -133,6 +133,18 @@ main(int argc, char** argv)
             return std::make_unique<xbwd::config::Config>(jv);
         }
         ();
+
+        if (vm.count("silent"))
+        {
+            config->logSilent = true;
+        }
+        if (config->logSilent && config->logFile.empty())
+        {
+            std::cerr << "Silent flag present but config missed log file. "
+                         "Silent ignored."
+                      << std::endl;
+            config->logSilent = false;
+        }
 
         if (vm.count("json"))
         {

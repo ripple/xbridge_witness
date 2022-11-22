@@ -41,7 +41,17 @@ App::App(
     beast::severities::Severity logLevel)
     : BasicApp(std::thread::hardware_concurrency())
     , logs_(logLevel)
-    , j_(logs_.journal("App"))
+    , j_([&, this]() {
+        if (!config->logFile.empty())
+        {
+            if (!logs_.open(config->logFile))
+                std::cerr << "Can't open log file " << config->logFile
+                          << std::endl;
+        }
+        // Optionally turn off logging to console.
+        logs_.silent(config->logSilent);
+        return logs_.journal("App");
+    }())
     , xChainTxnDB_(
           config->dataDir,
           db_init::xChainDBName(),
@@ -97,15 +107,6 @@ App::setup()
             if (signum == SIGTERM || signum == SIGINT)
                 signalStop();
         });
-
-    if (!config_->logFile.empty())
-    {
-        if (!logs_.open(config_->logFile))
-            std::cerr << "Can't open log file " << config_->logFile
-                      << std::endl;
-    }
-    // Optionally turn off logging to console.
-    logs_.silent(config_->logSilent);
 
     {
         std::vector<ripple::Port> const ports = [&] {
