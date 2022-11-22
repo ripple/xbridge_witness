@@ -226,7 +226,7 @@ Federator::init(
                 j_.fatal(),
                 "error creating init sync table.",
                 ripple::jv("what", e.what()));
-            throw e;
+            throw;
         }
     };
 
@@ -350,7 +350,7 @@ Federator::sendDBAttests(ChainType ct)
             j_.fatal(),
             "sendDBAttests error reading commit table.",
             ripple::jv("what", e.what()));
-        throw e;
+        throw;
     }
 
     try
@@ -446,7 +446,7 @@ Federator::sendDBAttests(ChainType ct)
             j_.fatal(),
             "sendDBAttests error reading createAccount table.",
             ripple::jv("what", e.what()));
-        throw e;
+        throw;
     }
 
     JLOG(j_.trace()) << "sendDBAttests " << to_string(ct) << " commit "
