@@ -1756,4 +1756,19 @@ Submission::Submission(
 {
 }
 
+Json::Value
+SignerListInfo::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["status"] = static_cast<int>(status_);
+    result["disableMaster"] = disableMaster_;
+    result["regularDoorID"] = regularDoorID_.isNonZero()
+        ? ripple::toBase58(regularDoorID_)
+        : std::string();
+    result["presentInSignerList"] = presentInSignerList_;
+    result["ignoreSignerList"] = ignoreSignerList_;
+
+    return result;
+}
+
 }  // namespace xbwd

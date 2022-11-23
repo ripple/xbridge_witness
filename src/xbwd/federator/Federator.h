@@ -41,6 +41,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace xbwd {
@@ -81,7 +82,7 @@ struct SignerListInfo
     bool disableMaster_ = false;
     ripple::AccountID regularDoorID_;
 
-    inline Json::Value
+    Json::Value
     toJson() const;
 };
 
@@ -302,22 +303,5 @@ make_Federator(
     boost::asio::io_service& ios,
     config::Config const& config,
     beast::Journal j);
-
-//-------- implementation ---------
-
-inline Json::Value
-SignerListInfo::toJson() const
-{
-    Json::Value result{Json::objectValue};
-    result["status"] = static_cast<int>(status_);
-    result["disableMaster"] = disableMaster_;
-    result["regularDoorID"] = regularDoorID_.isNonZero()
-        ? ripple::toBase58(regularDoorID_)
-        : std::string();
-    result["presentInSignerList"] = presentInSignerList_;
-    result["ignoreSignerList"] = ignoreSignerList_;
-
-    return result;
-}
 
 }  // namespace xbwd
