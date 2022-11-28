@@ -327,21 +327,30 @@ ChainListener::processMessage(Json::Value const& msg)
 
         auto const txn = msg[ripple::jss::transaction];
 
-        static std::array<std::pair<TxnType, ::Json::StaticString>, 7> const
-            candidates{{
-                {xChainCommit, ripple::jss::XChainCommit},
-                {xChainClaim, ripple::jss::XChainClaim},
-                {xChainCreateAccount, ripple::jss::XChainAccountCreateCommit},
-                {xChainAttestation, ripple::jss::XChainAddAttestation},
-                {SignerListSet, ripple::jss::SignerListSet},
-                {AccountSet, ripple::jss::AccountSet},
-                {SetRegularKey, ripple::jss::SetRegularKey},
-            }};
+        static std::unordered_map<std::string, TxnType> const candidates{{
+            {ripple::jss::XChainCommit.c_str(), xChainCommit},
+            {ripple::jss::XChainClaim.c_str(), xChainClaim},
+            {ripple::jss::XChainAccountCreateCommit.c_str(),
+             xChainCreateAccount},
+            {ripple::jss::XChainAddAttestation.c_str(), xChainAttestation},
+            {ripple::jss::SignerListSet.c_str(), SignerListSet},
+            {ripple::jss::AccountSet.c_str(), AccountSet},
+            {ripple::jss::SetRegularKey.c_str(), SetRegularKey},
+        }};
 
-        for (auto const& [t, n] : candidates)
+        Json::Value const& val = txn;
+        char const* field = ripple::jss::TransactionType;
+        if (!val.isMember(field))
+            return {};
+        auto const f = val[field];
+        if (!f.isString())
+            return {};
+        auto const& txnTypeName = f.asString();
+
+        if (auto const it = candidates.find(txnTypeName);
+            it != candidates.end())
         {
-            if (fieldMatchesStr(txn, ripple::jss::TransactionType, n))
-                return t;
+            return it->second;
         }
         return std::nullopt;
     }();
@@ -373,6 +382,13 @@ ChainListener::processMessage(Json::Value const& msg)
         }
         else
         {
+            JLOGV(
+                j_.trace(),
+                "ignoring listener message",
+                ripple::jv(
+                    "reason", "not an attestation sent from this server"),
+                ripple::jv("msg", msg),
+                ripple::jv("chain_name", chainName));
             return;
         }
     }
