@@ -304,7 +304,6 @@ ChainListener::processMessage(Json::Value const& msg)
         msg[ripple::jss::account_history_tx_first].asBool())
     {
         pushEvent(event::EndOfHistory{chainType_});
-        return;
     }
 
     if (!msg.isMember(ripple::jss::validated) ||
