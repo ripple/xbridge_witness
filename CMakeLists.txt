@@ -140,6 +140,7 @@ add_executable (xbridge_witnessd
   src/xbwd/rpc/ServerHandler.cpp
   src/xbwd/client/WebsocketClient.cpp
   src/xbwd/client/ChainListener.cpp
+  src/xbwd/client/RpcResultParse.cpp
   )
 target_include_directories (xbridge_witnessd PRIVATE src)
 target_link_libraries (xbridge_witnessd PUBLIC Ripple::xrpl_core XBridgeWitness::opts

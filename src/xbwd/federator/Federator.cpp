@@ -22,6 +22,7 @@
 #include <xbwd/app/App.h>
 #include <xbwd/app/DBInit.h>
 #include <xbwd/basics/ChainTypes.h>
+#include <xbwd/client/RpcResultParse.h>
 #include <xbwd/federator/TxnSupport.h>
 
 #include <ripple/basics/strHex.h>
@@ -1756,7 +1757,7 @@ Federator::deleteFromDB(ChainType ct, std::uint64_t id, bool isCreateAccount)
 };
 
 void
-Federator::pullTx(
+Federator::pullAndAttestTx(
     ripple::STXChainBridge const& bridge,
     ChainType ct,
     ripple::uint256 const& txHash,
@@ -1772,14 +1773,22 @@ Federator::pullTx(
     auto callback = [this, srcChain = ct](Json::Value const& v) {
         if (!v.isMember(ripple::jss::result))
         {
-            JLOG(j_.trace()) << "pullTx callback, missing result field";
+            JLOG(j_.trace()) << "pullAndAttestTx callback, missing result field";
             return;
         }
 
         auto const& msg = v[ripple::jss::result];
+
+        if (!msg.isMember(ripple::jss::validated) ||
+            !msg[ripple::jss::validated].asBool())
+        {
+            JLOG(j_.trace()) << "pullAndAttestTx callback, not validated";
+            return;
+        }
+
         if (!msg.isMember(ripple::jss::meta))
         {
-            JLOG(j_.trace()) << "pullTx callback, missing meta field";
+            JLOG(j_.trace()) << "pullAndAttestTx callback, missing meta field";
             return;
         }
         auto const& meta = msg[ripple::jss::meta];
@@ -1789,35 +1798,35 @@ Federator::pullTx(
               meta["TransactionResult"].asString() == "tesSUCCESS"))
         {
             JLOG(j_.trace())
-                << "pullTx callback, missing or bad TransactionResult";
+                << "pullAndAttestTx callback, missing or bad TransactionResult";
             return;
         }
 
         auto txnTypeOpt = rpcResultParse::parseXChainTxnType(msg);
         if (!txnTypeOpt)
         {
-            JLOG(j_.trace()) << "pullTx callback, missing or bad tx type";
+            JLOG(j_.trace()) << "pullAndAttestTx callback, missing or bad tx type";
             return;
         }
 
         auto const txnHash = rpcResultParse::parseTxHash(msg);
         if (!txnHash)
         {
-            JLOG(j_.trace()) << "pullTx callback, missing or bad tx hash";
+            JLOG(j_.trace()) << "pullAndAttestTx callback, missing or bad tx hash";
             return;
         }
 
         auto const txnBridge = rpcResultParse::parseBridge(msg);
         if (!txnBridge)  // TODO check bridge match
         {
-            JLOG(j_.trace()) << "pullTx callback, missing or bad bridge";
+            JLOG(j_.trace()) << "pullAndAttestTx callback, missing or bad bridge";
             return;
         }
 
         auto const txnSeq = rpcResultParse::parseTxSeq(msg);
         if (!txnSeq)
         {
-            JLOG(j_.trace()) << "pullTx callback, missing or bad tx sequence";
+            JLOG(j_.trace()) << "pullAndAttestTx callback, missing or bad tx sequence";
             return;
         }
 
@@ -1825,7 +1834,7 @@ Federator::pullTx(
         if (!lgrSeq)
         {
             JLOG(j_.trace())
-                << "pullTx callback, missing or bad ledger sequence";
+                << "pullAndAttestTx callback, missing or bad ledger sequence";
             return;
         }
 
@@ -1833,7 +1842,7 @@ Federator::pullTx(
         if (!src)
         {
             JLOG(j_.trace())
-                << "pullTx callback, missing or bad source account";
+                << "pullAndAttestTx callback, missing or bad source account";
             return;
         }
 
@@ -1854,7 +1863,7 @@ Federator::pullTx(
                 if (!claimID)
                 {
                     JLOG(j_.trace())
-                        << "pullTx callback, missing or bad claimID";
+                        << "pullAndAttestTx callback, missing or bad claimID";
                     return;
                 }
 
@@ -1879,19 +1888,19 @@ Federator::pullTx(
                 if (!createCount)
                 {
                     JLOG(j_.trace())
-                        << "pullTx callback, missing or bad createCount";
+                        << "pullAndAttestTx callback, missing or bad createCount";
                     return;
                 }
                 auto const rewardAmt = rpcResultParse::parseRewardAmt(msg);
                 if (!rewardAmt)
                 {
                     JLOG(j_.trace())
-                        << "pullTx callback, missing or bad rewardAmount";
+                        << "pullAndAttestTx callback, missing or bad rewardAmount";
                     return;
                 }
                 if (!dst)
                 {
-                    JLOG(j_.trace()) << "pullTx callback, missing or bad "
+                    JLOG(j_.trace()) << "pullAndAttestTx callback, missing or bad "
                                         "destination account";
                     return;
                 }
@@ -1913,7 +1922,7 @@ Federator::pullTx(
             }
             break;
             default:
-                JLOG(j_.trace()) << "pullTx callback, wrong transaction type";
+                JLOG(j_.trace()) << "pullAndAttestTx callback, wrong transaction type";
                 return;
         }
     };

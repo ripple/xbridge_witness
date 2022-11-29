@@ -1,5 +1,7 @@
 #pragma once
 
+#include <xbwd/basics/ChainTypes.h>
+
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
@@ -15,7 +17,6 @@
 #include <charconv>
 #include <limits>
 #include <string>
-#include <xbwd/basics/ChainTypes.h>
 
 namespace xbwd {
 namespace rpc {

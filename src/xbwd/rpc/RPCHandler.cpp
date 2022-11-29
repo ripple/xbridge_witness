@@ -510,7 +510,7 @@ doAttestTx(App& app, Json::Value const& in, Json::Value& result)
         }
     }
 
-    f->pullTx(*optBridge, *optChainType, *optTxHash, result);
+    f->pullAndAttestTx(*optBridge, *optChainType, *optTxHash, result);
 }
 
 enum class Role { USER, ADMIN };

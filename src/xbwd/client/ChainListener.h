@@ -37,15 +37,6 @@ namespace xbwd {
 
 class Federator;
 class WebsocketClient;
-enum class XChainTxnType {
-    xChainCommit,
-    xChainClaim,
-    xChainCreateAccount,
-    xChainAttestation,
-    SignerListSet,
-    AccountSet,
-    SetRegularKey
-};
 
 class ChainListener : public std::enable_shared_from_this<ChainListener>
 {
@@ -130,40 +121,5 @@ private:
     void
     pushEvent(E&& e) REQUIRES(m_);
 };
-
-namespace rpcResultParse {
-bool
-fieldMatchesStr(Json::Value const& val, char const* field, char const* toMatch);
-
-std::optional<std::uint64_t>
-parseCreateCount(Json::Value const& meta);
-
-std::optional<ripple::STAmount>
-parseRewardAmt(Json::Value const& transaction);
-
-std::optional<XChainTxnType>
-parseXChainTxnType(Json::Value const& transaction);
-
-std::optional<ripple::AccountID>
-parseSrcAccount(Json::Value const& transaction);
-
-std::optional<ripple::AccountID>
-parseDstAccount(Json::Value const& transaction, XChainTxnType txnType);
-
-std::optional<ripple::STXChainBridge>
-parseBridge(Json::Value const& transaction);
-
-std::optional<ripple::uint256>
-parseTxHash(Json::Value const& transaction);
-
-std::optional<std::uint32_t>
-parseTxSeq(Json::Value const& transaction);
-
-std::optional<std::uint32_t>
-parseLedgerSeq(Json::Value const& msg);
-
-std::optional<ripple::STAmount>
-parseDeliveredAmt(Json::Value const& transaction, Json::Value const& meta);
-}  // namespace rpcResultParse
 
 }  // namespace xbwd
