@@ -95,6 +95,13 @@ public:
     send(std::string const& cmd, Json::Value const& params)
         EXCLUDES(callbacksMtx_);
 
+    /**
+     * process tx RPC response
+     * @param v the response
+     */
+    void
+    processTx(Json::Value const& v) noexcept;
+
 private:
     void
     onMessage(Json::Value const& msg) EXCLUDES(callbacksMtx_);

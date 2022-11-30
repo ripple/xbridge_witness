@@ -1009,6 +1009,152 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
     }
 }
 
+void
+ChainListener::processTx(Json::Value const& v) noexcept
+{
+    std::string const chainName = to_string(chainType_);
+    std::string_view const errTopic = "ignoring tx RPC response";
+
+    auto warn_ret = [&, this](std::string_view reason) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("reason", reason),
+            ripple::jv("msg", v),
+            ripple::jv("chain_name", chainName));
+    };
+
+    try
+    {
+        if (!v.isMember(ripple::jss::result))
+            return warn_ret("missing result field");
+
+        auto const& msg = v[ripple::jss::result];
+
+        if (!msg.isMember(ripple::jss::validated) ||
+            !msg[ripple::jss::validated].asBool())
+            return warn_ret("not validated");
+
+        if (!msg.isMember(ripple::jss::meta))
+            return warn_ret("missing meta field");
+
+        auto const& meta = msg[ripple::jss::meta];
+
+        if (!(meta.isMember("TransactionResult") &&
+              meta["TransactionResult"].isString() &&
+              meta["TransactionResult"].asString() == "tesSUCCESS"))
+            return warn_ret("missing or bad TransactionResult");
+
+        auto txnTypeOpt = rpcResultParse::parseXChainTxnType(msg);
+        if (!txnTypeOpt)
+            return warn_ret("missing or bad tx type");
+
+        auto const txnHash = rpcResultParse::parseTxHash(msg);
+        if (!txnHash)
+            return warn_ret("missing or bad tx hash");
+
+        auto const txnBridge = rpcResultParse::parseBridge(msg);
+        if (!txnBridge)  // TODO check bridge match
+            return warn_ret("missing or bad bridge");
+
+        auto const txnSeq = rpcResultParse::parseTxSeq(msg);
+        if (!txnSeq)
+            return warn_ret("missing or bad tx sequence");
+
+        auto const lgrSeq = rpcResultParse::parseLedgerSeq(msg);
+        if (!lgrSeq)
+            return warn_ret("missing or bad ledger sequence");
+
+        auto const src = rpcResultParse::parseSrcAccount(msg);
+        if (!src)
+            return warn_ret("missing or bad source account");
+
+        auto const dst = rpcResultParse::parseDstAccount(msg, *txnTypeOpt);
+
+        std::optional<ripple::STAmount> deliveredAmt =
+            rpcResultParse::parseDeliveredAmt(msg, meta);
+
+        auto const oppositeChainDir = chainType_ == ChainType::locking
+            ? ChainDir::lockingToIssuing
+            : ChainDir::issuingToLocking;
+
+        switch (*txnTypeOpt)
+        {
+            case XChainTxnType::xChainCommit: {
+                auto const claimID = Json::getOptional<std::uint64_t>(
+                    msg, ripple::sfXChainClaimID);
+                if (!claimID)
+                    return warn_ret("missing or bad claimID");
+
+                using namespace event;
+                XChainCommitDetected e{
+                    oppositeChainDir,
+                    *src,
+                    *txnBridge,
+                    deliveredAmt,
+                    *claimID,
+                    dst,
+                    *lgrSeq,
+                    *txnHash,
+                    ripple::tesSUCCESS,
+                    {},
+                    false};
+                pushEvent(std::move(e));
+            }
+            break;
+            case XChainTxnType::xChainCreateAccount: {
+                auto const createCount = rpcResultParse::parseCreateCount(meta);
+                if (!createCount)
+                    return warn_ret("missing or bad createCount");
+
+                auto const rewardAmt = rpcResultParse::parseRewardAmt(msg);
+                if (!rewardAmt)
+                    return warn_ret("missing or bad rewardAmount");
+
+                if (!dst)
+                    return warn_ret("missing or bad destination account");
+
+                using namespace event;
+                XChainAccountCreateCommitDetected e{
+                    oppositeChainDir,
+                    *src,
+                    *txnBridge,
+                    deliveredAmt,
+                    *rewardAmt,
+                    *createCount,
+                    *dst,
+                    *lgrSeq,
+                    *txnHash,
+                    ripple::tesSUCCESS,
+                    {},
+                    false};
+                pushEvent(std::move(e));
+            }
+            break;
+            default:
+                return warn_ret("wrong transaction type");
+        }
+    }
+    catch (std::exception const& e)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", e.what()),
+            ripple::jv("msg", v),
+            ripple::jv("chain_name", chainName));
+    }
+    catch (...)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", "unknown exception"),
+            ripple::jv("msg", v),
+            ripple::jv("chain_name", chainName));
+    }
+}
+
 Json::Value
 ChainListener::getInfo() const
 {
