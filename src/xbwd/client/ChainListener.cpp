@@ -17,6 +17,8 @@
 */
 //==============================================================================
 
+#include <xbwd/app/Config.h>
+
 #include <xbwd/client/ChainListener.h>
 #include <xbwd/client/RpcResultParse.h>
 #include <xbwd/client/WebsocketClient.h>
@@ -46,12 +48,12 @@ class Federator;
 
 ChainListener::ChainListener(
     ChainType chainType,
-    ripple::STXChainBridge const sidechain,
+    std::unordered_set<ripple::STXChainBridge> const& sidechain,
     std::optional<ripple::AccountID> submitAccountOpt,
     std::weak_ptr<Federator>&& federator,
     beast::Journal j)
     : chainType_{chainType}
-    , bridge_{sidechain}
+    , bridges_{sidechain}
     , witnessAccountStr_(
           submitAccountOpt ? ripple::toBase58(*submitAccountOpt)
                            : std::string{})
@@ -84,34 +86,44 @@ ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
 void
 ChainListener::onConnect()
 {
-    auto const doorAccStr = ripple::toBase58(
-        ChainType::locking == chainType_ ? bridge_.lockingChainDoor()
-                                         : bridge_.issuingChainDoor());
+    std::unordered_set<std::string> connectedAcc;
 
-    Json::Value params;
-    params[ripple::jss::account] = doorAccStr;
-    params[ripple::jss::signer_lists] = true;
+    for (auto const& b : bridges_)
+    {
+        auto const doorAccStr = ripple::toBase58(
+            b.door(static_cast<ripple::STXChainBridge::ChainType>(chainType_)));
 
-    send(
-        "account_info",
-        params,
-        [self = shared_from_this(), doorAccStr](Json::Value const& msg) {
-            self->processAccountInfo(msg);
+        auto const chk = connectedAcc.insert(doorAccStr);
+        if (!chk.second)
+            continue;
 
-            Json::Value params;
-            params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-            params[ripple::jss::account_history_tx_stream]
-                  [ripple::jss::account] = doorAccStr;
+        Json::Value params;
+        params[ripple::jss::account] = doorAccStr;
+        params[ripple::jss::signer_lists] = true;
 
-            params[ripple::jss::streams] = Json::arrayValue;
-            params[ripple::jss::streams].append("ledger");
-            if (!self->witnessAccountStr_.empty())
-            {
-                params[ripple::jss::accounts] = Json::arrayValue;
-                params[ripple::jss::accounts].append(self->witnessAccountStr_);
-            }
-            self->send("subscribe", params);
-        });
+        send(
+            "account_info",
+            params,
+            [self = shared_from_this(), doorAccStr](Json::Value const& msg) {
+                self->processAccountInfo(msg);
+
+                Json::Value params;
+                params[ripple::jss::account_history_tx_stream] =
+                    Json::objectValue;
+                params[ripple::jss::account_history_tx_stream]
+                      [ripple::jss::account] = doorAccStr;
+
+                params[ripple::jss::streams] = Json::arrayValue;
+                params[ripple::jss::streams].append("ledger");
+                if (!self->witnessAccountStr_.empty())
+                {
+                    params[ripple::jss::accounts] = Json::arrayValue;
+                    params[ripple::jss::accounts].append(
+                        self->witnessAccountStr_);
+                }
+                self->send("subscribe", params);
+            });
+    }
 }
 
 void
@@ -130,17 +142,25 @@ ChainListener::send(std::string const& cmd, Json::Value const& params)
 void
 ChainListener::stopHistoricalTxns()
 {
-    const auto doorAccStr = ripple::toBase58(
-        ChainType::locking == chainType_ ? bridge_.lockingChainDoor()
-                                         : bridge_.issuingChainDoor());
+    std::unordered_set<std::string> connectedAcc;
 
-    Json::Value params;
-    params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-    params[ripple::jss::account_history_tx_stream]
-          [ripple::jss::stop_history_tx_only] = true;
-    params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
-        doorAccStr;
-    send("unsubscribe", params);
+    for (auto const& b : bridges_)
+    {
+        auto const doorAccStr = ripple::toBase58(
+            b.door(static_cast<ripple::STXChainBridge::ChainType>(chainType_)));
+
+        auto const chk = connectedAcc.insert(doorAccStr);
+        if (!chk.second)
+            continue;
+
+        Json::Value params;
+        params[ripple::jss::account_history_tx_stream] = Json::objectValue;
+        params[ripple::jss::account_history_tx_stream]
+              [ripple::jss::stop_history_tx_only] = true;
+        params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
+            doorAccStr;
+        send("unsubscribe", params);
+    }
 }
 
 void
@@ -330,7 +350,7 @@ ChainListener::processMessage(Json::Value const& msg)
     }
 
     auto const txnBridge = rpcResultParse::parseBridge(transaction);
-    if (txnBridge && *txnBridge != bridge_)
+    if (txnBridge && (bridges_.find(*txnBridge) == bridges_.end()))
     {
         // Only keep transactions to or from the door account.
         // Transactions to the account are initiated by users and are are cross
@@ -669,6 +689,25 @@ processSignerListSetGeneral(
     return {std::move(entries)};
 }
 
+std::pair<bool, bool>
+checkAccID(
+    std::unordered_set<ripple::STXChainBridge> const& bridges,
+    const ripple::AccountID accID)
+{
+    std::pair<bool, bool> ret{false, false};
+
+    for (auto const& b : bridges)
+    {
+        if (!ret.first && (b.lockingChainDoor() == accID))
+            ret.first = true;
+        if (!ret.second && (b.issuingChainDoor() == accID))
+            ret.second = true;
+        if (ret.first && ret.second)
+            break;
+    }
+    return ret;
+}
+
 }  // namespace
 
 void
@@ -788,21 +827,16 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
 
     try
     {
-        auto const lockingDoorStr =
-            ripple::toBase58(bridge_.lockingChainDoor());
-        auto const issuingDoorStr =
-            ripple::toBase58(bridge_.issuingChainDoor());
-
         if (!msg.isMember(ripple::jss::Account))
             return warn_ret("'Account' missed");
-
         auto const txAccStr = msg[ripple::jss::Account].asString();
-        if ((txAccStr != lockingDoorStr) && (txAccStr != issuingDoorStr))
-            return warn_ret("unknown tx account");
-
         auto const parsedAcc = ripple::parseBase58<ripple::AccountID>(txAccStr);
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
+
+        auto const checkAcc = checkAccID(bridges_, *parsedAcc);
+        if (!checkAcc.first && !checkAcc.second)
+            return warn_ret("unknown tx account");
 
         auto opEntries =
             processSignerListSetGeneral(msg, chainName, errTopic, j_);
@@ -810,8 +844,8 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
             return;
 
         event::XChainSignerListSet evSignSet{
-            .chainType_ = txAccStr == lockingDoorStr ? ChainType::locking
-                                                     : ChainType::issuing,
+            .chainType_ =
+                checkAcc.first ? ChainType::locking : ChainType::issuing,
             .masterDoorID_ = *parsedAcc,
             .signerList_ = std::move(*opEntries)};
         if (evSignSet.chainType_ != chainType_)
@@ -865,21 +899,16 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
 
     try
     {
-        auto const lockingDoorStr =
-            ripple::toBase58(bridge_.lockingChainDoor());
-        auto const issuingDoorStr =
-            ripple::toBase58(bridge_.issuingChainDoor());
-
         if (!msg.isMember(ripple::jss::Account))
             return warn_ret("'Account' missed");
-
         auto const txAccStr = msg[ripple::jss::Account].asString();
-        if ((txAccStr != lockingDoorStr) && (txAccStr != issuingDoorStr))
-            return warn_ret("unknown tx account");
-
         auto const parsedAcc = ripple::parseBase58<ripple::AccountID>(txAccStr);
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
+
+        auto const checkAcc = checkAccID(bridges_, *parsedAcc);
+        if (!checkAcc.first && !checkAcc.second)
+            return warn_ret("unknown tx account");
 
         if (!msg.isMember(ripple::jss::SetFlag) &&
             !msg.isMember(ripple::jss::ClearFlag))
@@ -891,7 +920,10 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
         if (flag != ripple::asfDisableMaster)
             return warn_ret("not 'asfDisableMaster' flag");
 
-        event::XChainAccountSet evAccSet{chainType_, *parsedAcc, setFlag};
+        event::XChainAccountSet evAccSet{
+            checkAcc.first ? ChainType::locking : ChainType::issuing,
+            *parsedAcc,
+            setFlag};
         if (evAccSet.chainType_ != chainType_)
         {
             // This is strange but it is processed well by rippled
@@ -942,25 +974,20 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
 
     try
     {
-        auto const lockingDoorStr =
-            ripple::toBase58(bridge_.lockingChainDoor());
-        auto const issuingDoorStr =
-            ripple::toBase58(bridge_.issuingChainDoor());
-
         if (!msg.isMember(ripple::jss::Account))
             return warn_ret("'Account' missed");
-
         auto const txAccStr = msg[ripple::jss::Account].asString();
-        if ((txAccStr != lockingDoorStr) && (txAccStr != issuingDoorStr))
-            return warn_ret("unknown tx account");
-
         auto const parsedAcc = ripple::parseBase58<ripple::AccountID>(txAccStr);
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
+        auto const checkAcc = checkAccID(bridges_, *parsedAcc);
+        if (!checkAcc.first && !checkAcc.second)
+            return warn_ret("unknown tx account");
+
         event::XChainSetRegularKey evSetKey{
-            .chainType_ = txAccStr == lockingDoorStr ? ChainType::locking
-                                                     : ChainType::issuing,
+            .chainType_ =
+                checkAcc.first ? ChainType::locking : ChainType::issuing,
             .masterDoorID_ = *parsedAcc};
 
         if (evSetKey.chainType_ != chainType_)

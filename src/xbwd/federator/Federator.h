@@ -86,6 +86,21 @@ struct SignerListInfo
     toJson() const;
 };
 
+struct AttestationInfo
+{
+    // in-progress batches (one collection for each attestation type). Will be
+    // submitted when either all the transactions from that ledger are
+    // collected, or the batch limit is reached
+    // Both collections are guarded by the same mutex because both collections
+    // need to be locked to check the total size, and 2) given the events likely
+    // come from the same thread there should never be lock contention when
+    // adding to the collections
+    ChainArray<std::vector<ripple::AttestationBatch::AttestationClaim>>
+        curClaimAtts_;
+    ChainArray<std::vector<ripple::AttestationBatch::AttestationCreateAccount>>
+        curCreateAtts_;
+};
+
 class Federator : public std::enable_shared_from_this<Federator>
 {
     enum LoopTypes { lt_event, lt_txnSubmit, lt_last };
@@ -94,7 +109,9 @@ class Federator : public std::enable_shared_from_this<Federator>
     std::atomic<bool> requestStop_ = false;
 
     App& app_;
-    ripple::STXChainBridge const bridge_;
+
+    mutable std::mutex batchMutex_;
+    std::unordered_map<ripple::STXChainBridge, AttestationInfo> bridges_;
 
     struct Chain
     {
@@ -134,18 +151,6 @@ class Federator : public std::enable_shared_from_this<Federator>
     std::array<bool, lt_last> loopLocked_;
     std::array<std::condition_variable, lt_last> loopCvs_;
 
-    mutable std::mutex batchMutex_;
-    // in-progress batches (one collection for each attestation type). Will be
-    // submitted when either all the transactions from that ledger are
-    // collected, or the batch limit is reached
-    // Both collections are guarded by the same mutex because both collections
-    // need to be locked to check the total size, and 2) given the events likely
-    // come from the same thread there should never be lock contention when
-    // adding to the collections
-    ChainArray<std::vector<ripple::AttestationBatch::AttestationClaim>>
-        GUARDED_BY(batchMutex_) curClaimAtts_;
-    ChainArray<std::vector<ripple::AttestationBatch::AttestationCreateAccount>>
-        GUARDED_BY(batchMutex_) curCreateAtts_;
     ChainArray<std::atomic<std::uint32_t>> ledgerIndexes_{0u, 0u};
     ChainArray<std::atomic<std::uint32_t>> ledgerFees_{0u, 0u};
     ChainArray<std::uint32_t> accountSqns_{0u, 0u};  // tx submit thread only
@@ -252,14 +257,16 @@ private:
     void
     onEvent(event::XChainSignerListSet const& e);
 
-	void
+    void
     onEvent(event::XChainSetRegularKey const& e);
 
     void
     onEvent(event::XChainAccountSet const& e);
 
     void
-    updateSignerListStatus(ChainType const chainType);
+    updateSignerListStatus(
+        ripple::AccountID const& masterDoorID,
+        ChainType const chainType);
 
     void
     onEvent(event::EndOfHistory const& e);

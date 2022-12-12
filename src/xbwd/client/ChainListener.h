@@ -32,6 +32,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace xbwd {
 
@@ -41,10 +42,10 @@ class WebsocketClient;
 class ChainListener : public std::enable_shared_from_this<ChainListener>
 {
 private:
-    const ChainType chainType_;
+    ChainType const chainType_;
+    std::unordered_set<ripple::STXChainBridge> const bridges_;
 
-    ripple::STXChainBridge const bridge_;
-    std::string witnessAccountStr_;
+    std::string const witnessAccountStr_;
     std::weak_ptr<Federator> federator_;
     mutable std::mutex m_;
     beast::Journal j_;
@@ -59,7 +60,7 @@ private:
 public:
     ChainListener(
         ChainType chainType,
-        ripple::STXChainBridge const sidechain,
+        std::unordered_set<ripple::STXChainBridge> const& sidechain,
         std::optional<ripple::AccountID> submitAccountOpt,
         std::weak_ptr<Federator>&& federator,
         beast::Journal j);
