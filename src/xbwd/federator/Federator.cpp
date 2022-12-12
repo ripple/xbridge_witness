@@ -75,14 +75,14 @@ make_Federator(
     std::shared_ptr<ChainListener> mainchainListener =
         std::make_shared<ChainListener>(
             ChainType::locking,
-            config.bridge,
+            config.bridges,
             getSubmitAccount(ChainType::locking),
             r,
             j);
     std::shared_ptr<ChainListener> sidechainListener =
         std::make_shared<ChainListener>(
             ChainType::issuing,
-            config.bridge,
+            config.bridges,
             getSubmitAccount(ChainType::issuing),
             r,
             j);
@@ -108,8 +108,7 @@ Federator::Federator(
     App& app,
     config::Config const& config,
     beast::Journal j)
-    : app_{app}
-    , bridge_{config.bridge}
+    : app_{app}    
     , chains_{Chain{config.lockingChainConfig}, Chain{config.issuingChainConfig}}
     , autoSubmit_{chains_[ChainType::locking].txnSubmit_ &&
                   chains_[ChainType::locking].txnSubmit_->shouldSubmit,
@@ -120,6 +119,9 @@ Federator::Federator(
     , signingSK_{config.signingKey}
     , j_(j)
 {
+    for (auto const& b : config.bridges)
+        bridges_.try_emplace(b);
+
     signerListsInfo_[ChainType::locking].ignoreSignerList_ =
         config.lockingChainConfig.ignoreSignerList;
     signerListsInfo_[ChainType::issuing].ignoreSignerList_ =
@@ -304,9 +306,7 @@ Federator::sendDBAttests(ChainType ct)
              soci::into(signatureBlob));
         st.execute();
 
-        std::vector<ripple::AttestationBatch::AttestationClaim> claims;
         ripple::STXChainBridge bridge;
-        std::optional<ripple::STXChainBridge> firstBridge;
         while (st.fetch())
         {
             ripple::PublicKey signingPK;
@@ -332,6 +332,14 @@ Federator::sendDBAttests(ChainType ct)
             }
 
             convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            if (bridges_.find(bridge) == bridges_.end())
+            {
+                JLOGV(
+                    j_.trace(),
+                    "Skipping attestation claim from db",
+                    ripple::jv("attestation's bridge", bridge));
+                continue;
+            }
 
             pushAtt(
                 bridge,
@@ -400,9 +408,7 @@ Federator::sendDBAttests(ChainType ct)
              soci::into(signatureBlob));
         st.execute();
 
-        std::vector<ripple::AttestationBatch::AttestationClaim> claims;
         ripple::STXChainBridge bridge;
-        std::optional<ripple::STXChainBridge> firstBridge;
         while (st.fetch())
         {
             ripple::PublicKey signingPK;
@@ -427,6 +433,14 @@ Federator::sendDBAttests(ChainType ct)
             convert(otherChainDstBlob, dstAccount);
 
             convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            if (bridges_.find(bridge) == bridges_.end())
+            {
+                JLOGV(
+                    j_.trace(),
+                    "Skipping attestation create account from db",
+                    ripple::jv("attestation's bridge", bridge));
+                continue;
+            }
 
             pushAtt(
                 bridge,
@@ -688,7 +702,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     std::vector<std::uint8_t> const encodedBridge = [&] {
         ripple::Serializer s;
-        bridge_.add(s);
+        e.bridge_.add(s);
         return std::move(s.modData());
     }();
 
@@ -859,7 +873,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
         convert(e.rewardAmt_, rewardAmtBlob);
 
         soci::blob bridgeBlob(*session);
-        convert(bridge_, bridgeBlob);
+        convert(e.bridge_, bridgeBlob);
 
         soci::blob sendingAccountBlob(*session);
         // Convert to an AccountID first, because if the type changes we want to
@@ -1127,15 +1141,20 @@ Federator::onEvent(event::NewLedger const& e)
     else
     {
         std::lock_guard bl{batchMutex_};
-        if (curClaimAtts_[e.chainType_].size() +
-                curCreateAtts_[e.chainType_].size() >
-            0)
-            pushAttOnSubmitTxn(bridge_, e.chainType_);
+        for (auto const& [b, ai] : bridges_)
+        {
+            if (ai.curClaimAtts_[e.chainType_].size() +
+                    ai.curCreateAtts_[e.chainType_].size() >
+                0)
+                pushAttOnSubmitTxn(b, e.chainType_);
+        }
     }
 }
 
 void
-Federator::updateSignerListStatus(ChainType const chainType)
+Federator::updateSignerListStatus(
+    ripple::AccountID const& masterDoorID,
+    ChainType const chainType)
 {
     auto const signingAcc = calcAccountID(signingPK_);
     auto& signerListInfo(signerListsInfo_[chainType]);
@@ -1149,9 +1168,6 @@ Federator::updateSignerListStatus(ChainType const chainType)
     if ((signerListInfo.status_ != SignerListInfo::present) &&
         !signerListInfo.disableMaster_)
     {
-        auto const& masterDoorID = ChainType::locking == chainType
-            ? bridge_.lockingChainDoor()
-            : bridge_.issuingChainDoor();
         if (masterDoorID == signingAcc)
             signerListInfo.status_ = SignerListInfo::present;
     }
@@ -1173,7 +1189,7 @@ Federator::onEvent(event::XChainSignerListSet const& e)
 
     signerListInfo.presentInSignerList_ =
         e.signerList_.find(signingAcc) != e.signerList_.end();
-    updateSignerListStatus(e.chainType_);
+    updateSignerListStatus(e.masterDoorID_, e.chainType_);
 
     JLOGV(
         j_.info(),
@@ -1191,7 +1207,7 @@ Federator::onEvent(event::XChainSetRegularKey const& e)
     auto& signerListInfo(signerListsInfo_[e.chainType_]);
 
     signerListInfo.regularDoorID_ = e.regularDoorID_;
-    updateSignerListStatus(e.chainType_);
+    updateSignerListStatus(e.masterDoorID_, e.chainType_);
 
     JLOGV(
         j_.info(),
@@ -1209,7 +1225,7 @@ Federator::onEvent(event::XChainAccountSet const& e)
     auto& signerListInfo(signerListsInfo_[e.chainType_]);
 
     signerListInfo.disableMaster_ = e.disableMaster_;
-    updateSignerListStatus(e.chainType_);
+    updateSignerListStatus(e.masterDoorID_, e.chainType_);
 
     JLOGV(
         j_.info(),
@@ -1227,6 +1243,7 @@ Federator::pushAttOnSubmitTxn(
 {
     // batch mutex must already be held
     bool notify = false;
+    auto& ai(bridges_.at(bridge));
     auto const& signerListInfo(signerListsInfo_[chainType]);
     if (signerListInfo.ignoreSignerList_ ||
         (signerListInfo.status_ != SignerListInfo::absent))
@@ -1239,22 +1256,23 @@ Federator::pushAttOnSubmitTxn(
         std::lock_guard tl{txnsMutex_};
         notify = txns_[ChainType::locking].empty() &&
             txns_[ChainType::issuing].empty();
+
         txns_[chainType].emplace_back(
             0,
             0,
             ripple::STXChainAttestationBatch{
                 bridge,
-                curClaimAtts_[chainType].begin(),
-                curClaimAtts_[chainType].end(),
-                curCreateAtts_[chainType].begin(),
-                curCreateAtts_[chainType].end()});
-        curClaimAtts_[chainType].clear();
-        curCreateAtts_[chainType].clear();
+                ai.curClaimAtts_[chainType].begin(),
+                ai.curClaimAtts_[chainType].end(),
+                ai.curCreateAtts_[chainType].begin(),
+                ai.curCreateAtts_[chainType].end()});
+        ai.curClaimAtts_[chainType].clear();
+        ai.curCreateAtts_[chainType].clear();
     }
     else
     {
-        curClaimAtts_[chainType].clear();
-        curCreateAtts_[chainType].clear();
+        ai.curClaimAtts_[chainType].clear();
+        ai.curCreateAtts_[chainType].clear();
 
         JLOGV(
             j_.info(),
@@ -1277,12 +1295,17 @@ Federator::pushAtt(
     bool ledgerBoundary)
 {
     std::lock_guard bl{batchMutex_};
-    curClaimAtts_[chainType].emplace_back(std::move(att));
+
+    auto& ai(bridges_.at(bridge));
+
+    ai.curClaimAtts_[chainType].emplace_back(std::move(att));
     assert(
-        curClaimAtts_[chainType].size() + curCreateAtts_[chainType].size() <=
+        ai.curClaimAtts_[chainType].size() +
+            ai.curCreateAtts_[chainType].size() <=
         ripple::AttestationBatch::maxAttestations);
     if (ledgerBoundary ||
-        curClaimAtts_[chainType].size() + curCreateAtts_[chainType].size() >=
+        ai.curClaimAtts_[chainType].size() +
+                ai.curCreateAtts_[chainType].size() >=
             ripple::AttestationBatch::maxAttestations)
         pushAttOnSubmitTxn(bridge, chainType);
 }
@@ -1295,12 +1318,17 @@ Federator::pushAtt(
     bool ledgerBoundary)
 {
     std::lock_guard bl{batchMutex_};
-    curCreateAtts_[chainType].emplace_back(std::move(att));
+
+    auto& ai(bridges_.at(bridge));
+
+    ai.curCreateAtts_[chainType].emplace_back(std::move(att));
     assert(
-        curClaimAtts_[chainType].size() + curCreateAtts_[chainType].size() <=
+        ai.curClaimAtts_[chainType].size() +
+            ai.curCreateAtts_[chainType].size() <=
         ripple::AttestationBatch::maxAttestations);
     if (ledgerBoundary ||
-        curClaimAtts_[chainType].size() + curCreateAtts_[chainType].size() >=
+        ai.curClaimAtts_[chainType].size() +
+                ai.curCreateAtts_[chainType].size() >=
             ripple::AttestationBatch::maxAttestations)
         pushAttOnSubmitTxn(bridge, chainType);
 }
@@ -1700,15 +1728,18 @@ Federator::getInfo() const
         }
         {
             std::lock_guard l{batchMutex_};
-            for (auto const& a : curClaimAtts_[ct])
+            for (auto const& [b, ai] : bridges_)
             {
-                commitAttests.append((int)a.claimID);
-                ++commitCount;
-            }
-            for (auto const& a : curCreateAtts_[ct])
-            {
-                createAttests.append((int)a.createCount);
-                ++createCount;
+                for (auto const& a : ai.curClaimAtts_[ct])
+                {
+                    commitAttests.append((int)a.claimID);
+                    ++commitCount;
+                }
+                for (auto const& a : ai.curCreateAtts_[ct])
+                {
+                    createAttests.append((int)a.createCount);
+                    ++createCount;
+                }
             }
         }
         Json::Value pending{Json::objectValue};

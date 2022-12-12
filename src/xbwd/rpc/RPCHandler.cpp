@@ -105,9 +105,12 @@ doSelectAll(
              soci::into(signatureBlob));
         st.execute();
 
-        std::vector<ripple::AttestationBatch::AttestationClaim> claims;
+        std::unordered_map<
+            ripple::STXChainBridge,
+            std::vector<ripple::AttestationBatch::AttestationClaim>>
+            bridges;
+
         ripple::STXChainBridge bridge;
-        std::optional<ripple::STXChainBridge> firstBridge;
         while (st.fetch())
         {
             ripple::PublicKey signingPK;
@@ -133,16 +136,8 @@ doSelectAll(
             }
 
             convert(bridgeBlob, bridge, ripple::sfXChainBridge);
-            if (!firstBridge)
-            {
-                firstBridge = bridge;
-            }
-            else
-            {
-                assert(bridge == *firstBridge);
-            }
 
-            claims.emplace_back(
+            bridges[bridge].emplace_back(
                 signingPK,
                 sigBuf,
                 sendingAccount,
@@ -153,10 +148,14 @@ doSelectAll(
                 optDst);
         }
 
-        ripple::STXChainAttestationBatch batch{
-            bridge, claims.begin(), claims.end()};
-        result["result"]["XChainAttestationBatch"] =
-            batch.getJson(ripple::JsonOptions::none);
+        auto& jAttBatch =
+            (result["result"]["XChainAttestationBatch"] = Json::arrayValue);
+        for (auto const& [b, claims] : bridges)
+        {
+            ripple::STXChainAttestationBatch batch{
+                bridge, claims.begin(), claims.end()};
+            jAttBatch.append(batch.getJson(ripple::JsonOptions::none));
+        }
     }
 }
 

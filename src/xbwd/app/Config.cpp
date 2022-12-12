@@ -132,13 +132,22 @@ Config::Config(Json::Value const& jv)
                      keyType,
                      rpc::fromJson<ripple::Seed>(jv, "SigningKeySeed"))
                      .second}
-    , bridge{rpc::fromJson<ripple::STXChainBridge>(jv, "XChainBridge")}
     , adminConfig{jv.isMember("Admin") ? AdminConfig::make(jv["Admin"]) : std::nullopt}
     , logFile(jv.isMember("LogFile") ? jv["LogFile"].asString() : std::string())
     , logLevel(
           jv.isMember("LogLevel") ? jv["LogLevel"].asString() : std::string())
     , logSilent(jv.isMember("LogSilent") ? jv["LogSilent"].asBool() : false)
 {
+    auto const& jbridges(jv["XChainBridge"]);
+    if (jbridges.isArray())
+    {
+        for (auto const& jbridge : jbridges)
+            bridges.emplace(jbridge);
+    }
+    else
+    {
+        bridges.emplace(jbridges);
+    }
 }
 
 }  // namespace config
