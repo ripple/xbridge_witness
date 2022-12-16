@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <exception>
 #include <future>
 #include <sstream>
@@ -1640,6 +1641,103 @@ Federator::txnSubmitLoop()
     }
 }
 
+namespace {
+
+struct AttestationsID
+{
+    std::deque<uint32_t> commitAttests;
+    std::deque<uint32_t> createAttests;
+};
+
+struct BridgeAtt
+{
+    unsigned commitCount = 0;
+    unsigned createCount = 0;
+    std::unordered_map<ripple::STXChainBridge, AttestationsID> att;
+
+    void
+    clear()
+    {
+        att.clear();
+        commitCount = createCount = 0;
+    }
+
+    Json::Value
+    toJson() const
+    {
+        Json::Value ret{Json::objectValue};
+
+        ret["commit_attests_size"] = commitCount;
+        if (commitCount)
+        {
+            Json::Value attArr{Json::arrayValue};
+            for (auto const& [b, ai] : att)
+            {
+                Json::Value obj{Json::objectValue};
+                obj["bridge"] = b.getJson(ripple::JsonOptions::none);
+
+                Json::Value idArr{Json::arrayValue};
+                for (auto const& id : ai.commitAttests)
+                    idArr.append(id);
+                obj["attests"] = std::move(idArr);
+                attArr.append(std::move(obj));
+            }
+
+            ret["commit_attests"] = attArr;
+        }
+
+        ret["create_account_attests_size"] = createCount;
+        if (createCount)
+        {
+            Json::Value attArr{Json::arrayValue};
+            for (auto const& [b, ai] : att)
+            {
+                Json::Value obj{Json::objectValue};
+                obj["bridge"] = b.getJson(ripple::JsonOptions::none);
+
+                Json::Value idArr{Json::arrayValue};
+                for (auto const id : ai.createAttests)
+                    idArr.append(id);
+                obj["attests"] = std::move(idArr);
+                attArr.append(std::move(obj));
+            }
+
+            ret["create_account_attests"] = attArr;
+        }
+
+        return ret;
+    }
+};
+
+template <template <typename> typename Cont>
+void
+getAttests(BridgeAtt& bridgeAtt, Cont<Submission> const& submissions)
+{
+    bridgeAtt.clear();
+    for (auto const& a : submissions)
+    {
+        forAttestIDs(
+            a.batch_,
+            [&](std::uint64_t id) {
+                assert(
+                    id <= static_cast<std::uint64_t>(
+                              std::numeric_limits<std::uint32_t>::max()));
+                bridgeAtt.att[a.batch_.bridge()].commitAttests.push_back(
+                    static_cast<uint32_t>(id));
+                ++bridgeAtt.commitCount;
+            },
+            [&](std::uint64_t id) {
+                assert(
+                    id <= static_cast<std::uint64_t>(
+                              std::numeric_limits<std::uint32_t>::max()));
+                bridgeAtt.att[a.batch_.bridge()].createAttests.push_back(
+                    static_cast<uint32_t>(id));
+                ++bridgeAtt.createCount;
+            });
+    }
+}
+}  // namespace
+
 Json::Value
 Federator::getInfo() const
 {
@@ -1672,84 +1770,39 @@ Federator::getInfo() const
         side["ledger_index"] = ledgerIndexes_[ct].load();
         side["fee"] = ledgerFees_[ct].load();
 
-        int commitCount = 0;
-        int createCount = 0;
-        Json::Value commitAttests{Json::arrayValue};
-        Json::Value createAttests{Json::arrayValue};
-        auto getAttests = [&](auto const& submissions) {
-            commitCount = 0;
-            createCount = 0;
-            commitAttests.clear();
-            createAttests.clear();
-            for (auto const& a : submissions)
-            {
-                forAttestIDs(
-                    a.batch_,
-                    [&](std::uint64_t id) {
-                        assert(
-                            id <= (std::uint64_t)
-                                      std::numeric_limits<std::uint32_t>::max);
-                        commitAttests.append((std::uint32_t)id);
-                        ++commitCount;
-                    },
-                    [&](std::uint64_t id) {
-                        assert(
-                            id <= (std::uint64_t)
-                                      std::numeric_limits<std::uint32_t>::max);
-                        createAttests.append((std::uint32_t)id);
-                        ++createCount;
-                    });
-            }
-        };
+        BridgeAtt bridgeAtt;
 
         {
             std::lock_guard l{txnsMutex_};
-            getAttests(submitted_[ct]);
-            Json::Value submitted{Json::objectValue};
-            submitted["commit_attests_size"] = commitCount;
-            if (commitCount)
-                submitted["commit_attests"] = commitAttests;
-            submitted["create_account_attests_size"] = createCount;
-            if (createCount)
-                submitted["create_account_attests"] = createAttests;
-            side["submitted"] = submitted;
 
-            getAttests(errored_[ct]);
-            Json::Value errored{Json::objectValue};
-            errored["commit_attests_size"] = commitCount;
-            if (commitCount > 0)
-                errored["commit_attests"] = commitAttests;
-            errored["create_account_attests_size"] = createCount;
-            if (createCount > 0)
-                errored["create_account_attests"] = createAttests;
-            side["errored"] = errored;
+            getAttests(bridgeAtt, submitted_[ct]);
+            side["submitted"] = bridgeAtt.toJson();
 
-            getAttests(txns_[ct]);
+            getAttests(bridgeAtt, errored_[ct]);
+            side["errored"] = bridgeAtt.toJson();
+
+            getAttests(bridgeAtt, txns_[ct]);
         }
+
         {
             std::lock_guard l{batchMutex_};
             for (auto const& [b, ai] : bridges_)
             {
                 for (auto const& a : ai.curClaimAtts_[ct])
                 {
-                    commitAttests.append((int)a.claimID);
-                    ++commitCount;
+                    bridgeAtt.att[b].commitAttests.push_back(
+                        static_cast<uint32_t>(a.claimID));
+                    ++bridgeAtt.commitCount;
                 }
                 for (auto const& a : ai.curCreateAtts_[ct])
                 {
-                    createAttests.append((int)a.createCount);
-                    ++createCount;
+                    bridgeAtt.att[b].createAttests.push_back(
+                        static_cast<uint32_t>(a.createCount));
+                    ++bridgeAtt.createCount;
                 }
             }
         }
-        Json::Value pending{Json::objectValue};
-        pending["commit_attests_size"] = commitCount;
-        if (commitCount > 0)
-            pending["commit_attests"] = commitAttests;
-        pending["create_account_attests_size"] = createCount;
-        if (createCount > 0)
-            pending["create_account_attests"] = createAttests;
-        side["pending"] = pending;
+        side["pending"] = bridgeAtt.toJson();
 
         ret[to_string(ct)] = side;
     }
