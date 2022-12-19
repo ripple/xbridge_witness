@@ -689,23 +689,18 @@ processSignerListSetGeneral(
     return {std::move(entries)};
 }
 
-std::pair<bool, bool>
+bool
 checkAccID(
     std::unordered_set<ripple::STXChainBridge> const& bridges,
-    const ripple::AccountID accID)
+    ripple::STXChainBridge::ChainType const chainType,
+    ripple::AccountID const accID)
 {
-    std::pair<bool, bool> ret{false, false};
-
-    for (auto const& b : bridges)
-    {
-        if (!ret.first && (b.lockingChainDoor() == accID))
-            ret.first = true;
-        if (!ret.second && (b.issuingChainDoor() == accID))
-            ret.second = true;
-        if (ret.first && ret.second)
-            break;
-    }
-    return ret;
+    return std::find_if(
+               bridges.cbegin(),
+               bridges.cend(),
+               [&accID, chainType](auto const& b) {
+                   return b.door(chainType) == accID;
+               }) != bridges.cend();
 }
 
 }  // namespace
@@ -834,8 +829,11 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
-        auto const checkAcc = checkAccID(bridges_, *parsedAcc);
-        if (!checkAcc.first && !checkAcc.second)
+        auto const checkAcc = checkAccID(
+            bridges_,
+            static_cast<ripple::STXChainBridge::ChainType>(chainType_),
+            *parsedAcc);
+        if (!checkAcc)
             return warn_ret("unknown tx account");
 
         auto opEntries =
@@ -844,22 +842,9 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
             return;
 
         event::XChainSignerListSet evSignSet{
-            .chainType_ =
-                checkAcc.first ? ChainType::locking : ChainType::issuing,
+            .chainType_ = chainType_,
             .masterDoorID_ = *parsedAcc,
             .signerList_ = std::move(*opEntries)};
-        if (evSignSet.chainType_ != chainType_)
-        {
-            // This is strange but it is processed well by rippled
-            // so we can proceed
-            JLOGV(
-                j_.warn(),
-                "processing signer list message",
-                ripple::jv("warning", "Door account type mismatch"),
-                ripple::jv("chain_type", to_string(chainType_)),
-                ripple::jv("tx_type", to_string(evSignSet.chainType_)));
-        }
-
         pushEvent(std::move(evSignSet));
     }
     catch (std::exception const& e)
@@ -906,8 +891,11 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
-        auto const checkAcc = checkAccID(bridges_, *parsedAcc);
-        if (!checkAcc.first && !checkAcc.second)
+        auto const checkAcc = checkAccID(
+            bridges_,
+            static_cast<ripple::STXChainBridge::ChainType>(chainType_),
+            *parsedAcc);
+        if (!checkAcc)
             return warn_ret("unknown tx account");
 
         if (!msg.isMember(ripple::jss::SetFlag) &&
@@ -920,21 +908,7 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
         if (flag != ripple::asfDisableMaster)
             return warn_ret("not 'asfDisableMaster' flag");
 
-        event::XChainAccountSet evAccSet{
-            checkAcc.first ? ChainType::locking : ChainType::issuing,
-            *parsedAcc,
-            setFlag};
-        if (evAccSet.chainType_ != chainType_)
-        {
-            // This is strange but it is processed well by rippled
-            // so we can proceed
-            JLOGV(
-                j_.warn(),
-                "processing account set",
-                ripple::jv("warning", "Door account type mismatch"),
-                ripple::jv("chain_type", to_string(chainType_)),
-                ripple::jv("tx_type", to_string(evAccSet.chainType_)));
-        }
+        event::XChainAccountSet evAccSet{chainType_, *parsedAcc, setFlag};
         pushEvent(std::move(evAccSet));
     }
     catch (std::exception const& e)
@@ -981,26 +955,15 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
-        auto const checkAcc = checkAccID(bridges_, *parsedAcc);
-        if (!checkAcc.first && !checkAcc.second)
+        auto const checkAcc = checkAccID(
+            bridges_,
+            static_cast<ripple::STXChainBridge::ChainType>(chainType_),
+            *parsedAcc);
+        if (!checkAcc)
             return warn_ret("unknown tx account");
 
         event::XChainSetRegularKey evSetKey{
-            .chainType_ =
-                checkAcc.first ? ChainType::locking : ChainType::issuing,
-            .masterDoorID_ = *parsedAcc};
-
-        if (evSetKey.chainType_ != chainType_)
-        {
-            // This is strange but it is processed well by rippled
-            // so we can proceed
-            JLOGV(
-                j_.warn(),
-                "processing account set",
-                ripple::jv("warning", "Door account type mismatch"),
-                ripple::jv("chain_type", to_string(chainType_)),
-                ripple::jv("tx_type", to_string(evSetKey.chainType_)));
-        }
+            .chainType_ = chainType_, .masterDoorID_ = *parsedAcc};
 
         std::string const regularKeyStr = msg.isMember("RegularKey")
             ? msg["RegularKey"].asString()
