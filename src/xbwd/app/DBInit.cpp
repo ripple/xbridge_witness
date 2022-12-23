@@ -98,9 +98,13 @@ xChainDBInit()
 
         auto constexpr syncTblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
-                ChainType         UNSIGNED PRIMARY KEY,
-                TransID           CHARACTER(64),
-                LedgerSeq         BIGINT UNSIGNED);
+                DoorAccountID     TEXT NOT NULL,
+                ChainType         UNSIGNED NOT NULL,
+                TransID           CHARACTER(64) NOT NULL,
+                LedgerSeq         BIGINT UNSIGNED NOT NULL);
+        )sql";
+        auto constexpr createSyncIdxFmtStr = R"sql(
+            CREATE UNIQUE INDEX IF NOT EXISTS {table_name}AccountUniqueIdx ON {table_name}(DoorAccountID, ChainType);",
         )sql";
 
         for (auto cd : {ChainDir::lockingToIssuing, ChainDir::issuingToLocking})
@@ -120,6 +124,8 @@ xChainDBInit()
 
         r.push_back(fmt::format(
             syncTblFmtStr, fmt::arg("table_name", xChainSyncTable)));
+        r.push_back(fmt::format(
+            createSyncIdxFmtStr, fmt::arg("table_name", xChainSyncTable)));
 
         r.push_back("END TRANSACTION;");
         return r;

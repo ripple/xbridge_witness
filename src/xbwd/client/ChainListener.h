@@ -74,7 +74,7 @@ public:
     shutdown();
 
     void
-    stopHistoricalTxns();
+    stopHistoricalTxns(ripple::AccountID const& doorID);
 
     Json::Value
     getInfo() const EXCLUDES(m_);

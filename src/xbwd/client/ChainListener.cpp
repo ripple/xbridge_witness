@@ -90,8 +90,7 @@ ChainListener::onConnect()
 
     for (auto const& b : bridges_)
     {
-        auto const doorAccStr = ripple::toBase58(
-            b.door(static_cast<ripple::STXChainBridge::ChainType>(chainType_)));
+        auto const doorAccStr = ripple::toBase58(b.door(chainType_));
 
         auto const chk = connectedAcc.insert(doorAccStr);
         if (!chk.second)
@@ -140,27 +139,17 @@ ChainListener::send(std::string const& cmd, Json::Value const& params)
 }
 
 void
-ChainListener::stopHistoricalTxns()
+ChainListener::stopHistoricalTxns(ripple::AccountID const& doorID)
 {
-    std::unordered_set<std::string> connectedAcc;
+    auto const doorAccStr = ripple::toBase58(doorID);
 
-    for (auto const& b : bridges_)
-    {
-        auto const doorAccStr = ripple::toBase58(
-            b.door(static_cast<ripple::STXChainBridge::ChainType>(chainType_)));
-
-        auto const chk = connectedAcc.insert(doorAccStr);
-        if (!chk.second)
-            continue;
-
-        Json::Value params;
-        params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-        params[ripple::jss::account_history_tx_stream]
-              [ripple::jss::stop_history_tx_only] = true;
-        params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
-            doorAccStr;
-        send("unsubscribe", params);
-    }
+    Json::Value params;
+    params[ripple::jss::account_history_tx_stream] = Json::objectValue;
+    params[ripple::jss::account_history_tx_stream]
+          [ripple::jss::stop_history_tx_only] = true;
+    params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
+        doorAccStr;
+    send("unsubscribe", params);
 }
 
 void
@@ -228,6 +217,64 @@ ChainListener::onMessage(Json::Value const& msg)
     }
 }
 
+namespace {
+std::unordered_set<ripple::AccountID>
+getMetaAccounts(Json::Value const& meta)
+{
+    std::unordered_set<ripple::AccountID> res;
+
+    if (!meta.isMember("AffectedNodes"))
+        return res;
+
+    auto const& an = meta["AffectedNodes"];
+    if (!an.isArray())
+        return res;
+
+    for (auto const& ob : an)
+    {
+        if (ob.isMember("ModifiedNode"))
+        {
+            auto const& mn = ob["ModifiedNode"];
+            if (mn.isMember("FinalFields"))
+            {
+                auto const& ff = mn["FinalFields"];
+                if (ff.isMember(ripple::jss::Account))
+                {
+                    auto parsedAcc = rpcResultParse::parseSrcAccount(ff);
+                    if (parsedAcc)
+                        res.insert(std::move(*parsedAcc));
+                }
+            }
+        }
+        else if (ob.isMember("CreatedNode"))
+        {
+            auto const& cn = ob["CreatedNode"];
+            if (cn.isMember("NewFields"))
+            {
+                auto const& nf = cn["NewFields"];
+                if (nf.isMember(ripple::jss::Account))
+                {
+                    auto parsedAcc = rpcResultParse::parseSrcAccount(nf);
+                    if (parsedAcc)
+                        res.insert(std::move(*parsedAcc));
+                }
+
+                if (nf.isMember("Owner"))
+                {
+                    auto parsedAcc = ripple::parseBase58<ripple::AccountID>(
+                        nf["Owner"].asString());
+                    if (parsedAcc)
+                        res.insert(std::move(*parsedAcc));
+                }
+            }
+        }
+    }
+
+    return res;
+}
+
+}  // namespace
+
 void
 ChainListener::processMessage(Json::Value const& msg)
 {
@@ -269,12 +316,6 @@ ChainListener::processMessage(Json::Value const& msg)
     else if (tryPushNewLedgerEvent(msg))
         return;
 
-    if (msg.isMember(ripple::jss::account_history_tx_first) &&
-        msg[ripple::jss::account_history_tx_first].asBool())
-    {
-        pushEvent(event::EndOfHistory{chainType_});
-    }
-
     if (!msg.isMember(ripple::jss::validated) ||
         !msg[ripple::jss::validated].asBool())
     {
@@ -297,7 +338,19 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
-    auto const transaction = msg[ripple::jss::transaction];
+    auto const& transaction = msg[ripple::jss::transaction];
+
+    auto const src = rpcResultParse::parseSrcAccount(transaction);
+    if (!src)
+    {
+        JLOGV(
+            j_.warn(),
+            "ignoring listener message",
+            ripple::jv("reason", "no account src"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+        return;
+    }
 
     if (!msg.isMember(ripple::jss::meta))
     {
@@ -309,7 +362,16 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
-    auto const meta = msg[ripple::jss::meta];
+    auto const& meta = msg[ripple::jss::meta];
+
+    if (msg.isMember(ripple::jss::account_history_tx_first) &&
+        msg[ripple::jss::account_history_tx_first].asBool())
+    {
+        std::unordered_set<ripple::AccountID> accounts = getMetaAccounts(meta);
+        accounts.insert(*src);
+
+        pushEvent(event::EndOfHistory{chainType_, std::move(accounts)});
+    }
 
     if (!msg.isMember(ripple::jss::engine_result_code))
     {
@@ -405,18 +467,6 @@ ChainListener::processMessage(Json::Value const& msg)
             j_.warn(),
             "ignoring listener message",
             ripple::jv("reason", "no lgrSeq"),
-            ripple::jv("msg", msg),
-            ripple::jv("chain_name", chainName));
-        return;
-    }
-
-    auto const src = rpcResultParse::parseSrcAccount(transaction);
-    if (!src)
-    {
-        JLOGV(
-            j_.warn(),
-            "ignoring listener message",
-            ripple::jv("reason", "no account src"),
             ripple::jv("msg", msg),
             ripple::jv("chain_name", chainName));
         return;
@@ -829,10 +879,7 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
-        auto const checkAcc = checkAccID(
-            bridges_,
-            static_cast<ripple::STXChainBridge::ChainType>(chainType_),
-            *parsedAcc);
+        auto const checkAcc = checkAccID(bridges_, chainType_, *parsedAcc);
         if (!checkAcc)
             return warn_ret("unknown tx account");
 
@@ -891,10 +938,7 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
-        auto const checkAcc = checkAccID(
-            bridges_,
-            static_cast<ripple::STXChainBridge::ChainType>(chainType_),
-            *parsedAcc);
+        auto const checkAcc = checkAccID(bridges_, chainType_, *parsedAcc);
         if (!checkAcc)
             return warn_ret("unknown tx account");
 
@@ -955,10 +999,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
-        auto const checkAcc = checkAccID(
-            bridges_,
-            static_cast<ripple::STXChainBridge::ChainType>(chainType_),
-            *parsedAcc);
+        auto const checkAcc = checkAccID(bridges_, chainType_, *parsedAcc);
         if (!checkAcc)
             return warn_ret("unknown tx account");
 
