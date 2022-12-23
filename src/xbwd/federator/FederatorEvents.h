@@ -125,6 +125,7 @@ struct NewLedger
 struct EndOfHistory
 {
     ChainType chainType_;
+    std::unordered_set<ripple::AccountID> accounts_;
 
     Json::Value
     toJson() const;

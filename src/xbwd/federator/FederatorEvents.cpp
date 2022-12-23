@@ -127,6 +127,10 @@ EndOfHistory::toJson() const
     Json::Value result{Json::objectValue};
     result["eventType"] = "EndOfHistory";
     result["chainType"] = to_string(chainType_);
+    auto& jAccounts = (result["accounts"] = Json::arrayValue);
+    for (auto const& acc : accounts_)
+        jAccounts.append(ripple::toBase58(acc));
+
     return result;
 }
 
