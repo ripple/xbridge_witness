@@ -98,8 +98,7 @@ ChainListener::onConnect()
     {
         auto const doorAccStr = ripple::toBase58(b.door(chainType_));
 
-        auto const chk = connectedAcc.insert(doorAccStr);
-        if (!chk.second)
+        if (!connectedAcc.insert(doorAccStr).second)
             continue;
 
         Json::Value params;
@@ -414,7 +413,7 @@ ChainListener::processMessage(Json::Value const& msg)
     }
 
     auto const txnBridge = rpcResultParse::parseBridge(transaction);
-    if (txnBridge && (bridges_.find(*txnBridge) == bridges_.end()))
+    if (txnBridge && !bridges_.contains(*txnBridge))
     {
         // Only keep transactions to or from the door account.
         // Transactions to the account are initiated by users and are are cross
@@ -869,8 +868,7 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
         if (!parsedAcc)
             return warn_ret("invalid 'Account'");
 
-        auto const checkAcc = checkAccID(bridges_, chainType_, *parsedAcc);
-        if (!checkAcc)
+        if (!checkAccID(bridges_, chainType_, *parsedAcc))
             return warn_ret("unknown tx account");
 
         auto opEntries =
@@ -1075,7 +1073,7 @@ ChainListener::processTx(Json::Value const& v) noexcept
             return warn_ret("missing or bad tx hash");
 
         auto const txnBridge = rpcResultParse::parseBridge(msg);
-        if (!txnBridge)  // TODO check bridge match
+        if (!txnBridge || !bridges_.contains(*txnBridge))
             return warn_ret("missing or bad bridge");
 
         auto const txnSeq = rpcResultParse::parseTxSeq(msg);

@@ -393,7 +393,7 @@ Federator::sendDBAttests(ChainType const ct, auto const& doorID)
             }
 
             convert(bridgeBlob, bridge, ripple::sfXChainBridge);
-            if (bridges_.find(bridge) == bridges_.end())
+            if (!bridges_.contains(bridge))
             {
                 JLOGV(
                     j_.trace(),
@@ -507,7 +507,7 @@ Federator::sendDBAttests(ChainType const ct, auto const& doorID)
             convert(otherChainDstBlob, dstAccount);
 
             convert(bridgeBlob, bridge, ripple::sfXChainBridge);
-            if (bridges_.find(bridge) == bridges_.end())
+            if (!bridges_.contains(bridge))
             {
                 JLOGV(
                     j_.trace(),
