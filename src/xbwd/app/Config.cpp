@@ -113,18 +113,32 @@ ChainConfig::ChainConfig(Json::Value const& jv)
     {
         txnSubmit.emplace(jv["TxnSubmit"]);
     }
-    if (jv.isMember("LastAttestedCommitTx"))
+
+    // "LastAttestedCommitTxList": [ {"Account": "AccountID",
+    // "LastAttestedCommitTx": "tx"}, {...} ... ]
+    if (jv.isMember("LastAttestedCommitTxList"))
     {
-        lastAttestedCommitTx.emplace(
-            rpc::fromJson<ripple::uint256>(jv, "LastAttestedCommitTx"));
+        auto const& jLastCommits = jv["LastAttestedCommitTxList"];
+        if (!jLastCommits.isArray())
+        {
+            throw std::runtime_error(
+                "LastAttestedCommitTxList must be array type");
+        }
+
+        for (auto const& o : jLastCommits)
+        {
+            lastAttestedCommitTxMap.try_emplace(
+                rpc::fromJson<ripple::AccountID>(o, "Account"),
+                rpc::fromJson<ripple::uint256>(o, "LastAttestedCommitTx"));
+        }
     }
+
     if (jv.isMember("IgnoreSignerList"))
         ignoreSignerList = jv["IgnoreSignerList"].asBool();
 }
 
 Config::Config(Json::Value const& jv)
-    : lockingChainConfig(jv["LockingChain"])
-    , issuingChainConfig(jv["IssuingChain"])
+    : chainConfig{jv["LockingChain"], jv["IssuingChain"]}
     , rpcEndpoint{rpc::fromJson<beast::IP::Endpoint>(jv, "RPCEndpoint")}
     , dataDir{rpc::fromJson<boost::filesystem::path>(jv, "DBDir")}
     , keyType{keyTypeFromJson(jv, "SigningKeyType")}

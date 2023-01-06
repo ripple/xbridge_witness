@@ -46,6 +46,12 @@ namespace xbwd {
 
 class Federator;
 
+static auto const genesisAccountID =
+    ripple::calcAccountID(ripple::generateKeyPair(
+                              ripple::KeyType::secp256k1,
+                              ripple::generateSeed("masterpassphrase"))
+                              .first);
+
 ChainListener::ChainListener(
     ChainType chainType,
     std::unordered_set<ripple::STXChainBridge> const& sidechain,
@@ -219,7 +225,7 @@ ChainListener::onMessage(Json::Value const& msg)
 
 namespace {
 std::unordered_set<ripple::AccountID>
-getMetaAccounts(Json::Value const& meta)
+getMetaCreatedAccounts(Json::Value const& meta)
 {
     std::unordered_set<ripple::AccountID> res;
 
@@ -232,21 +238,7 @@ getMetaAccounts(Json::Value const& meta)
 
     for (auto const& ob : an)
     {
-        if (ob.isMember("ModifiedNode"))
-        {
-            auto const& mn = ob["ModifiedNode"];
-            if (mn.isMember("FinalFields"))
-            {
-                auto const& ff = mn["FinalFields"];
-                if (ff.isMember(ripple::jss::Account))
-                {
-                    auto parsedAcc = rpcResultParse::parseSrcAccount(ff);
-                    if (parsedAcc)
-                        res.insert(std::move(*parsedAcc));
-                }
-            }
-        }
-        else if (ob.isMember("CreatedNode"))
+        if (ob.isMember("CreatedNode"))
         {
             auto const& cn = ob["CreatedNode"];
             if (cn.isMember("NewFields"))
@@ -256,15 +248,10 @@ getMetaAccounts(Json::Value const& meta)
                 {
                     auto parsedAcc = rpcResultParse::parseSrcAccount(nf);
                     if (parsedAcc)
-                        res.insert(std::move(*parsedAcc));
-                }
-
-                if (nf.isMember("Owner"))
-                {
-                    auto parsedAcc = ripple::parseBase58<ripple::AccountID>(
-                        nf["Owner"].asString());
-                    if (parsedAcc)
-                        res.insert(std::move(*parsedAcc));
+                    {
+                        if (*parsedAcc != genesisAccountID)
+                            res.insert(std::move(*parsedAcc));
+                    }
                 }
             }
         }
@@ -352,6 +339,18 @@ ChainListener::processMessage(Json::Value const& msg)
         return;
     }
 
+    auto const txnSeq = rpcResultParse::parseTxSeq(transaction);
+    if (!txnSeq)
+    {
+        JLOGV(
+            j_.warn(),
+            "ignoring listener message",
+            ripple::jv("reason", "no txnSeq"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+        return;
+    }
+
     if (!msg.isMember(ripple::jss::meta))
     {
         JLOGV(
@@ -367,8 +366,11 @@ ChainListener::processMessage(Json::Value const& msg)
     if (msg.isMember(ripple::jss::account_history_tx_first) &&
         msg[ripple::jss::account_history_tx_first].asBool())
     {
-        std::unordered_set<ripple::AccountID> accounts = getMetaAccounts(meta);
-        accounts.insert(*src);
+        std::unordered_set<ripple::AccountID> accounts =
+            getMetaCreatedAccounts(meta);
+
+        if (1 == *txnSeq)
+            accounts.insert(genesisAccountID);
 
         pushEvent(event::EndOfHistory{chainType_, std::move(accounts)});
     }
@@ -443,18 +445,6 @@ ChainListener::processMessage(Json::Value const& msg)
             j_.warn(),
             "ignoring listener message",
             ripple::jv("reason", "no tx hash"),
-            ripple::jv("msg", msg),
-            ripple::jv("chain_name", chainName));
-        return;
-    }
-
-    auto const txnSeq = rpcResultParse::parseTxSeq(transaction);
-    if (!txnSeq)
-    {
-        JLOGV(
-            j_.warn(),
-            "ignoring listener message",
-            ripple::jv("reason", "no txnSeq"),
             ripple::jv("msg", msg),
             ripple::jv("chain_name", chainName));
         return;
