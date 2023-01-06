@@ -1,11 +1,28 @@
 #pragma once
 
+#include <ripple/basics/hardened_hash.h>
 #include <ripple/protocol/STXChainBridge.h>
 
 #include <array>
 #include <string>
 #include <tuple>
 #include <utility>
+
+template <>
+struct std::hash<ripple::STXChainBridge>
+{
+    std::size_t
+    operator()(ripple::STXChainBridge const& b) const noexcept
+    {
+        beast::xxhasher hasher;
+        beast::hash_append(hasher, b.lockingChainDoor());
+        ripple::hash_append(hasher, b.lockingChainIssue());
+        beast::hash_append(hasher, b.issuingChainDoor());
+        ripple::hash_append(hasher, b.issuingChainIssue());
+        const std::size_t h = static_cast<std::size_t>(hasher);
+        return h;
+    }
+};
 
 namespace xbwd {
 

@@ -63,9 +63,7 @@ make_Federator(
 
     auto getSubmitAccount =
         [&](ChainType chainType) -> std::optional<ripple::AccountID> {
-        auto const& chainConfig = chainType == ChainType::locking
-            ? config.lockingChainConfig
-            : config.issuingChainConfig;
+        auto const& chainConfig = config.chainConfig[chainType];
         if (chainConfig.txnSubmit && chainConfig.txnSubmit->shouldSubmit)
         {
             return chainConfig.txnSubmit->submittingAccount;
@@ -89,9 +87,9 @@ make_Federator(
             j);
     r->init(
         ios,
-        config.lockingChainConfig.chainIp,
+        config.chainConfig[ChainType::locking].chainIp,
         std::move(mainchainListener),
-        config.issuingChainConfig.chainIp,
+        config.chainConfig[ChainType::issuing].chainIp,
         std::move(sidechainListener));
 
     return r;
@@ -108,7 +106,7 @@ Federator::Federator(
     config::Config const& config,
     beast::Journal j)
     : app_{app}    
-    , chains_{Chain{config.lockingChainConfig}, Chain{config.issuingChainConfig}}
+    , chains_{Chain{config.chainConfig[ChainType::locking]}, Chain{config.chainConfig[ChainType::issuing]}}
     , autoSubmit_{chains_[ChainType::locking].txnSubmit_ &&
                   chains_[ChainType::locking].txnSubmit_->shouldSubmit,
                   chains_[ChainType::issuing].txnSubmit_ &&
@@ -118,21 +116,35 @@ Federator::Federator(
     , signingSK_{config.signingKey}
     , j_(j)
 {
-    //, lastAttestedCommitTx_(config.lastAttestedCommitTx)
-
     for (auto const& b : config.bridges)
     {
         bridges_.try_emplace(b);
 
-        auto it_locking = accounts_[ChainType::locking].try_emplace(
-            b.door(ChainType::locking));
-        it_locking.first->second.signerListInfo_.ignoreSignerList_ =
-            config.lockingChainConfig.ignoreSignerList;
+        for (auto const ct : {ChainType::locking, ChainType::issuing})
+        {
+            auto it = accounts_[ct].try_emplace(b.door(ct));
+            it.first->second.signerListInfo_.ignoreSignerList_ =
+                config.chainConfig[ct].ignoreSignerList;
+        }
+    }
 
-        auto it_issuing = accounts_[ChainType::issuing].try_emplace(
-            b.door(ChainType::issuing));
-        it_issuing.first->second.signerListInfo_.ignoreSignerList_ =
-            config.issuingChainConfig.ignoreSignerList;
+    for (auto const ct : {ChainType::locking, ChainType::issuing})
+    {
+        for (auto const& [accID, lastAtt] :
+             config.chainConfig[ct].lastAttestedCommitTxMap)
+        {
+            auto it = accounts_[ct].find(accID);
+            if (it == accounts_[ct].end())
+            {
+                JLOGV(
+                    j_.fatal(),
+                    "Invalid config",
+                    ripple::jv("account", accID),
+                    ripple::jv("chain", to_string(ct)));
+                throw std::runtime_error("Invalid config");
+            }
+            it->second.lastAttestedCommitTx_ = lastAtt;
+        }
     }
 
     std::fill(loopLocked_.begin(), loopLocked_.end(), true);
@@ -291,13 +303,13 @@ Federator::init(
             auto& is = aci.initSync_;
 
             JLOG(j_.trace()) << "Prepare init sync accID: " << accStr
-                             << " side: " << to_string(ct)
-                             << " DB ledgerSqn: " << is.dbLedgerSqn_
-                             << " DB txHash: " << is.dbTxnHash_
+                             << ", side: " << to_string(ct)
+                             << ", DB ledgerSqn: " << is.dbLedgerSqn_
+                             << ", DB txHash: " << is.dbTxnHash_
                              << (aci.lastAttestedCommitTx_.isNonZero()
-                                     ? (" config txHash: " +
+                                     ? (", config txHash: " +
                                         to_string(aci.lastAttestedCommitTx_))
-                                     : " no config txHash");
+                                     : ", no config txHash");
         }
     }
 
@@ -398,7 +410,8 @@ Federator::sendDBAttests(ChainType const ct, auto const& doorID)
                     ripple::jv(
                         "attestation's door",
                         ripple::toBase58(bridge.door(ct))),
-                    ripple::jv("parameter door", ripple::toBase58(doorID)));
+                    ripple::jv("parameter door", ripple::toBase58(doorID)),
+                    ripple::jv("chain", to_string(ct)));
                 continue;
             }
 
@@ -500,6 +513,19 @@ Federator::sendDBAttests(ChainType const ct, auto const& doorID)
                     j_.trace(),
                     "Skipping attestation create account from db",
                     ripple::jv("attestation's bridge", bridge));
+                continue;
+            }
+
+            if (doorID != bridge.door(ct))
+            {
+                JLOGV(
+                    j_.trace(),
+                    "Skipping attestation create account from db",
+                    ripple::jv(
+                        "attestation's door",
+                        ripple::toBase58(bridge.door(ct))),
+                    ripple::jv("parameter door", ripple::toBase58(doorID)),
+                    ripple::jv("chain", to_string(ct)));
                 continue;
             }
 
@@ -608,8 +634,8 @@ Federator::initSync(
     if (!is.historyDone_)
     {
         auto const& aciOther(accounts_[otherChain(ct)].at(otherDoorID));
-        if ((is.dbTxnHash_ == eHash) ||
-            (aciOther.lastAttestedCommitTx_.isNonZero() &&
+        if (eHash.isNonZero() &&
+            ((is.dbTxnHash_ == eHash) ||
              (aciOther.lastAttestedCommitTx_ == eHash)))
         {
             is.historyDone_ = true;

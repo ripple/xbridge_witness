@@ -1,6 +1,7 @@
 #pragma once
 
-#include <ripple/basics/hardened_hash.h>
+#include <xbwd/basics/ChainTypes.h>
+
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
@@ -15,22 +16,6 @@
 #include <boost/filesystem.hpp>
 
 #include <string>
-
-template <>
-struct std::hash<ripple::STXChainBridge>
-{
-    std::size_t
-    operator()(ripple::STXChainBridge const& b) const noexcept
-    {
-        beast::xxhasher hasher;
-        beast::hash_append(hasher, b.lockingChainDoor());
-        ripple::hash_append(hasher, b.lockingChainIssue());
-        beast::hash_append(hasher, b.issuingChainDoor());
-        ripple::hash_append(hasher, b.issuingChainIssue());
-        const std::size_t h = static_cast<std::size_t>(hasher);
-        return h;
-    }
-};
 
 namespace xbwd {
 namespace config {
@@ -72,15 +57,15 @@ struct ChainConfig
     ripple::AccountID rewardAccount;
     std::optional<TxnSubmit> txnSubmit;
     bool ignoreSignerList = false;
-    std::optional<ripple::uint256> lastAttestedCommitTx;
+    std::unordered_map<ripple::AccountID, ripple::uint256>
+        lastAttestedCommitTxMap;
     explicit ChainConfig(Json::Value const& jv);
 };
 
 struct Config
 {
 public:
-    ChainConfig lockingChainConfig;
-    ChainConfig issuingChainConfig;
+    ChainArray<ChainConfig> chainConfig;
     beast::IP::Endpoint rpcEndpoint;
     boost::filesystem::path dataDir;
     ripple::KeyType keyType;
