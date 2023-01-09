@@ -1839,7 +1839,7 @@ struct BridgeAtt
     }
 };
 
-template <template <typename> typename Cont>
+template <template <typename, typename...> typename Cont>
 void
 getAttests(BridgeAtt& bridgeAtt, Cont<Submission> const& submissions)
 {
