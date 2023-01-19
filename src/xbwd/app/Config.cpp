@@ -138,6 +138,12 @@ Config::Config(Json::Value const& jv)
     , logLevel(
           jv.isMember("LogLevel") ? jv["LogLevel"].asString() : std::string())
     , logSilent(jv.isMember("LogSilent") ? jv["LogSilent"].asBool() : false)
+    , logSizeToRotateMb(
+          jv.isMember("LogSizeToRotateMb") ? jv["LogSizeToRotateMb"].asUInt()
+                                           : 0)
+    , logFilesToKeep(
+          jv.isMember("LogFilesToKeep") ? jv["LogFilesToKeep"].asUInt() : 0)
+
 {
 }
 

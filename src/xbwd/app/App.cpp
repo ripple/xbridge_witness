@@ -11,6 +11,10 @@
 #include <ripple/protocol/SecretKey.h>
 #include <ripple/protocol/TER.h>
 
+#include <fmt/format.h>
+
+#include <filesystem>
+
 namespace xbwd {
 
 BasicApp::BasicApp(std::size_t numberOfThreads)
@@ -139,7 +143,9 @@ App::start()
         federator_->start();
     // TODO: unlockMainLoop should go away
     federator_->unlockMainLoop();
-};
+
+    logRotation_ = std::thread(&App::logRotation, this);
+}
 
 void
 App::stop()
@@ -148,7 +154,9 @@ App::stop()
         federator_->stop();
     if (serverHandler_)
         serverHandler_->stop();
-};
+    if (logRotation_.joinable())
+        logRotation_.join();
+}
 
 void
 App::run()
@@ -184,6 +192,83 @@ std::shared_ptr<Federator>
 App::federator()
 {
     return federator_;
+}
+
+void
+App::logRotation()
+{
+#ifdef _WIN32
+    JLOG(j_.info()) << "Log rotation not supported on windows";
+    return;
+#endif
+
+    if (config_->logFile.empty() || !config_->logSizeToRotateMb)
+        return;
+
+    JLOG(j_.info()) << "Log rotation thread started";
+
+    auto makeBakPath = [](std::filesystem::path const orig,
+                          unsigned const num) {
+        if (!num)
+            return orig;
+
+        auto const p = orig.parent_path();
+        auto fn = orig.stem();
+        auto const ext = orig.extension();
+
+        fn += fmt::format("_{}", num);
+        std::filesystem::path newPath(p);
+        newPath /= fn;
+        newPath.replace_extension(ext);
+
+        return newPath;
+    };
+
+    using namespace std::chrono_literals;
+
+    std::filesystem::path const logFile(config_->logFile);
+    uint64_t const logSize(
+        static_cast<uint64_t>(config_->logSizeToRotateMb) << 20);
+
+    for (;;)
+    {
+        {
+            std::unique_lock<std::mutex> lk{stoppingMutex_};
+            stoppingCondition_.wait_for(
+                lk, 1s, [this] { return isTimeToStop_.load(); });
+        }
+        if (isTimeToStop_)
+            break;
+
+        std::error_code ec;
+        auto const size = std::filesystem::file_size(logFile, ec);
+        if (ec)
+        {
+            JLOGV(
+                j_.warn(),
+                "Log rotation thread",
+                ripple::jv("error", ec.value()),
+                ripple::jv("msg", ec.message()));
+            continue;
+        }
+
+        if (size < logSize)
+            continue;
+
+        unsigned num = config_->logFilesToKeep;
+        std::filesystem::path const bak = makeBakPath(logFile, num);
+        std::filesystem::remove(bak, ec);
+
+        for (; num > 0; --num)
+        {
+            std::filesystem::path const bakDst = makeBakPath(logFile, num);
+            std::filesystem::path const bakSrc = makeBakPath(logFile, num - 1);
+            std::filesystem::rename(bakSrc, bakDst, ec);
+        }
+        logs_.rotate();
+    }
+
+    JLOG(j_.info()) << "Log rotation thread finished";
 }
 
 }  // namespace xbwd

@@ -50,6 +50,7 @@ class App : public BasicApp
 {
     ripple::Logs logs_;
     beast::Journal j_;
+    std::thread logRotation_;
 
     // Database for cross chain transactions
     DatabaseCon xChainTxnDB_;
@@ -92,6 +93,10 @@ public:
 
     std::shared_ptr<Federator>
     federator();
+
+protected:
+    void
+    logRotation();
 };
 
 }  // namespace xbwd

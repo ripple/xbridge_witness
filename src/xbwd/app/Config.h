@@ -75,6 +75,9 @@ public:
     std::string logLevel;
     bool logSilent;
 
+    unsigned logSizeToRotateMb = 0;  // 0 means "no rotation"
+    unsigned logFilesToKeep = 0;
+
     explicit Config(Json::Value const& jv);
 };
 
