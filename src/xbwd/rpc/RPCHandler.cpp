@@ -149,10 +149,25 @@ doSelectAll(
                 optDst);
         }
 
-        ripple::STXChainAttestationBatch batch{
-            bridge, claims.begin(), claims.end()};
-        result["XChainAttestationBatch"] =
-            batch.getJson(ripple::JsonOptions::none);
+#ifdef USE_BATCH_ATTESTATION
+        auto const& config(app.config());
+        if (config.useBatch)
+        {
+            ripple::STXChainAttestationBatch batch{
+                bridge, claims.begin(), claims.end()};
+            result[ripple::sfXChainAttestationBatch.getJsonName()] =
+                batch.getJson(ripple::JsonOptions::none);
+        }
+        else
+#endif
+        {
+            auto& jclaims = (result["claims"] = Json::arrayValue);
+            for (auto const& claim : claims)
+            {
+                SubmissionClaim sc(0, 0, bridge, claim);
+                jclaims.append(sc.getJson(ripple::JsonOptions::none));
+            }
+        }
     }
 }
 
@@ -308,9 +323,21 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                 claimID,
                 optDst};
 
-            ripple::STXChainAttestationBatch batch{bridge, &claim, &claim + 1};
-            result["XChainAttestationBatch"] =
-                batch.getJson(ripple::JsonOptions::none);
+#ifdef USE_BATCH_ATTESTATION
+            auto const& config(app.config());
+            if (config.useBatch)
+            {
+                ripple::STXChainAttestationBatch batch{
+                    bridge, &claim, &claim + 1};
+                result[ripple::sfXChainAttestationBatch.getJsonName()] =
+                    batch.getJson(ripple::JsonOptions::none);
+            }
+            else
+#endif
+            {
+                SubmissionClaim sc(0, 0, bridge, claim);
+                result["claim"] = sc.getJson(ripple::JsonOptions::none);
+            }
         }
         else
         {
@@ -455,7 +482,7 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
             ripple::Buffer sigBuf;
             convert(signatureBlob, sigBuf);
 
-            ripple::AttestationBatch::AttestationCreateAccount claim{
+            ripple::AttestationBatch::AttestationCreateAccount createAccount{
                 signingPK,
                 sigBuf,
                 sendingAccount,
@@ -466,11 +493,26 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
                 createCount,
                 dst};
 
-            ripple::AttestationBatch::AttestationClaim* nullClaim = nullptr;
-            ripple::STXChainAttestationBatch batch{
-                bridge, nullClaim, nullClaim, &claim, &claim + 1};
-            result["XChainAttestationBatch"] =
-                batch.getJson(ripple::JsonOptions::none);
+#ifdef USE_BATCH_ATTESTATION
+            auto const& config(app.config());
+            if (config.useBatch)
+            {
+                ripple::AttestationBatch::AttestationClaim* nullClaim = nullptr;
+                ripple::STXChainAttestationBatch batch{
+                    bridge,
+                    nullClaim,
+                    nullClaim,
+                    &createAccount,
+                    &createAccount + 1};
+                result[ripple::sfXChainAttestationBatch.getJsonName()] =
+                    batch.getJson(ripple::JsonOptions::none);
+            }
+            else
+#endif
+            {
+                SubmissionCreateAccount ca(0, 0, bridge, createAccount);
+                result["createAccount"] = ca.getJson(ripple::JsonOptions::none);
+            }
         }
         else
         {
