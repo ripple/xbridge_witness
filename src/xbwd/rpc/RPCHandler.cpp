@@ -149,17 +149,21 @@ doSelectAll(
                 optDst);
         }
 
-#ifdef USE_BATCH_ATTESTATION
         auto const& config(app.config());
         if (config.useBatch)
         {
+#ifdef USE_BATCH_ATTESTATION
             ripple::STXChainAttestationBatch batch{
                 bridge, claims.begin(), claims.end()};
             result[ripple::sfXChainAttestationBatch.getJsonName()] =
                 batch.getJson(ripple::JsonOptions::none);
+#else
+            throw std::runtime_error(
+                "Please compile with USE_BATCH_ATTESTATION to use Batch "
+                "Attestations");
+#endif
         }
         else
-#endif
         {
             auto& jclaims = (result["claims"] = Json::arrayValue);
             for (auto const& claim : claims)
@@ -323,17 +327,21 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                 claimID,
                 optDst};
 
-#ifdef USE_BATCH_ATTESTATION
             auto const& config(app.config());
             if (config.useBatch)
             {
+#ifdef USE_BATCH_ATTESTATION
                 ripple::STXChainAttestationBatch batch{
                     bridge, &claim, &claim + 1};
                 result[ripple::sfXChainAttestationBatch.getJsonName()] =
                     batch.getJson(ripple::JsonOptions::none);
+#else
+                throw std::runtime_error(
+                    "Please compile with USE_BATCH_ATTESTATION to use Batch "
+                    "Attestations");
+#endif
             }
             else
-#endif
             {
                 SubmissionClaim sc(0, 0, bridge, claim);
                 result["claim"] = sc.getJson(ripple::JsonOptions::none);
@@ -493,10 +501,10 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
                 createCount,
                 dst};
 
-#ifdef USE_BATCH_ATTESTATION
             auto const& config(app.config());
             if (config.useBatch)
             {
+#ifdef USE_BATCH_ATTESTATION
                 ripple::AttestationBatch::AttestationClaim* nullClaim = nullptr;
                 ripple::STXChainAttestationBatch batch{
                     bridge,
@@ -506,9 +514,13 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
                     &createAccount + 1};
                 result[ripple::sfXChainAttestationBatch.getJsonName()] =
                     batch.getJson(ripple::JsonOptions::none);
+#else
+                throw std::runtime_error(
+                    "Please compile with USE_BATCH_ATTESTATION to use Batch "
+                    "Attestations");
+#endif
             }
             else
-#endif
             {
                 SubmissionCreateAccount ca(0, 0, bridge, createAccount);
                 result["createAccount"] = ca.getJson(ripple::JsonOptions::none);

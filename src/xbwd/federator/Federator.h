@@ -77,6 +77,9 @@ struct Submission
     std::string const&
     getLogName() const;
 
+    // return claimID and createCount lists separated by ':' made from all the
+    // AttestationClaim and AttestationCreateAccount in current submission.
+    // For ex. {":1:3:4", ":5:9"}
     virtual std::pair<std::string, std::string>
     forAttestIDs(
         std::function<void(std::uint64_t id)> commitFunc = [](std::uint64_t) {},
@@ -286,7 +289,7 @@ class Federator : public std::enable_shared_from_this<Federator>
     ChainArray<std::deque<FederatorEvent>> replays_;
     beast::Journal j_;
 
-    config::Config config_;
+    bool const useBatch_;
 
 public:
     // Tag so make_Federator can call `std::make_shared`

@@ -119,7 +119,7 @@ Federator::Federator(
     , signingPK_{derivePublicKey(config.keyType, config.signingKey)}
     , signingSK_{config.signingKey}
     , j_(j)
-    , config_(config)
+    , useBatch_(config.useBatch)
 {
     signerListsInfo_[ChainType::locking].ignoreSignerList_ =
         config.lockingChainConfig.ignoreSignerList;
@@ -972,6 +972,8 @@ Federator::onEvent(event::EndOfHistory const& e)
     }
 }
 
+#ifdef USE_BATCH_ATTESTATION
+
 std::pair<std::string, std::string>
 forAttestIDs(
     ripple::STXChainAttestationBatch const& batch,
@@ -1006,6 +1008,8 @@ forAttestIDs(
 
     return {commitAttests.str(), createAttests.str()};
 }
+
+#endif
 
 std::pair<std::string, std::string>
 forAttestIDs(
@@ -1276,12 +1280,10 @@ Federator::pushAttOnSubmitTxn(
         notify = txns_[ChainType::locking].empty() &&
             txns_[ChainType::issuing].empty();
 
-        SubmissionPtr p;
-
-#ifdef USE_BATCH_ATTESTATION
-        if (config_.useBatch)
+        if (useBatch_)
         {
-            p = SubmissionPtr(new SubmissionBatch(
+#ifdef USE_BATCH_ATTESTATION
+            auto p = SubmissionPtr(new SubmissionBatch(
                 0,
                 0,
                 ripple::STXChainAttestationBatch{
@@ -1290,35 +1292,41 @@ Federator::pushAttOnSubmitTxn(
                     curClaimAtts_[chainType].end(),
                     curCreateAtts_[chainType].begin(),
                     curCreateAtts_[chainType].end()}));
-        }
-        else
+
+            txns_[chainType].emplace_back(std::move(p));
+#else
+            throw std::runtime_error(
+                "Please compile with USE_BATCH_ATTESTATION to use Batch "
+                "Attestations");
 #endif
-
-            if (!curClaimAtts_[chainType].empty())
-        {
-            p = SubmissionPtr(new SubmissionClaim(
-                0, 0, bridge, curClaimAtts_[chainType].front()));
         }
         else
         {
-            p = SubmissionPtr(new SubmissionCreateAccount(
-                0, 0, bridge, curCreateAtts_[chainType].front()));
-        }
+            for (auto const& claim : curClaimAtts_[chainType])
+            {
+                auto p =
+                    SubmissionPtr(new SubmissionClaim(0, 0, bridge, claim));
+                txns_[chainType].emplace_back(std::move(p));
+            }
 
-        txns_[chainType].emplace_back(std::move(p));
-        curClaimAtts_[chainType].clear();
-        curCreateAtts_[chainType].clear();
+            for (auto const& create : curCreateAtts_[chainType])
+            {
+                auto p = SubmissionPtr(
+                    new SubmissionCreateAccount(0, 0, bridge, create));
+                txns_[chainType].emplace_back(std::move(p));
+            }
+        }
     }
     else
     {
-        curClaimAtts_[chainType].clear();
-        curCreateAtts_[chainType].clear();
-
         JLOGV(
             j_.info(),
             "not in signer list, atestations dropped",
             ripple::jv("ChainType", to_string(chainType)));
     }
+
+    curClaimAtts_[chainType].clear();
+    curCreateAtts_[chainType].clear();
 
     if (notify)
     {
@@ -1830,7 +1838,7 @@ Federator::pullAndAttestTx(
 std::size_t
 Federator::maxAttests() const
 {
-    return config_.useBatch ? ripple::AttestationBatch::maxAttestations : 1;
+    return useBatch_ ? ripple::AttestationBatch::maxAttestations : 1;
 }
 
 Submission::Submission(
