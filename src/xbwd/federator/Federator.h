@@ -142,13 +142,13 @@ struct SubmissionBatch : public Submission
 struct SubmissionClaim : public Submission
 {
     ripple::STXChainBridge bridge_;
-    ripple::AttestationBatch::AttestationClaim claim_;
+    ripple::Attestations::AttestationClaim claim_;
 
     SubmissionClaim(
         uint32_t lastLedgerSeq,
         uint32_t accountSqn,
         ripple::STXChainBridge const& bridge,
-        ripple::AttestationBatch::AttestationClaim const& claim);
+        ripple::Attestations::AttestationClaim const& claim);
 
     virtual std::pair<std::string, std::string>
     forAttestIDs(
@@ -171,13 +171,13 @@ struct SubmissionClaim : public Submission
 struct SubmissionCreateAccount : public Submission
 {
     ripple::STXChainBridge bridge_;
-    ripple::AttestationBatch::AttestationCreateAccount create_;
+    ripple::Attestations::AttestationCreateAccount create_;
 
     SubmissionCreateAccount(
         uint32_t lastLedgerSeq,
         uint32_t accountSqn,
         ripple::STXChainBridge const& bridge,
-        ripple::AttestationBatch::AttestationCreateAccount const& create);
+        ripple::Attestations::AttestationCreateAccount const& create);
 
     virtual std::pair<std::string, std::string>
     forAttestIDs(
@@ -267,9 +267,9 @@ class Federator : public std::enable_shared_from_this<Federator>
     // need to be locked to check the total size, and 2) given the events likely
     // come from the same thread there should never be lock contention when
     // adding to the collections
-    ChainArray<std::vector<ripple::AttestationBatch::AttestationClaim>>
-        GUARDED_BY(batchMutex_) curClaimAtts_;
-    ChainArray<std::vector<ripple::AttestationBatch::AttestationCreateAccount>>
+    ChainArray<std::vector<ripple::Attestations::AttestationClaim>> GUARDED_BY(
+        batchMutex_) curClaimAtts_;
+    ChainArray<std::vector<ripple::Attestations::AttestationCreateAccount>>
         GUARDED_BY(batchMutex_) curCreateAtts_;
     ChainArray<std::atomic<std::uint32_t>> ledgerIndexes_{0u, 0u};
     ChainArray<std::atomic<std::uint32_t>> ledgerFees_{0u, 0u};
@@ -404,14 +404,14 @@ private:
     void
     pushAtt(
         ripple::STXChainBridge const& bridge,
-        ripple::AttestationBatch::AttestationClaim&& att,
+        ripple::Attestations::AttestationClaim&& att,
         ChainType chainType,
         bool ledgerBoundary);
 
     void
     pushAtt(
         ripple::STXChainBridge const& bridge,
-        ripple::AttestationBatch::AttestationCreateAccount&& att,
+        ripple::Attestations::AttestationCreateAccount&& att,
         ChainType chainType,
         bool ledgerBoundary);
 

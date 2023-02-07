@@ -335,7 +335,7 @@ Federator::sendDBAttests(ChainType ct)
 
             pushAtt(
                 bridge,
-                ripple::AttestationBatch::AttestationClaim{
+                ripple::Attestations::AttestationClaim{
                     signingPK,
                     sigBuf,
                     sendingAccount,
@@ -429,7 +429,7 @@ Federator::sendDBAttests(ChainType ct)
 
             pushAtt(
                 bridge,
-                ripple::AttestationBatch::AttestationCreateAccount{
+                ripple::Attestations::AttestationCreateAccount{
                     signingPK,
                     sigBuf,
                     sendingAccount,
@@ -658,7 +658,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     // non-const so it may be moved from
     auto claimOpt =
-        [&]() -> std::optional<ripple::AttestationBatch::AttestationClaim> {
+        [&]() -> std::optional<ripple::Attestations::AttestationClaim> {
         if (!success)
             return std::nullopt;
         if (!e.deliveredAmt_)
@@ -670,7 +670,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             return std::nullopt;
         }
 
-        return ripple::AttestationBatch::AttestationClaim{
+        return ripple::Attestations::AttestationClaim{
             e.bridge_,
             signingPK_,
             signingSK_,
@@ -823,8 +823,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     auto const& dst = e.otherChainDst_;
 
     // non-const so it may be moved from
-    auto createOpt = [&]()
-        -> std::optional<ripple::AttestationBatch::AttestationCreateAccount> {
+    auto createOpt =
+        [&]() -> std::optional<ripple::Attestations::AttestationCreateAccount> {
         if (!success)
             return std::nullopt;
         if (!e.deliveredAmt_)
@@ -836,7 +836,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
             return std::nullopt;
         }
 
-        return ripple::AttestationBatch::AttestationCreateAccount{
+        return ripple::Attestations::AttestationCreateAccount{
             e.bridge_,
             signingPK_,
             signingSK_,
@@ -1013,7 +1013,7 @@ forAttestIDs(
 
 std::pair<std::string, std::string>
 forAttestIDs(
-    ripple::AttestationBatch::AttestationClaim const& claim,
+    ripple::Attestations::AttestationClaim const& claim,
     std::function<void(std::uint64_t id)> commitFunc = [](std::uint64_t) {},
     std::function<void(std::uint64_t id)> createFunc = [](std::uint64_t) {})
 {
@@ -1028,7 +1028,7 @@ forAttestIDs(
 
 std::pair<std::string, std::string>
 forAttestIDs(
-    ripple::AttestationBatch::AttestationCreateAccount const& create,
+    ripple::Attestations::AttestationCreateAccount const& create,
     std::function<void(std::uint64_t id)> commitFunc = [](std::uint64_t) {},
     std::function<void(std::uint64_t id)> createFunc = [](std::uint64_t) {})
 {
@@ -1338,7 +1338,7 @@ Federator::pushAttOnSubmitTxn(
 void
 Federator::pushAtt(
     ripple::STXChainBridge const& bridge,
-    ripple::AttestationBatch::AttestationClaim&& att,
+    ripple::Attestations::AttestationClaim&& att,
     ChainType chainType,
     bool ledgerBoundary)
 {
@@ -1356,7 +1356,7 @@ Federator::pushAtt(
 void
 Federator::pushAtt(
     ripple::STXChainBridge const& bridge,
-    ripple::AttestationBatch::AttestationCreateAccount&& att,
+    ripple::Attestations::AttestationCreateAccount&& att,
     ChainType chainType,
     bool ledgerBoundary)
 {
@@ -1838,7 +1838,11 @@ Federator::pullAndAttestTx(
 std::size_t
 Federator::maxAttests() const
 {
+#ifdef USE_BATCH_ATTESTATION
     return useBatch_ ? ripple::AttestationBatch::maxAttestations : 1;
+#else
+    return 1;
+#endif
 }
 
 Submission::Submission(
@@ -1893,7 +1897,7 @@ SubmissionBatch::getSignedTxn(
     return xbwd::txn::getSignedTxn(
         txn.submittingAccount,
         batch_,
-        ripple::jss::XChainAddAttestationBatch,
+        ripple::jss::XChainAddAttestations,
         batch_.getFName().getJsonName(),
         accountSqn_,
         lastLedgerSeq_,
@@ -1908,7 +1912,7 @@ SubmissionClaim::SubmissionClaim(
     uint32_t lastLedgerSeq,
     uint32_t accountSqn,
     ripple::STXChainBridge const& bridge,
-    ripple::AttestationBatch::AttestationClaim const& claim)
+    ripple::Attestations::AttestationClaim const& claim)
     : Submission(lastLedgerSeq, accountSqn, "claim")
     , bridge_(bridge)
     , claim_(claim)
@@ -1961,7 +1965,7 @@ SubmissionCreateAccount::SubmissionCreateAccount(
     uint32_t lastLedgerSeq,
     uint32_t accountSqn,
     ripple::STXChainBridge const& bridge,
-    ripple::AttestationBatch::AttestationCreateAccount const& create)
+    ripple::Attestations::AttestationCreateAccount const& create)
     : Submission(lastLedgerSeq, accountSqn, "createAccount")
     , bridge_(bridge)
     , create_(create)

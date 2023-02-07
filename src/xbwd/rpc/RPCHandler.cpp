@@ -101,7 +101,7 @@ doSelectAll(
              soci::into(signatureBlob));
         st.execute();
 
-        std::vector<ripple::AttestationBatch::AttestationClaim> claims;
+        std::vector<ripple::Attestations::AttestationClaim> claims;
         ripple::STXChainBridge bridge;
         std::optional<ripple::STXChainBridge> firstBridge;
         while (st.fetch())
@@ -317,7 +317,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
             ripple::Buffer sigBuf;
             convert(signatureBlob, sigBuf);
 
-            ripple::AttestationBatch::AttestationClaim claim{
+            ripple::Attestations::AttestationClaim claim{
                 signingPK,
                 sigBuf,
                 sendingAccount,
@@ -490,7 +490,7 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
             ripple::Buffer sigBuf;
             convert(signatureBlob, sigBuf);
 
-            ripple::AttestationBatch::AttestationCreateAccount createAccount{
+            ripple::Attestations::AttestationCreateAccount createAccount{
                 signingPK,
                 sigBuf,
                 sendingAccount,
