@@ -126,22 +126,56 @@ include(XBridgeWitnessSanity)
 include(XBridgeWitnessCov)
 include(XBridgeWitnessInterface)
 
+set(HEADERS
+    src/xbwd/app/App.h
+    src/xbwd/app/BuildInfo.h
+    src/xbwd/app/Config.h
+    src/xbwd/app/DBInit.h
+    src/xbwd/basics/ChainTypes.h
+    src/xbwd/basics/ThreadSaftyAnalysis.h
+    src/xbwd/client/WebsocketClient.h
+    src/xbwd/client/ChainListener.h
+    src/xbwd/client/RpcResultParse.h
+    src/xbwd/core/DatabaseCon.h
+    src/xbwd/core/JsonChecker.h
+    src/xbwd/core/SociDB.h
+    src/xbwd/federator/Federator.h
+    src/xbwd/federator/FederatorEvents.cpp
+    src/xbwd/federator/TxnSupport.h
+    src/xbwd/rpc/fromJSON.h
+    src/xbwd/rpc/RPCCall.h
+    src/xbwd/rpc/RPCHandler.h
+    src/xbwd/rpc/ServerHandler.h
+)
+
+set(SOURCES
+    src/xbwd/app/App.cpp
+    src/xbwd/app/BuildInfo.cpp
+    src/xbwd/app/Config.cpp
+    src/xbwd/app/DBInit.cpp
+    src/xbwd/app/main.cpp
+    src/xbwd/client/WebsocketClient.cpp
+    src/xbwd/client/ChainListener.cpp
+    src/xbwd/client/RpcResultParse.cpp
+    src/xbwd/core/DatabaseCon.cpp
+    src/xbwd/core/JsonChecker.cpp
+    src/xbwd/core/SociDB.cpp
+    src/xbwd/federator/Federator.cpp
+    src/xbwd/federator/FederatorEvents.cpp
+    src/xbwd/rpc/RPCHandler.cpp
+    src/xbwd/rpc/ServerHandler.cpp
+)
+
+set(TEST_SOURCES
+    src/test/JsonChecker_test.cpp
+)
+
 add_executable (xbridge_witnessd
-  src/xbwd/app/App.cpp
-  src/xbwd/app/BuildInfo.cpp
-  src/xbwd/app/Config.cpp
-  src/xbwd/app/DBInit.cpp
-  src/xbwd/app/main.cpp
-  src/xbwd/core/DatabaseCon.cpp
-  src/xbwd/core/SociDB.cpp
-  src/xbwd/federator/Federator.cpp
-  src/xbwd/federator/FederatorEvents.cpp
-  src/xbwd/rpc/RPCHandler.cpp
-  src/xbwd/rpc/ServerHandler.cpp
-  src/xbwd/client/WebsocketClient.cpp
-  src/xbwd/client/ChainListener.cpp
-  src/xbwd/client/RpcResultParse.cpp
-  )
+    ${SOURCES}
+    ${HEADERS}
+#    ${TEST_SOURCES}
+)
+
 target_include_directories (xbridge_witnessd PRIVATE src)
 target_link_libraries (xbridge_witnessd PUBLIC Ripple::xrpl_core XBridgeWitness::opts
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt)

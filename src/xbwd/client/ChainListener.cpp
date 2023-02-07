@@ -57,6 +57,7 @@ ChainListener::ChainListener(
                            : std::string{})
     , federator_{std::move(federator)}
     , j_{j}
+    , jc_(j)
 {
 }
 
@@ -328,6 +329,8 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
+
+    jc_.check(transaction);  // extra fields check
 
     auto const txnBridge = rpcResultParse::parseBridge(transaction);
     if (txnBridge && *txnBridge != bridge_)

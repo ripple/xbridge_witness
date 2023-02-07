@@ -20,6 +20,7 @@
 
 #include <xbwd/basics/ChainTypes.h>
 #include <xbwd/basics/ThreadSaftyAnalysis.h>
+#include <xbwd/core/JsonChecker.h>
 
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/beast/utility/Journal.h>
@@ -48,6 +49,8 @@ private:
     std::weak_ptr<Federator> federator_;
     mutable std::mutex m_;
     beast::Journal j_;
+
+    JsonChecker jc_;
 
     std::shared_ptr<WebsocketClient> wsClient_;
     mutable std::mutex callbacksMtx_;
