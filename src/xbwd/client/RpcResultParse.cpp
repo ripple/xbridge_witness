@@ -104,6 +104,10 @@ parseXChainTxnType(Json::Value const& transaction)
         {ripple::jss::XChainAddAttestationBatch.c_str(),
          xChainAttestationBatch},
 #endif
+        {ripple::jss::XChainAddAccountCreateAttestation.c_str(),
+         xChainAccountCreateAttestation},
+        {ripple::jss::XChainAddClaimAttestation.c_str(),
+         xChainClaimAttestation},
         {ripple::jss::SignerListSet.c_str(), SignerListSet},
         {ripple::jss::AccountSet.c_str(), AccountSet},
         {ripple::jss::SetRegularKey.c_str(), SetRegularKey},

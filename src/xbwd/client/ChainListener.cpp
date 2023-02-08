@@ -570,6 +570,7 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
+#ifdef USE_BATCH_ATTESTATION
         case XChainTxnType::xChainAttestationBatch: {
             if (rpcResultParse::fieldMatchesStr(
                     transaction,
@@ -590,6 +591,33 @@ ChainListener::processMessage(Json::Value const& msg)
                         "reason", "not an attestation sent from this server"),
                     ripple::jv("msg", msg),
                     ripple::jv("chain_name", chainName));
+                return;
+            }
+        }
+        break;
+#endif
+        case XChainTxnType::xChainAccountCreateAttestation:
+        case XChainTxnType::xChainClaimAttestation: {
+            if (rpcResultParse::fieldMatchesStr(
+                    transaction,
+                    ripple::jss::Account,
+                    witnessAccountStr_.c_str()) &&
+                txnSeq)
+            {
+                pushEvent(
+                    event::XChainAttestsResult{chainType_, *txnSeq, txnTER});
+                return;
+            }
+            else
+            {
+                JLOGV(
+                    j_.trace(),
+                    "ignoring listener message",
+                    ripple::jv(
+                        "reason", "not an attestation sent from this server"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName),
+                    ripple::jv("witnessAccountStr_", witnessAccountStr_));
                 return;
             }
         }

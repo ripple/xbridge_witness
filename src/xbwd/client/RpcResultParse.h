@@ -31,6 +31,8 @@ enum class XChainTxnType {
     xChainClaim,
     xChainCreateAccount,
     xChainAttestationBatch,
+    xChainAccountCreateAttestation,
+    xChainClaimAttestation,
     SignerListSet,
     AccountSet,
     SetRegularKey
