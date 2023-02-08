@@ -166,9 +166,10 @@ parseBridge(Json::Value const& transaction)
 {
     try
     {
-        if (!transaction.isMember(ripple::jss::XChainBridge))
+        if (!transaction.isMember(ripple::sfXChainBridge.getJsonName()))
             return {};
-        return ripple::STXChainBridge(transaction[ripple::jss::XChainBridge]);
+        return ripple::STXChainBridge(
+            transaction[ripple::sfXChainBridge.getJsonName()]);
     }
     catch (...)
     {
