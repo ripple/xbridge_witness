@@ -336,6 +336,7 @@ Federator::sendDBAttests(ChainType ct)
             pushAtt(
                 bridge,
                 ripple::Attestations::AttestationClaim{
+                    ripple::calcAccountID(signingPK),
                     signingPK,
                     sigBuf,
                     sendingAccount,
@@ -430,6 +431,7 @@ Federator::sendDBAttests(ChainType ct)
             pushAtt(
                 bridge,
                 ripple::Attestations::AttestationCreateAccount{
+                    ripple::calcAccountID(signingPK),
                     signingPK,
                     sigBuf,
                     sendingAccount,
@@ -672,6 +674,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
         return ripple::Attestations::AttestationClaim{
             e.bridge_,
+            ripple::calcAccountID(signingPK_),
             signingPK_,
             signingSK_,
             e.src_,
@@ -838,6 +841,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
         return ripple::Attestations::AttestationCreateAccount{
             e.bridge_,
+            ripple::calcAccountID(signingPK_),
             signingPK_,
             signingSK_,
             e.src_,

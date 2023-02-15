@@ -139,6 +139,7 @@ doSelectAll(
             }
 
             claims.emplace_back(
+                ripple::calcAccountID(signingPK),
                 signingPK,
                 sigBuf,
                 sendingAccount,
@@ -318,6 +319,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
             convert(signatureBlob, sigBuf);
 
             ripple::Attestations::AttestationClaim claim{
+                ripple::calcAccountID(signingPK),
                 signingPK,
                 sigBuf,
                 sendingAccount,
@@ -491,6 +493,7 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
             convert(signatureBlob, sigBuf);
 
             ripple::Attestations::AttestationCreateAccount createAccount{
+                ripple::calcAccountID(signingPK),
                 signingPK,
                 sigBuf,
                 sendingAccount,
