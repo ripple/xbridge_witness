@@ -1277,7 +1277,7 @@ Federator::pushAttOnSubmitTxn(
     {
         JLOGV(
             j_.debug(),
-            "in signer list, atestations proceed",
+            "In the signer list, the attestations are proceed.",
             ripple::jv("ChainType", to_string(chainType)));
 
         std::lock_guard tl{txnsMutex_};
@@ -1325,7 +1325,7 @@ Federator::pushAttOnSubmitTxn(
     {
         JLOGV(
             j_.info(),
-            "not in signer list, atestations dropped",
+            "Not in the signer list, the attestations has been dropped.",
             ripple::jv("ChainType", to_string(chainType)));
     }
 
