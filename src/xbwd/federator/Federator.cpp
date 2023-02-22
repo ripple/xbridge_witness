@@ -586,10 +586,7 @@ Federator::tryFinishInitSync(ChainType const ct)
         j_.debug(),
         "initSyncDone.",
         ripple::jv("chain", to_string(ct)),
-        ripple::jv(
-            "account",
-            toBase58(bridge_.door(
-                static_cast<ripple::STXChainBridge::ChainType>(ct)))),
+        ripple::jv("account", toBase58(bridge_.door(ct))),
         ripple::jv("events to replay", replays_[ct].size()));
 
     initSync_[ct].syncing_ = false;
@@ -1193,9 +1190,7 @@ Federator::updateSignerListStatus(ChainType const chainType)
     if ((signerListInfo.status_ != SignerListInfo::present) &&
         !signerListInfo.disableMaster_)
     {
-        auto const& masterDoorID = ChainType::locking == chainType
-            ? bridge_.lockingChainDoor()
-            : bridge_.issuingChainDoor();
+        auto const& masterDoorID = bridge_.door(chainType);
         if (masterDoorID == signingAcc)
             signerListInfo.status_ = SignerListInfo::present;
     }

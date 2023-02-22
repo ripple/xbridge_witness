@@ -84,9 +84,7 @@ ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
 void
 ChainListener::onConnect()
 {
-    auto const doorAccStr = ripple::toBase58(
-        ChainType::locking == chainType_ ? bridge_.lockingChainDoor()
-                                         : bridge_.issuingChainDoor());
+    auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
 
     Json::Value params;
     params[ripple::jss::account] = doorAccStr;
@@ -130,9 +128,7 @@ ChainListener::send(std::string const& cmd, Json::Value const& params)
 void
 ChainListener::stopHistoricalTxns()
 {
-    const auto doorAccStr = ripple::toBase58(
-        ChainType::locking == chainType_ ? bridge_.lockingChainDoor()
-                                         : bridge_.issuingChainDoor());
+    const auto doorAccStr = ripple::toBase58(bridge_.door(chainType_));
 
     Json::Value params;
     params[ripple::jss::account_history_tx_stream] = Json::objectValue;

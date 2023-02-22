@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ripple/protocol/STXChainBridge.h>
+
 #include <array>
 #include <string>
 #include <tuple>
@@ -7,8 +9,8 @@
 
 namespace xbwd {
 
+using ChainType = ripple::STXChainBridge::ChainType;
 enum class ChainDir { issuingToLocking, lockingToIssuing };
-enum class ChainType { locking, issuing };
 
 inline std::string
 to_string(ChainType ct)
