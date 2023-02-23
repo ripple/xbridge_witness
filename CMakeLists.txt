@@ -1,23 +1,19 @@
 cmake_minimum_required (VERSION 3.11)
 project (xbridge_witnessd)
 
-set(CONAN_PATHS_1 ${CMAKE_BINARY_DIR}/conan_paths.cmake)
-set(CONAN_PATHS_2 ${CMAKE_BINARY_DIR}/conan-dependencies/conan_paths.cmake)
-
-if(EXISTS "${CONAN_PATHS_1}")
-    include(${CONAN_PATHS_1})
-elseif(EXISTS "${CONAN_PATHS_2}")
-    include(${CONAN_PATHS_2})
-else()
-    message(FATAL_ERROR  " conan_paths.cmake not found")
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE} " STREQUAL " ")
+  set(conan_toolchain ${CMAKE_CURRENT_BINARY_DIR}/build/generators/conan_toolchain.cmake)
+  if(NOT EXISTS "${conan_toolchain}")
+    message(FATAL_ERROR  "${conan_toolchain} not found")
+  endif()
+  include(${conan_toolchain})
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_VERBOSE_MAKEFILE 1)
 
-find_package(SOCI REQUIRED)
-find_package(fmt REQUIRED)
+
 
 #[===========================================[
   The tool depends on the xrpl_core
@@ -27,6 +23,12 @@ find_package(fmt REQUIRED)
   FetchContent.
 #]===========================================]
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
+
+#include(deps/Boost)
+find_package(SOCI REQUIRED)
+find_package(fmt REQUIRED)
+
+
 include(XBridgeWitnessNIH)
 
 get_directory_property(has_parent PARENT_DIRECTORY)
@@ -86,6 +88,22 @@ if (NOT has_parent)
     if(NOT rippled_src_POPULATED)
       message (STATUS "Pausing to download rippled source...")
       FetchContent_Populate(rippled_src)
+
+      set (conan_build_type "Release")
+      if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set (conan_build_type "Debug")
+      endif()
+      execute_process (COMMAND conan install ${rippled_src_SOURCE_DIR} --build missing --output-folder . -s build_type=${conan_build_type}
+                     WORKING_DIRECTORY ${rippled_src_BINARY_DIR}
+                     RESULT_VARIABLE _git_exit_code
+                     OUTPUT_STRIP_TRAILING_WHITESPACE
+                     ECHO_OUTPUT_VARIABLE
+                     ECHO_ERROR_VARIABLE
+                     )
+      if (NOT _git_exit_code EQUAL 0)
+        message (WARNING "conan exit_code: ${_git_exit_code}\n conan command failed - build might be incorrect")
+      endif ()
+
       add_subdirectory(${rippled_src_SOURCE_DIR} ${rippled_src_BINARY_DIR})
     endif()
   endif ()
@@ -126,22 +144,49 @@ include(XBridgeWitnessSanity)
 include(XBridgeWitnessCov)
 include(XBridgeWitnessInterface)
 
-add_executable (xbridge_witnessd
+set(HEADERS
+  src/xbwd/app/App.h
+  src/xbwd/app/BuildInfo.h
+  src/xbwd/app/Config.h
+  src/xbwd/app/DBInit.h
+  src/xbwd/basics/ChainTypes.h
+  src/xbwd/basics/ThreadSaftyAnalysis.h
+  src/xbwd/client/WebsocketClient.h
+  src/xbwd/client/ChainListener.h
+  src/xbwd/client/RpcResultParse.h
+  src/xbwd/core/DatabaseCon.h
+  src/xbwd/core/SociDB.h
+  src/xbwd/federator/Federator.h
+  src/xbwd/federator/FederatorEvents.cpp
+  src/xbwd/federator/TxnSupport.h
+  src/xbwd/rpc/fromJSON.h
+  src/xbwd/rpc/RPCCall.h
+  src/xbwd/rpc/RPCHandler.h
+  src/xbwd/rpc/ServerHandler.h
+)
+
+set(SOURCES
   src/xbwd/app/App.cpp
   src/xbwd/app/BuildInfo.cpp
   src/xbwd/app/Config.cpp
   src/xbwd/app/DBInit.cpp
   src/xbwd/app/main.cpp
+  src/xbwd/client/WebsocketClient.cpp
+  src/xbwd/client/ChainListener.cpp
+  src/xbwd/client/RpcResultParse.cpp
   src/xbwd/core/DatabaseCon.cpp
   src/xbwd/core/SociDB.cpp
   src/xbwd/federator/Federator.cpp
   src/xbwd/federator/FederatorEvents.cpp
   src/xbwd/rpc/RPCHandler.cpp
   src/xbwd/rpc/ServerHandler.cpp
-  src/xbwd/client/WebsocketClient.cpp
-  src/xbwd/client/ChainListener.cpp
-  src/xbwd/client/RpcResultParse.cpp
-  )
+)
+
+add_executable (xbridge_witnessd
+  ${SOURCES}
+  ${HEADERS}
+)
+
 target_include_directories (xbridge_witnessd PRIVATE src)
 target_link_libraries (xbridge_witnessd PUBLIC Ripple::xrpl_core XBridgeWitness::opts
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt)

@@ -28,3 +28,6 @@
 build
 .nih_c
 .vs
+
+# Conan presets
+CMakeUserPresets.json

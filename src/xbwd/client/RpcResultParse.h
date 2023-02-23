@@ -30,7 +30,9 @@ enum class XChainTxnType {
     xChainCommit,
     xChainClaim,
     xChainCreateAccount,
+#ifdef USE_BATCH_ATTESTATION
     xChainAttestationBatch,
+#endif
     xChainAccountCreateAttestation,
     xChainClaimAttestation,
     SignerListSet,
