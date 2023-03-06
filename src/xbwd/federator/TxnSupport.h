@@ -24,8 +24,8 @@
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/STParsedJSON.h>
 #include <ripple/protocol/STTx.h>
-#include <ripple/protocol/STXChainAttestationBatch.h>
 #include <ripple/protocol/SecretKey.h>
+#include <ripple/protocol/XChainAttestations.h>
 #include <ripple/protocol/jss.h>
 
 #include <string>

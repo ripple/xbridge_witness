@@ -34,7 +34,6 @@
 #include <ripple/protocol/SField.h>
 #include <ripple/protocol/STParsedJSON.h>
 #include <ripple/protocol/STTx.h>
-#include <ripple/protocol/STXChainAttestationBatch.h>
 #include <ripple/protocol/Seed.h>
 #include <ripple/protocol/jss.h>
 

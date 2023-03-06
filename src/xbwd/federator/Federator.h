@@ -29,9 +29,9 @@
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/STTx.h>
-#include <ripple/protocol/STXChainAttestationBatch.h>
 #include <ripple/protocol/STXChainBridge.h>
 #include <ripple/protocol/SecretKey.h>
+#include <ripple/protocol/XChainAttestations.h>
 
 #include <boost/asio.hpp>
 

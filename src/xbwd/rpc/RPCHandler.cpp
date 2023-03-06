@@ -11,7 +11,7 @@
 #include <ripple/protocol/STArray.h>
 #include <ripple/protocol/STBase.h>
 #include <ripple/protocol/STObject.h>
-#include <ripple/protocol/STXChainAttestationBatch.h>
+#include <ripple/protocol/XChainAttestations.h>
 #include <ripple/protocol/jss.h>
 
 #include <fmt/core.h>
