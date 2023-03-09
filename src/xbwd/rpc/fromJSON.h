@@ -252,6 +252,28 @@ fromJson(Json::Value const& jv, char const* key)
     return ripple::amountFromJson(ripple::sfGeneric, v);
 }
 
+struct AddrEndpoint
+{
+    std::string host;
+    uint16_t port;
+};
+
+template <>
+inline AddrEndpoint
+fromJson(Json::Value const& jv, char const* key)
+{
+    using namespace std::literals;
+    auto const v = jv[key];
+    if (v.isNull())
+        throw std::runtime_error(
+            "Expected json key: "s + key + " while constructing a secret key");
+
+    auto host = v["Host"].asString();
+    auto port = v["Port"].asUInt();
+
+    return {std::move(host), port};
+}
+
 template <class T>
 std::optional<T>
 optFromJson(Json::Value const& jv, char const* key)

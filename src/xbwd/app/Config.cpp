@@ -106,7 +106,7 @@ TxnSubmit::TxnSubmit(Json::Value const& jv)
 }
 
 ChainConfig::ChainConfig(Json::Value const& jv)
-    : chainIp{rpc::fromJson<beast::IP::Endpoint>(jv, "Endpoint")}
+    : addrChainIp{rpc::fromJson<rpc::AddrEndpoint>(jv, "Endpoint")}
     , rewardAccount{rpc::fromJson<ripple::AccountID>(jv, "RewardAccount")}
 {
     if (jv.isMember("TxnSubmit"))
@@ -125,7 +125,7 @@ ChainConfig::ChainConfig(Json::Value const& jv)
 Config::Config(Json::Value const& jv)
     : lockingChainConfig(jv["LockingChain"])
     , issuingChainConfig(jv["IssuingChain"])
-    , rpcEndpoint{rpc::fromJson<beast::IP::Endpoint>(jv, "RPCEndpoint")}
+    , addrRpcEndpoint{rpc::fromJson<rpc::AddrEndpoint>(jv, "RPCEndpoint")}
     , dataDir{rpc::fromJson<boost::filesystem::path>(jv, "DBDir")}
     , keyType{keyTypeFromJson(jv, "SigningKeyType")}
     , signingKey{ripple::generateKeyPair(

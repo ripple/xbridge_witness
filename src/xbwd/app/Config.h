@@ -1,5 +1,7 @@
 #pragma once
 
+#include <xbwd/rpc/fromJSON.h>
+
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
@@ -51,6 +53,7 @@ struct TxnSubmit
 
 struct ChainConfig
 {
+    rpc::AddrEndpoint addrChainIp;
     beast::IP::Endpoint chainIp;
     ripple::AccountID rewardAccount;
     std::optional<TxnSubmit> txnSubmit;
@@ -64,6 +67,7 @@ struct Config
 public:
     ChainConfig lockingChainConfig;
     ChainConfig issuingChainConfig;
+    rpc::AddrEndpoint addrRpcEndpoint;
     beast::IP::Endpoint rpcEndpoint;
     boost::filesystem::path dataDir;
     ripple::KeyType keyType;
