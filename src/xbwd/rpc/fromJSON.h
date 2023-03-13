@@ -271,7 +271,7 @@ fromJson(Json::Value const& jv, char const* key)
     auto host = v["Host"].asString();
     auto port = v["Port"].asUInt();
 
-    return {std::move(host), port};
+    return {std::move(host), static_cast<uint16_t>(port)};
 }
 
 template <class T>
