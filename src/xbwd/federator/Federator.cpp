@@ -1049,7 +1049,7 @@ static std::unordered_set<ripple::TERUnderlyingType> SkippableTxnResult(
      ripple::tecXCHAIN_WRONG_CHAIN,
      ripple::tecXCHAIN_PROOF_UNKNOWN_KEY,
      ripple::tecXCHAIN_NO_SIGNERS_LIST,
-     ripple::tecBAD_XCHAIN_TRANSFER_ISSUE,
+     ripple::tecXCHAIN_BAD_TRANSFER_ISSUE,
      ripple::tecINSUFFICIENT_RESERVE,
      ripple::tecNO_DST_INSUF_XRP});
 
