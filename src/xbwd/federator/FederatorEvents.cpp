@@ -41,7 +41,7 @@ Json::Value
 XChainCommitDetected::toJson() const
 {
     Json::Value result{Json::objectValue};
-    result["eventType"] = "XChainTransferDetected";
+    result["eventType"] = "XChainCommitDetected";
     result["src"] = toBase58(src_);
     if (otherChainDst_)
         result["otherChainDst"] = toBase58(*otherChainDst_);

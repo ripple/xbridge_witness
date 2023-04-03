@@ -540,6 +540,12 @@ Federator::initSync(
     std::int32_t const rpcOrder,
     FederatorEvent const& e)
 {
+    JLOGV(
+        j_.trace(),
+        "initSync start",
+        ripple::jv("chain", to_string(ct)),
+        ripple::jv("rpcOrder", rpcOrder));
+
     if (!initSync_[ct].historyDone_)
     {
         if (initSync_[ct].dbTxnHash_ == eHash ||
@@ -622,8 +628,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         : ChainType::locking;
     JLOGV(
         j_.trace(),
-        "onEvent XChainTransferDetected",
-        ripple::jv("chain", to_string(dstChain)),
+        "onEvent XChainCommitDetected",
+        ripple::jv("dst chain", to_string(dstChain)),
         ripple::jv("event", e.toJson()));
 
     if (initSync_[dstChain].syncing_)
@@ -658,7 +664,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             // TODO: Stop historical transaction collection
             JLOGV(
                 j_.fatal(),
-                "onEvent XChainTransferDetected already present",
+                "XChainCommitDetected already present",
                 ripple::jv("event", e.toJson()));
             return;  // Don't store it again
         }
@@ -824,8 +830,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
     JLOGV(
         j_.trace(),
-        "onEvent XChainAccountCreateDetected",
-        ripple::jv("chain", to_string(dstChain)),
+        "onEvent XChainAccountCreateCommitDetected",
+        ripple::jv("dst chain", to_string(dstChain)),
         ripple::jv("event", e.toJson()));
 
     if (initSync_[dstChain].syncing_)
@@ -1006,13 +1012,13 @@ Federator::onEvent(event::XChainTransferResult const& e)
 void
 Federator::onEvent(event::HeartbeatTimer const& e)
 {
-    JLOG(j_.trace()) << "HeartbeatTimer";
+    JLOG(j_.trace()) << "onEvent HeartbeatTimer";
 }
 
 void
 Federator::onEvent(event::EndOfHistory const& e)
 {
-    JLOGV(j_.trace(), "init EndOfHistory", ripple::jv("event", e.toJson()));
+    JLOGV(j_.trace(), "onEvent EndOfHistory", ripple::jv("event", e.toJson()));
     auto const ct = otherChain(e.chainType_);
     if (initSync_[ct].syncing_)
     {
@@ -1107,7 +1113,7 @@ Federator::onEvent(event::XChainAttestsResult const& e)
 {
     JLOGV(
         j_.debug(),
-        "XChainAttestsResult",
+        "onEvent XChainAttestsResult",
         ripple::jv("chain", to_string(e.chainType_)),
         ripple::jv("accountSqn", e.accountSqn_),
         ripple::jv("result", transHuman(e.ter_)));
@@ -1134,7 +1140,7 @@ Federator::onEvent(event::XChainAttestsResult const& e)
                 });
             JLOGV(
                 j_.trace(),
-                "XChainAttestsResult",
+                "XChainAttestsResult processed",
                 ripple::jv("chain", to_string(e.chainType_)),
                 ripple::jv("accountSqn", e.accountSqn_),
                 ripple::jv("result", e.ter_),
@@ -1164,7 +1170,7 @@ Federator::onEvent(event::NewLedger const& e)
 {
     JLOGV(
         j_.trace(),
-        "NewLedger",
+        "onEvent NewLedger",
         ripple::jv("chain", to_string(e.chainType_)),
         ripple::jv("ledgerIndex", e.ledgerIndex_),
         ripple::jv("dbLedgerSqn", initSync_[e.chainType_].dbLedgerSqn_),
@@ -1277,7 +1283,7 @@ Federator::onEvent(event::XChainSignerListSet const& e)
 
     JLOGV(
         j_.info(),
-        "event::XChainSignerListSet",
+        "onEvent XChainSignerListSet",
         ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
         ripple::jv("DoorID", ripple::toBase58(e.masterDoorID_)),
         ripple::jv("ChainType", to_string(e.chainType_)),
@@ -1296,7 +1302,7 @@ Federator::onEvent(event::XChainSetRegularKey const& e)
 
     JLOGV(
         j_.info(),
-        "event::XChainSetRegularKey",
+        "onEvent XChainSetRegularKey",
         ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
         ripple::jv("DoorID", ripple::toBase58(e.masterDoorID_)),
         ripple::jv("ChainType", to_string(e.chainType_)),
@@ -1315,7 +1321,7 @@ Federator::onEvent(event::XChainAccountSet const& e)
 
     JLOGV(
         j_.info(),
-        "event::XChainAccountSet",
+        "onEvent XChainAccountSet",
         ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
         ripple::jv("DoorID", ripple::toBase58(e.masterDoorID_)),
         ripple::jv("ChainType", to_string(e.chainType_)),
@@ -1440,7 +1446,7 @@ Federator::submitTxn(SubmissionPtr&& submission, ChainType dstChain)
     JLOGV(
         j_.trace(),
         "Submitting transaction",
-        ripple::jv("chain", to_string(dstChain)),
+        ripple::jv("dst chain", to_string(dstChain)),
         ripple::jv("commitAttests", attestedIDs.first),
         ripple::jv("createAttests", attestedIDs.second),
         ripple::jv(submission->getLogName(), submission->getJson()));
@@ -1920,7 +1926,7 @@ Federator::checkSigningKey(
         JLOGV(
             j_.fatal(),
             "Masterkey disabled for signing account",
-            ripple::jv("ChainType", to_string(ct)),
+            ripple::jv("chain", to_string(ct)),
             ripple::jv("config acc", ripple::toBase58(*signingAccount_)),
             ripple::jv("config pk acc", ripple::toBase58(signingAcc)),
             ripple::jv(
@@ -1934,7 +1940,7 @@ Federator::checkSigningKey(
         JLOGV(
             j_.fatal(),
             "Invalid signing account regular key used",
-            ripple::jv("ChainType", to_string(ct)),
+            ripple::jv("chain", to_string(ct)),
             ripple::jv("config acc", ripple::toBase58(*signingAccount_)),
             ripple::jv("config pk acc", ripple::toBase58(signingAcc)),
             ripple::jv(

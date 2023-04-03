@@ -96,23 +96,24 @@ std::optional<xbwd::XChainTxnType>
 parseXChainTxnType(Json::Value const& transaction)
 {
     using enum xbwd::XChainTxnType;
-    static std::unordered_map<std::string, XChainTxnType> const candidates{{
+    static std::unordered_map<std::string, XChainTxnType> const candidates{
         {ripple::jss::XChainCommit.c_str(), xChainCommit},
         {ripple::jss::XChainClaim.c_str(), xChainClaim},
         {ripple::jss::XChainCreateBridge.c_str(), xChainCreateBridge},
-        {ripple::jss::XChainAccountCreateCommit.c_str(), xChainCreateAccount},
+        {ripple::jss::XChainAccountCreateCommit.c_str(),
+         xChainAccountCreateCommit},
 #ifdef USE_BATCH_ATTESTATION
         {ripple::jss::XChainAddAttestationBatch.c_str(),
-         xChainAttestationBatch},
+         xChainAddAttestationBatch},
 #endif
         {ripple::jss::XChainAddAccountCreateAttestation.c_str(),
-         xChainAccountCreateAttestation},
+         xChainAddAccountCreateAttestation},
         {ripple::jss::XChainAddClaimAttestation.c_str(),
-         xChainClaimAttestation},
+         xChainAddClaimAttestation},
         {ripple::jss::SignerListSet.c_str(), SignerListSet},
         {ripple::jss::AccountSet.c_str(), AccountSet},
         {ripple::jss::SetRegularKey.c_str(), SetRegularKey},
-    }};
+    };
 
     if (!transaction.isMember(ripple::jss::TransactionType) ||
         !transaction[ripple::jss::TransactionType].isString())
@@ -134,7 +135,7 @@ parseDstAccount(Json::Value const& transaction, XChainTxnType txnType)
     {
         switch (txnType)
         {
-            case XChainTxnType::xChainCreateAccount:
+            case XChainTxnType::xChainAccountCreateCommit:
                 [[fallthrough]];
             case XChainTxnType::xChainClaim:
                 return ripple::parseBase58<ripple::AccountID>(

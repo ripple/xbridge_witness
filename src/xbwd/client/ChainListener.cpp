@@ -169,7 +169,8 @@ ChainListener::send(
         j_.trace(),
         "ChainListener send",
         ripple::jv("command", cmd),
-        ripple::jv("params", params));
+        ripple::jv("params", params),
+        ripple::jv("chain_name", to_string(chainType_)));
 
     auto id = wsClient_->send(cmd, params);
     JLOGV(j_.trace(), "ChainListener send id", ripple::jv("id", id));
@@ -214,8 +215,8 @@ ChainListener::onMessage(Json::Value const& msg)
         JLOGV(
             j_.trace(),
             "ChainListener onMessage, reply to a callback",
-            ripple::jv("msg", msg.toStyledString()),
-            ripple::jv("chain_name", to_string(chainType_)));
+            ripple::jv("chain_name", to_string(chainType_)),
+            ripple::jv("msg", msg.toStyledString()));
         (*callbackOpt)(msg);
     }
     else
@@ -236,8 +237,8 @@ ChainListener::processMessage(Json::Value const& msg)
     JLOGV(
         j_.trace(),
         "chain listener process message",
-        ripple::jv("msg", msg.toStyledString()),
-        ripple::jv("chain_name", chainName));
+        ripple::jv("chain_name", chainName),
+        ripple::jv("msg", msg.toStyledString()));
 
     auto tryPushNewLedgerEvent = [&](Json::Value const& result) -> bool {
         if (result.isMember(ripple::jss::fee_base) &&
@@ -293,14 +294,14 @@ ChainListener::processMessage(Json::Value const& msg)
             ripple::jv("chain_name", chainName));
         return;
     }
-    auto const transaction = msg[ripple::jss::transaction];
+    auto const& transaction = msg[ripple::jss::transaction];
 
     if (!msg.isMember(ripple::jss::meta))
     {
         JLOGV(
             j_.trace(),
             "ignoring listener message",
-            ripple::jv("reason", "tx meta"),
+            ripple::jv("reason", "no tx meta"),
             ripple::jv("msg", msg),
             ripple::jv("chain_name", chainName));
         return;
@@ -457,7 +458,7 @@ ChainListener::processMessage(Json::Value const& msg)
                 JLOGV(
                     j_.warn(),
                     "ignoring listener message",
-                    ripple::jv("reason", "no xChainSeq"),
+                    ripple::jv("reason", "no claimID"),
                     ripple::jv("msg", msg),
                     ripple::jv("chain_name", chainName));
                 return;
@@ -494,7 +495,7 @@ ChainListener::processMessage(Json::Value const& msg)
                 JLOGV(
                     j_.warn(),
                     "ignoring listener message",
-                    ripple::jv("reason", "no xChainSeq"),
+                    ripple::jv("reason", "no claimID"),
                     ripple::jv("msg", msg),
                     ripple::jv("chain_name", chainName));
                 return;
@@ -525,7 +526,7 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
-        case XChainTxnType::xChainCreateAccount: {
+        case XChainTxnType::xChainAccountCreateCommit: {
             auto const createCount = rpcResultParse::parseCreateCount(meta);
             if (!createCount)
             {
@@ -601,7 +602,7 @@ ChainListener::processMessage(Json::Value const& msg)
         }
         break;
 #ifdef USE_BATCH_ATTESTATION
-        case XChainTxnType::xChainAttestationBatch: {
+        case XChainTxnType::xChainAddAttestationBatch: {
             if (rpcResultParse::fieldMatchesStr(
                     transaction,
                     ripple::jss::Account,
@@ -626,8 +627,8 @@ ChainListener::processMessage(Json::Value const& msg)
         }
         break;
 #endif
-        case XChainTxnType::xChainAccountCreateAttestation:
-        case XChainTxnType::xChainClaimAttestation: {
+        case XChainTxnType::xChainAddAccountCreateAttestation:
+        case XChainTxnType::xChainAddClaimAttestation: {
             if (rpcResultParse::fieldMatchesStr(
                     transaction,
                     ripple::jss::Account,
@@ -658,19 +659,19 @@ ChainListener::processMessage(Json::Value const& msg)
         break;
         case XChainTxnType::SignerListSet: {
             if (txnSuccess && txnHistoryIndex >= 0)
-                processSignerListSet(msg[ripple::jss::transaction]);
+                processSignerListSet(transaction);
             return;
         }
         break;
         case XChainTxnType::AccountSet: {
             if (txnSuccess && txnHistoryIndex >= 0)
-                processAccountSet(msg[ripple::jss::transaction]);
+                processAccountSet(transaction);
             return;
         }
         break;
         case XChainTxnType::SetRegularKey: {
             if (txnSuccess && txnHistoryIndex >= 0)
-                processSetRegularKey(msg[ripple::jss::transaction]);
+                processSetRegularKey(transaction);
             return;
         }
         break;
@@ -1219,7 +1220,7 @@ ChainListener::processTx(Json::Value const& v) noexcept
                 auto const claimID = Json::getOptional<std::uint64_t>(
                     msg, ripple::sfXChainClaimID);
                 if (!claimID)
-                    return warn_ret("missing or bad claimID");
+                    return warn_ret("no claimID");
 
                 using namespace event;
                 XChainCommitDetected e{
@@ -1237,7 +1238,7 @@ ChainListener::processTx(Json::Value const& v) noexcept
                 pushEvent(std::move(e));
             }
             break;
-            case XChainTxnType::xChainCreateAccount: {
+            case XChainTxnType::xChainAccountCreateCommit: {
                 auto const createCount = rpcResultParse::parseCreateCount(meta);
                 if (!createCount)
                     return warn_ret("missing or bad createCount");

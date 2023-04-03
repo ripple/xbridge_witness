@@ -29,12 +29,12 @@ namespace xbwd {
 enum class XChainTxnType {
     xChainCommit,
     xChainClaim,
-    xChainCreateAccount,
+    xChainAccountCreateCommit,
 #ifdef USE_BATCH_ATTESTATION
-    xChainAttestationBatch,
+    xChainAddAttestationBatch,
 #endif
-    xChainAccountCreateAttestation,
-    xChainClaimAttestation,
+    xChainAddAccountCreateAttestation,
+    xChainAddClaimAttestation,
     xChainCreateBridge,
     SignerListSet,
     AccountSet,
