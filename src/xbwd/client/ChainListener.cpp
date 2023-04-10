@@ -566,6 +566,20 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
+        case XChainTxnType::xChainCreateBridge: {
+            if (!txnBridge)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "ignoring listener message",
+                    ripple::jv("reason", "no bridge in xChainCreateBridge"),
+                    ripple::jv("msg", msg),
+                    ripple::jv("chain_name", chainName));
+                return;
+            }
+            pushEvent(event::EndOfHistory{chainType_});
+        }
+        break;
 #ifdef USE_BATCH_ATTESTATION
         case XChainTxnType::xChainAttestationBatch: {
             if (rpcResultParse::fieldMatchesStr(

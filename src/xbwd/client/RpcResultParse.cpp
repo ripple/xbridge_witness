@@ -99,6 +99,7 @@ parseXChainTxnType(Json::Value const& transaction)
     static std::unordered_map<std::string, XChainTxnType> const candidates{{
         {ripple::jss::XChainCommit.c_str(), xChainCommit},
         {ripple::jss::XChainClaim.c_str(), xChainClaim},
+        {ripple::jss::XChainCreateBridge.c_str(), xChainCreateBridge},
         {ripple::jss::XChainAccountCreateCommit.c_str(), xChainCreateAccount},
 #ifdef USE_BATCH_ATTESTATION
         {ripple::jss::XChainAddAttestationBatch.c_str(),
