@@ -106,6 +106,8 @@ XChainAttestsResult::toJson() const
     result["eventType"] = "XChainAttestsResult";
     result["chainType"] = to_string(chainType_);
     result["accountSequence"] = accountSqn_;
+    result["txnHash"] = to_string(txnHash_);
+    result["history"] = history_;
     result["ter"] = transHuman(ter_);
     return result;
 }

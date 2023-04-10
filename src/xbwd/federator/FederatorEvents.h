@@ -106,7 +106,9 @@ struct XChainAttestsResult
 {
     ChainType chainType_;
     std::uint32_t accountSqn_;
+    ripple::uint256 txnHash_;
     ripple::TER ter_;
+    bool history_;
 
     Json::Value
     toJson() const;

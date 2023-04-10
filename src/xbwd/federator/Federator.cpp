@@ -1085,7 +1085,7 @@ Federator::onEvent(event::XChainAttestsResult const& e)
                 });
             JLOGV(
                 j_.trace(),
-                "XChainAttestsResult ",
+                "XChainAttestsResult",
                 ripple::jv("chain", to_string(e.chainType_)),
                 ripple::jv("accountSqn", e.accountSqn_),
                 ripple::jv("result", e.ter_),
@@ -1093,6 +1093,17 @@ Federator::onEvent(event::XChainAttestsResult const& e)
                 ripple::jv("createAttests", attestedIDs.second));
 
             subs.erase(it);
+
+            // stop processing history if the other chain reach attested tx
+            if (e.history_ && !chains_[e.chainType_].lastAttestedCommitTx_)
+            {
+                chains_[e.chainType_].lastAttestedCommitTx_ = e.txnHash_;
+                JLOGV(
+                    j_.trace(),
+                    "XChainAttestsResult set last att tx",
+                    ripple::jv("chain", to_string(e.chainType_)),
+                    ripple::jv("last attested txn", to_string(e.txnHash_)));
+            }
         }
     }
     // else, will resubmit after txn ttl (i.e. TxnTTLLedgers = 4) ledgers

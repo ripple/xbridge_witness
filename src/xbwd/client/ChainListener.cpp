@@ -614,8 +614,12 @@ ChainListener::processMessage(Json::Value const& msg)
                     witnessAccountStr_.c_str()) &&
                 txnSeq)
             {
-                pushEvent(
-                    event::XChainAttestsResult{chainType_, *txnSeq, txnTER});
+                pushEvent(event::XChainAttestsResult{
+                    chainType_,
+                    *txnSeq,
+                    *txnHash,
+                    txnTER,
+                    txnHistoryIndex < 0});
                 return;
             }
             else
