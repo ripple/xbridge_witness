@@ -1,4 +1,4 @@
-from conans import ConanFile
+from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeToolchain, cmake_layout
 import re
 
@@ -103,8 +103,11 @@ class Xrpl(ConanFile):
             self.requires('libpq/13.6')
         if self.options.rocksdb:
             self.requires('rocksdb/6.27.3')
+            self.requires('liburing/2.2')
 
-    exports_sources = 'CMakeLists.txt', 'Builds/CMake/*', 'src/*', 'cfg/*'
+    exports_sources = (
+        'CMakeLists.txt', 'Builds/*', 'bin/getRippledInfo', 'src/*', 'cfg/*'
+    )
 
     def layout(self):
         cmake_layout(self)
@@ -140,6 +143,6 @@ class Xrpl(ConanFile):
     def package_info(self):
         self.cpp_info.libs = [
             'libxrpl_core.a',
-            'libed25519-donna.a',
+            'libed25519.a',
             'libsecp256k1.a',
         ]
