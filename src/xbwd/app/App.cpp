@@ -3,6 +3,7 @@
 #include <xbwd/app/BuildInfo.h>
 #include <xbwd/app/DBInit.h>
 #include <xbwd/federator/Federator.h>
+#include <xbwd/rpc/RPCCall.h>
 #include <xbwd/rpc/ServerHandler.h>
 
 #include <ripple/beast/core/CurrentThreadName.h>
@@ -40,24 +41,6 @@ BasicApp::~BasicApp()
         t.join();
 }
 
-beast::IP::Endpoint
-addrToEndpoint(boost::asio::io_service& io_service, rpc::AddrEndpoint const& ae)
-{
-    try
-    {
-        auto addr = boost::asio::ip::make_address(ae.host);
-        return beast::IP::Endpoint(std::move(addr), ae.port);
-    }
-    catch (...)
-    {
-    }
-
-    boost::asio::ip::tcp::resolver resolver{io_service};
-    auto const results = resolver.resolve(ae.host, std::to_string(ae.port));
-    auto const ep = results.begin()->endpoint();
-    return beast::IP::Endpoint(ep.address(), ep.port());
-}
-
 App::App(
     std::unique_ptr<config::Config> config,
     beast::severities::Severity logLevel)
@@ -85,11 +68,11 @@ App::App(
 {
     // TODO initialize the public and secret keys
 
-    config_->rpcEndpoint =
-        addrToEndpoint(get_io_service(), config_->addrRpcEndpoint);
-    config_->issuingChainConfig.chainIp = addrToEndpoint(
+    config_->rpcEndpoint = xbwd::rpc_call::addrToEndpoint(
+        get_io_service(), config_->addrRpcEndpoint);
+    config_->issuingChainConfig.chainIp = xbwd::rpc_call::addrToEndpoint(
         get_io_service(), config_->issuingChainConfig.addrChainIp);
-    config_->lockingChainConfig.chainIp = addrToEndpoint(
+    config_->lockingChainConfig.chainIp = xbwd::rpc_call::addrToEndpoint(
         get_io_service(), config_->lockingChainConfig.addrChainIp);
 
     try

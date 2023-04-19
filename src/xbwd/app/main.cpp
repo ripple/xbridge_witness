@@ -12,6 +12,7 @@
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/json/json_reader.h>
 #include <ripple/json/json_value.h>
+#include <ripple/protocol/jss.h>
 
 #include <boost/filesystem.hpp>
 #include <boost/format.hpp>
@@ -45,7 +46,8 @@ printHelp(const boost::program_options::options_description& desc)
               << " [options] <command> [<argument> ...]\n"
               << desc << std::endl
               << "Commands: \n"
-                 "     server_info      Server state info.\n";
+                 "     server_info      Server state info.\n"
+                 "     stop             Server stop.\n";
 }
 
 static int
@@ -77,14 +79,25 @@ main(int argc, char** argv)
         "verbose,v", "verbose")("unittest,u", "Perform unit tests.")(
         "version", "Display the build version.");
 
+    po::options_description hidden("Hidden Options");
+    hidden.add_options()("cmd", "Command");
+
+    po::positional_options_description posOpt;
+    posOpt.add("cmd", -1);
+
     po::options_description cmdline_options;
-    cmdline_options.add(general);
+    cmdline_options.add(general).add(hidden);
+    po::options_description visible("Allowed options");
+    visible.add(general);
 
     // Parse options, if no error.
     try
     {
         po::store(
-            po::command_line_parser(argc, argv).options(cmdline_options).run(),
+            po::command_line_parser(argc, argv)
+                .options(cmdline_options)
+                .positional(posOpt)
+                .run(),
             vm);
         po::notify(vm);  // Invoke option notify functions.
     }
@@ -108,7 +121,7 @@ main(int argc, char** argv)
 
     if (vm.count("help"))
     {
-        printHelp(general);
+        printHelp(visible);
         return EXIT_SUCCESS;
     }
 
@@ -146,36 +159,6 @@ main(int argc, char** argv)
             config->logSilent = false;
         }
 
-        if (vm.count("json"))
-        {
-            // TODO: WIP - this isn't done
-            using namespace std::literals;
-            beast::setCurrentThreadName(
-                xbwd::build_info::serverName + ": rpc"s);
-
-            auto const reqStr = [&]() -> std::string {
-                auto r = vm["json"].as<std::string>();
-                if (!r.empty() && r[0] != '{' && r[0] != '"')
-                {
-                    r = '"' + r + '"';
-                }
-                return r;
-            }();
-
-            Json::Value jv;
-            if (!Json::Reader().parse(reqStr, jv))
-            {
-                std::cerr << "Error: Could not parse json command";
-                return EXIT_FAILURE;
-            }
-            if (jv.isString())
-            {
-                Json::Value o;
-                o["method"] = jv;
-                jv = o;
-            }
-            return xbwd::rpc_call::fromCommandLine(*config, jv);
-        }
         auto const logLevel = [&]() -> beast::severities::Severity {
             using namespace beast::severities;
 
@@ -191,6 +174,53 @@ main(int argc, char** argv)
             }
             return kInfo;
         }();
+
+        if (vm.count("json") || vm.count("cmd"))
+        {
+            using namespace std::literals;
+            beast::setCurrentThreadName(
+                xbwd::build_info::serverName + ": rpc"s);
+
+            Json::Value jv;
+            if (vm.count("json"))
+            {
+                auto reqStr = vm["json"].as<std::string>();
+                if (!reqStr.empty() && reqStr[0] != '{' && reqStr[0] != '"')
+                {
+                    reqStr = '"' + reqStr + '"';
+                }
+
+                if (!Json::Reader().parse(reqStr, jv))
+                {
+                    std::cerr << "Error: Could not parse json command";
+                    return EXIT_FAILURE;
+                }
+                if (jv.isString())
+                {
+                    Json::Value o;
+                    o[ripple::jss::method] = jv;
+                    jv = o;
+                }
+            }
+            else
+            {
+                auto const cmd = vm["cmd"].as<std::string>();
+                if ((cmd == "stop") || (cmd == "server_info"))
+                {
+                    jv[ripple::jss::method] = cmd;
+                }
+                else
+                {
+                    std::cerr << "Error: Invalid command";
+                    return EXIT_FAILURE;
+                }
+            }
+
+            jv[ripple::jss::api_version] =
+                xbwd::rpc_call::apiMaximumSupportedVersion;
+
+            return xbwd::rpc_call::fromCommandLine(*config, jv, logLevel).first;
+        }
 
         xbwd::App app(std::move(config), logLevel);
         if (!app.setup())

@@ -161,6 +161,7 @@ set(HEADERS
   src/xbwd/federator/TxnSupport.h
   src/xbwd/rpc/fromJSON.h
   src/xbwd/rpc/RPCCall.h
+  src/xbwd/rpc/RPCClient.h
   src/xbwd/rpc/RPCHandler.h
   src/xbwd/rpc/ServerHandler.h
 )
@@ -178,6 +179,7 @@ set(SOURCES
   src/xbwd/core/SociDB.cpp
   src/xbwd/federator/Federator.cpp
   src/xbwd/federator/FederatorEvents.cpp
+  src/xbwd/rpc/RPCClient.cpp
   src/xbwd/rpc/RPCHandler.cpp
   src/xbwd/rpc/ServerHandler.cpp
 )
