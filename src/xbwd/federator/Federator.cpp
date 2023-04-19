@@ -77,6 +77,7 @@ make_Federator(
             config.bridge,
             getSubmitAccount(ChainType::locking),
             r,
+            config.signingAccount,
             j);
     std::shared_ptr<ChainListener> sidechainListener =
         std::make_shared<ChainListener>(
@@ -84,6 +85,7 @@ make_Federator(
             config.bridge,
             getSubmitAccount(ChainType::issuing),
             r,
+            config.signingAccount,
             j);
     r->init(
         ios,
@@ -115,6 +117,7 @@ Federator::Federator(
                   chains_[ChainType::issuing].txnSubmit_ &&
                   chains_[ChainType::issuing].txnSubmit_->shouldSubmit}
     , keyType_{config.keyType}
+    , signingAccount_(config.signingAccount)
     , signingPK_{derivePublicKey(config.keyType, config.signingKey)}
     , signingSK_{config.signingKey}
     , j_(j)
@@ -670,7 +673,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
         return ripple::Attestations::AttestationClaim{
             e.bridge_,
-            ripple::calcAccountID(signingPK_),
+            signingAccount_ ? *signingAccount_
+                            : ripple::calcAccountID(signingPK_),
             signingPK_,
             signingSK_,
             e.src_,
@@ -837,7 +841,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
         return ripple::Attestations::AttestationCreateAccount{
             e.bridge_,
-            ripple::calcAccountID(signingPK_),
+            signingAccount_ ? *signingAccount_
+                            : ripple::calcAccountID(signingPK_),
             signingPK_,
             signingSK_,
             e.src_,
@@ -1188,7 +1193,8 @@ Federator::onEvent(event::NewLedger const& e)
 void
 Federator::updateSignerListStatus(ChainType const chainType)
 {
-    auto const signingAcc = calcAccountID(signingPK_);
+    auto const signingAcc =
+        signingAccount_ ? *signingAccount_ : calcAccountID(signingPK_);
     auto& signerListInfo(signerListsInfo_[chainType]);
 
     // check signer list
@@ -1217,7 +1223,8 @@ Federator::updateSignerListStatus(ChainType const chainType)
 void
 Federator::onEvent(event::XChainSignerListSet const& e)
 {
-    auto const signingAcc = calcAccountID(signingPK_);
+    auto const signingAcc =
+        signingAccount_ ? *signingAccount_ : calcAccountID(signingPK_);
     auto& signerListInfo(signerListsInfo_[e.chainType_]);
 
     signerListInfo.presentInSignerList_ =
@@ -1236,7 +1243,8 @@ Federator::onEvent(event::XChainSignerListSet const& e)
 void
 Federator::onEvent(event::XChainSetRegularKey const& e)
 {
-    auto const signingAcc = calcAccountID(signingPK_);
+    auto const signingAcc =
+        signingAccount_ ? *signingAccount_ : calcAccountID(signingPK_);
     auto& signerListInfo(signerListsInfo_[e.chainType_]);
 
     signerListInfo.regularDoorID_ = e.regularDoorID_;
@@ -1254,7 +1262,8 @@ Federator::onEvent(event::XChainSetRegularKey const& e)
 void
 Federator::onEvent(event::XChainAccountSet const& e)
 {
-    auto const signingAcc = calcAccountID(signingPK_);
+    auto const signingAcc =
+        signingAccount_ ? *signingAccount_ : calcAccountID(signingPK_);
     auto& signerListInfo(signerListsInfo_[e.chainType_]);
 
     signerListInfo.disableMaster_ = e.disableMaster_;
@@ -1852,6 +1861,62 @@ Federator::maxAttests() const
 #else
     return 1;
 #endif
+}
+
+void
+Federator::checkSigningKey(
+    ChainType const ct,
+    bool const masterDisabled,
+    std::optional<ripple::AccountID> const& regularAcc)
+{
+    auto const signingAcc = ripple::calcAccountID(signingPK_);
+
+    if ((signingAcc == signingAccount_) && masterDisabled)
+    {
+        JLOGV(
+            j_.fatal(),
+            "Masterkey disabled for signing account",
+            ripple::jv("ChainType", to_string(ct)),
+            ripple::jv("config acc", ripple::toBase58(*signingAccount_)),
+            ripple::jv("config pk acc", ripple::toBase58(signingAcc)),
+            ripple::jv(
+                "info regular acc",
+                regularAcc ? ripple::toBase58(*regularAcc) : std::string()));
+        throw std::runtime_error("Masterkey disabled for signing account");
+    }
+
+    if ((signingAcc != signingAccount_) && (regularAcc != signingAcc))
+    {
+        JLOGV(
+            j_.fatal(),
+            "Invalid signing account regular key used",
+            ripple::jv("ChainType", to_string(ct)),
+            ripple::jv("config acc", ripple::toBase58(*signingAccount_)),
+            ripple::jv("config pk acc", ripple::toBase58(signingAcc)),
+            ripple::jv(
+                "info regular acc",
+                regularAcc ? ripple::toBase58(*regularAcc) : std::string()));
+
+        throw std::runtime_error("Invalid signing account key used");
+    }
+
+    if (signingAcc == signingAccount_)
+    {
+        JLOGV(
+            j_.trace(),
+            "Signing account master key used",
+            ripple::jv("acc", ripple::toBase58(*signingAccount_)));
+    }
+    else
+    {
+        JLOGV(
+            j_.trace(),
+            "Signing account regular key used",
+            ripple::jv("master acc", ripple::toBase58(*signingAccount_)),
+            ripple::jv(
+                "regular acc",
+                regularAcc ? ripple::toBase58(*regularAcc) : std::string()));
+    }
 }
 
 Submission::Submission(

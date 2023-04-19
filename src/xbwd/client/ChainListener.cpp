@@ -49,6 +49,7 @@ ChainListener::ChainListener(
     ripple::STXChainBridge const sidechain,
     std::optional<ripple::AccountID> submitAccountOpt,
     std::weak_ptr<Federator>&& federator,
+    std::optional<ripple::AccountID> signingAccount,
     beast::Journal j)
     : chainType_{chainType}
     , bridge_{sidechain}
@@ -56,6 +57,7 @@ ChainListener::ChainListener(
           submitAccountOpt ? ripple::toBase58(*submitAccountOpt)
                            : std::string{})
     , federator_{std::move(federator)}
+    , signingAccount_(signingAccount)
     , j_{j}
 {
 }
@@ -85,31 +87,49 @@ void
 ChainListener::onConnect()
 {
     auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
+    auto doorAccInfoCb = [self = shared_from_this(),
+                          doorAccStr](Json::Value const& msg) {
+        self->processAccountInfo(msg);
 
-    Json::Value params;
-    params[ripple::jss::account] = doorAccStr;
-    params[ripple::jss::signer_lists] = true;
+        Json::Value params;
+        params[ripple::jss::account_history_tx_stream] = Json::objectValue;
+        params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
+            doorAccStr;
 
-    send(
-        "account_info",
-        params,
-        [self = shared_from_this(), doorAccStr](Json::Value const& msg) {
-            self->processAccountInfo(msg);
+        params[ripple::jss::streams] = Json::arrayValue;
+        params[ripple::jss::streams].append("ledger");
+        if (!self->witnessAccountStr_.empty())
+        {
+            params[ripple::jss::accounts] = Json::arrayValue;
+            params[ripple::jss::accounts].append(self->witnessAccountStr_);
+        }
+        self->send("subscribe", params);
+    };
 
-            Json::Value params;
-            params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-            params[ripple::jss::account_history_tx_stream]
-                  [ripple::jss::account] = doorAccStr;
+    auto mainFlow = [self = shared_from_this(), doorAccStr, doorAccInfoCb]() {
+        Json::Value params;
+        params[ripple::jss::account] = doorAccStr;
+        params[ripple::jss::signer_lists] = true;
 
-            params[ripple::jss::streams] = Json::arrayValue;
-            params[ripple::jss::streams].append("ledger");
-            if (!self->witnessAccountStr_.empty())
-            {
-                params[ripple::jss::accounts] = Json::arrayValue;
-                params[ripple::jss::accounts].append(self->witnessAccountStr_);
-            }
-            self->send("subscribe", params);
-        });
+        self->send("account_info", params, doorAccInfoCb);
+    };
+
+    auto signAccInfoCb = [self = shared_from_this(),
+                          mainFlow](Json::Value const& msg) {
+        self->processSigningAccountInfo(msg);
+        mainFlow();
+    };
+
+    if (signingAccount_)
+    {
+        Json::Value params;
+        params[ripple::jss::account] = ripple::toBase58(*signingAccount_);
+        send("account_info", params, signAccInfoCb);
+    }
+    else
+    {
+        mainFlow();
+    }
 }
 
 void
@@ -792,6 +812,79 @@ ChainListener::processAccountInfo(Json::Value const& msg) noexcept
             pushEvent(event::XChainSignerListSet{
                 chainType_, *parsedAcc, std::move(*opEntries)});
         }
+    }
+    catch (std::exception const& e)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", e.what()),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    }
+    catch (...)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", "unknown exception"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    }
+}
+
+void
+ChainListener::processSigningAccountInfo(Json::Value const& msg) noexcept
+{
+    std::string const chainName = to_string(chainType_);
+    std::string_view const errTopic = "ignoring signing account_info message";
+
+    auto warn_ret = [&, this](std::string_view reason) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("reason", reason),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    };
+
+    try
+    {
+        if (!msg.isMember(ripple::jss::result))
+            return warn_ret("'result' missed");
+
+        auto const& jres = msg[ripple::jss::result];
+        if (!jres.isMember(ripple::jss::account_data))
+            return warn_ret("'account_data' missed");
+
+        auto const& jaccData = jres[ripple::jss::account_data];
+        if (!jaccData.isMember(ripple::jss::Account))
+            return warn_ret("'Account' missed");
+
+        auto const& jAcc = jaccData[ripple::jss::Account];
+        auto const parsedAcc =
+            ripple::parseBase58<ripple::AccountID>(jAcc.asString());
+        if (!parsedAcc)
+            return warn_ret("invalid 'Account'");
+
+        bool const fDisableMaster = jaccData.isMember(ripple::jss::Flags)
+            ? static_cast<bool>(
+                  jaccData[ripple::jss::Flags].asUInt() &
+                  ripple::lsfDisableMaster)
+            : false;
+
+        std::optional<ripple::AccountID> regularAcc;
+        if (jaccData.isMember("RegularKey"))
+        {
+            std::string const regularKeyStr = jaccData["RegularKey"].asString();
+            regularAcc = ripple::parseBase58<ripple::AccountID>(regularKeyStr);
+        }
+
+        auto f = federator_.lock();
+        if (!f)
+            return warn_ret("federator not available");
+
+        f->checkSigningKey(chainType_, fDisableMaster, regularAcc);
     }
     catch (std::exception const& e)
     {

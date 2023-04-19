@@ -46,6 +46,7 @@ private:
     ripple::STXChainBridge const bridge_;
     std::string witnessAccountStr_;
     std::weak_ptr<Federator> federator_;
+    std::optional<ripple::AccountID> signingAccount_;
     mutable std::mutex m_;
     beast::Journal j_;
 
@@ -62,6 +63,7 @@ public:
         ripple::STXChainBridge const sidechain,
         std::optional<ripple::AccountID> submitAccountOpt,
         std::weak_ptr<Federator>&& federator,
+        std::optional<ripple::AccountID> signingAccount,
         beast::Journal j);
 
     virtual ~ChainListener();
@@ -114,6 +116,9 @@ private:
 
     void
     processAccountInfo(Json::Value const& msg) noexcept;
+
+    void
+    processSigningAccountInfo(Json::Value const& msg) noexcept;
 
     void
     processSignerListSet(Json::Value const& msg) noexcept;

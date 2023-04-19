@@ -72,6 +72,7 @@ public:
     boost::filesystem::path dataDir;
     ripple::KeyType keyType;
     ripple::SecretKey signingKey;
+    std::optional<ripple::AccountID> signingAccount;
     ripple::STXChainBridge bridge;
     std::optional<AdminConfig> adminConfig;
 

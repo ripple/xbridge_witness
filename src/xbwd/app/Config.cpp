@@ -145,6 +145,8 @@ Config::Config(Json::Value const& jv)
           jv.isMember("LogFilesToKeep") ? jv["LogFilesToKeep"].asUInt() : 0)
     , useBatch(jv.isMember("UseBatch") ? jv["UseBatch"].asBool() : false)
 {
+    if (jv.isMember("SigningAccount"))
+        signingAccount = rpc::fromJson<ripple::AccountID>(jv, "SigningAccount");
 #ifndef USE_BATCH_ATTESTATION
     if (useBatch)
         throw std::runtime_error(

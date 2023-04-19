@@ -241,6 +241,7 @@ class Federator : public std::enable_shared_from_this<Federator>
     ChainArray<std::list<SubmissionPtr>> GUARDED_BY(txnsMutex_) submitted_;
     ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) errored_;
 
+    std::optional<ripple::AccountID> signingAccount_;
     ripple::KeyType const keyType_;
     ripple::PublicKey const signingPK_;
     ripple::SecretKey const signingSK_;
@@ -340,6 +341,12 @@ public:
         ChainType ct,
         ripple::uint256 const& txHash,
         Json::Value& result);
+
+    void
+    checkSigningKey(
+        ChainType const ct,
+        bool const masterDisabled,
+        std::optional<ripple::AccountID> const& regularAcc);
 
 private:
     // Two phase init needed for shared_from this.
