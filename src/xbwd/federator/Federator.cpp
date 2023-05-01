@@ -276,6 +276,7 @@ Federator::sendDBAttests(ChainType ct)
         soci::blob sendingAccountBlob(*session);
         soci::blob rewardAccountBlob(*session);
         soci::blob otherChainDstBlob(*session);
+        soci::blob signingAccountBlob(*session);
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
@@ -287,7 +288,8 @@ Federator::sendDBAttests(ChainType ct)
         auto const sql = fmt::format(
             R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
                      Bridge, SendingAccount, RewardAccount, OtherChainDst,
-                     PublicKey, Signature FROM {table_name} ORDER BY ClaimID;
+                     SigningAccount, PublicKey, Signature
+                  FROM {table_name} ORDER BY ClaimID;
         )sql",
             fmt::arg("table_name", tblName));
 
@@ -303,6 +305,7 @@ Federator::sendDBAttests(ChainType ct)
              soci::into(sendingAccountBlob),
              soci::into(rewardAccountBlob),
              soci::into(otherChainDstBlob, otherChainDstInd),
+             soci::into(signingAccountBlob),
              soci::into(publicKeyBlob),
              soci::into(signatureBlob));
         st.execute();
@@ -311,6 +314,9 @@ Federator::sendDBAttests(ChainType ct)
 
         while (st.fetch())
         {
+            ripple::AccountID signingAccount;
+            convert(signingAccountBlob, signingAccount);
+
             ripple::PublicKey signingPK;
             convert(publicKeyBlob, signingPK);
 
@@ -338,7 +344,7 @@ Federator::sendDBAttests(ChainType ct)
             pushAtt(
                 bridge,
                 ripple::Attestations::AttestationClaim{
-                    ripple::calcAccountID(signingPK),
+                    signingAccount,
                     signingPK,
                     sigBuf,
                     sendingAccount,
@@ -371,6 +377,7 @@ Federator::sendDBAttests(ChainType ct)
         soci::blob sendingAccountBlob(*session);
         soci::blob rewardAccountBlob(*session);
         soci::blob otherChainDstBlob(*session);
+        soci::blob signingAccountBlob(*session);
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
@@ -382,7 +389,8 @@ Federator::sendDBAttests(ChainType ct)
         auto const sql = fmt::format(
             R"sql(SELECT TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, RewardAmt,
                      Bridge, SendingAccount, RewardAccount, OtherChainDst,
-                     PublicKey, Signature FROM {table_name} ORDER BY CreateCount;
+                     SigningAccount, PublicKey, Signature
+                  FROM {table_name} ORDER BY CreateCount;
         )sql",
             fmt::arg("table_name", tblName));
 
@@ -399,6 +407,7 @@ Federator::sendDBAttests(ChainType ct)
              soci::into(sendingAccountBlob),
              soci::into(rewardAccountBlob),
              soci::into(otherChainDstBlob, otherChainDstInd),
+             soci::into(signingAccountBlob),
              soci::into(publicKeyBlob),
              soci::into(signatureBlob));
         st.execute();
@@ -407,6 +416,9 @@ Federator::sendDBAttests(ChainType ct)
 
         while (st.fetch())
         {
+            ripple::AccountID signingAccount;
+            convert(signingAccountBlob, signingAccount);
+
             ripple::PublicKey signingPK;
             convert(publicKeyBlob, signingPK);
 
@@ -433,7 +445,7 @@ Federator::sendDBAttests(ChainType ct)
             pushAtt(
                 bridge,
                 ripple::Attestations::AttestationCreateAccount{
-                    ripple::calcAccountID(signingPK),
+                    signingAccount,
                     signingPK,
                     sigBuf,
                     sendingAccount,
@@ -725,6 +737,12 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         soci::blob rewardAccountBlob(*session);
         convert(rewardAccount, rewardAccountBlob);
 
+        soci::blob signingAccountBlob(*session);
+        if (claimOpt)
+        {
+            convert(claimOpt->attestationSignerAccount, signingAccountBlob);
+        }
+
         soci::blob publicKeyBlob(*session);
         convert(signingPK_, publicKeyBlob);
 
@@ -740,13 +758,36 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             convert(*optDst, otherChainDstBlob);
         }
 
+        JLOGV(
+            j_.trace(),
+            "Insert into claim table",
+            ripple::jv("table_name", tblName),
+            ripple::jv("success", success),
+            ripple::jv("ledger_seq", e.ledgerSeq_),
+            ripple::jv("claim_id", e.claimID_),
+            ripple::jv(
+                "amt",
+                e.deliveredAmt_ ? e.deliveredAmt_->getFullText()
+                                : std::string("no delivered amt")),
+            ripple::jv("sending_account", e.src_),
+            ripple::jv("reward_account", rewardAccount),
+            ripple::jv(
+                "other_chain_dst",
+                !optDst || !*optDst ? std::string()
+                                    : ripple::toBase58(*optDst)),
+            ripple::jv(
+                "signing_account",
+                !claimOpt
+                    ? std::string()
+                    : ripple::toBase58(claimOpt->attestationSignerAccount)));
+
         auto const sql = fmt::format(
             R"sql(INSERT INTO {table_name}
                   (TransID, LedgerSeq, ClaimID, Success, DeliveredAmt, Bridge,
-                   SendingAccount, RewardAccount, OtherChainDst, PublicKey, Signature)
+                   SendingAccount, RewardAccount, OtherChainDst, SigningAccount, PublicKey, Signature)
                   VALUES
                   (:txnId, :lgrSeq, :claimID, :success, :amt, :bridge,
-                   :sendingAccount, :rewardAccount, :otherChainDst, :pk, :sig);
+                   :sendingAccount, :rewardAccount, :otherChainDst, :signingAccount, :pk, :sig);
             )sql",
             fmt::arg("table_name", tblName));
 
@@ -754,7 +795,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             soci::use(e.claimID_), soci::use(success), soci::use(amtBlob),
             soci::use(bridgeBlob), soci::use(sendingAccountBlob),
             soci::use(rewardAccountBlob), soci::use(otherChainDstBlob),
-            soci::use(publicKeyBlob), soci::use(signatureBlob);
+            soci::use(signingAccountBlob), soci::use(publicKeyBlob),
+            soci::use(signatureBlob);
     }
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
@@ -882,6 +924,12 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
         soci::blob rewardAccountBlob(*session);
         convert(rewardAccount, rewardAccountBlob);
 
+        soci::blob signingAccountBlob(*session);
+        if (createOpt)
+        {
+            convert(createOpt->attestationSignerAccount, signingAccountBlob);
+        }
+
         soci::blob publicKeyBlob(*session);
         convert(signingPK_, publicKeyBlob);
 
@@ -894,38 +942,34 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
         soci::blob otherChainDstBlob(*session);
         convert(dst, otherChainDstBlob);
 
-        if (e.deliveredAmt_)
-            JLOGV(
-                j_.trace(),
-                "Insert into create table",
-                ripple::jv("table_name", tblName),
-                ripple::jv("success", success),
-                ripple::jv("create_count", e.createCount_),
-                ripple::jv("amt", *e.deliveredAmt_),
-                ripple::jv("reward_amt", e.rewardAmt_),
-                ripple::jv("sending_account", sendingAccount),
-                ripple::jv("reward_account", rewardAccount),
-                ripple::jv("other_chain_dst", dst));
-        else
-            JLOGV(
-                j_.trace(),
-                "Insert into create table",
-                ripple::jv("table_name", tblName),
-                ripple::jv("success", success),
-                ripple::jv("create_count", e.createCount_),
-                ripple::jv("amt", "no delivered amt"),
-                ripple::jv("reward_amt", e.rewardAmt_),
-                ripple::jv("sending_account", sendingAccount),
-                ripple::jv("reward_account", rewardAccount),
-                ripple::jv("other_chain_dst", dst));
+        JLOGV(
+            j_.trace(),
+            "Insert into create table",
+            ripple::jv("table_name", tblName),
+            ripple::jv("success", success),
+            ripple::jv("ledger_seq", e.ledgerSeq_),
+            ripple::jv("create_count", e.createCount_),
+            ripple::jv(
+                "amt",
+                e.deliveredAmt_ ? e.deliveredAmt_->getFullText()
+                                : std::string("no delivered amt")),
+            ripple::jv("reward_amt", e.rewardAmt_),
+            ripple::jv("sending_account", sendingAccount),
+            ripple::jv("reward_account", rewardAccount),
+            ripple::jv("other_chain_dst", dst),
+            ripple::jv(
+                "signing_account",
+                !createOpt
+                    ? std::string()
+                    : ripple::toBase58(createOpt->attestationSignerAccount)));
 
         auto const sql = fmt::format(
             R"sql(INSERT INTO {table_name}
                   (TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, RewardAmt, Bridge,
-                   SendingAccount, RewardAccount, otherChainDst, PublicKey, Signature)
+                   SendingAccount, RewardAccount, otherChainDst, SigningAccount, PublicKey, Signature)
                   VALUES
                   (:txnId, :lgrSeq, :createCount, :success, :amt, :rewardAmt, :bridge,
-                   :sendingAccount, :rewardAccount, :otherChainDst, :pk, :sig);
+                   :sendingAccount, :rewardAccount, :otherChainDst, :signingAccount, :pk, :sig);
             )sql",
             fmt::arg("table_name", tblName));
 
@@ -933,8 +977,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
             soci::use(e.createCount_), soci::use(success), soci::use(amtBlob),
             soci::use(rewardAmtBlob), soci::use(bridgeBlob),
             soci::use(sendingAccountBlob), soci::use(rewardAccountBlob),
-            soci::use(otherChainDstBlob), soci::use(publicKeyBlob),
-            soci::use(signatureBlob);
+            soci::use(otherChainDstBlob), soci::use(signingAccountBlob),
+            soci::use(publicKeyBlob), soci::use(signatureBlob);
     }
     {
         auto session = app_.getXChainTxnDB().checkoutDb();

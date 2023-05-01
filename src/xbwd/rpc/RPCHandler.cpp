@@ -70,6 +70,7 @@ doSelectAll(
         soci::blob sendingAccountBlob(*session);
         soci::blob rewardAccountBlob(*session);
         soci::blob otherChainDstBlob(*session);
+        soci::blob signingAccountBlob(*session);
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
@@ -81,7 +82,8 @@ doSelectAll(
         auto sql = fmt::format(
             R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
                          Bridge, SendingAccount, RewardAccount, OtherChainDst,
-                         PublicKey, Signature FROM {table_name};
+                         SigningAccount, PublicKey, Signature
+                  FROM {table_name};
             )sql",
             fmt::arg("table_name", tblName));
 
@@ -97,6 +99,7 @@ doSelectAll(
              soci::into(sendingAccountBlob),
              soci::into(rewardAccountBlob),
              soci::into(otherChainDstBlob, otherChainDstInd),
+             soci::into(signingAccountBlob),
              soci::into(publicKeyBlob),
              soci::into(signatureBlob));
         st.execute();
@@ -106,6 +109,9 @@ doSelectAll(
         std::optional<ripple::STXChainBridge> firstBridge;
         while (st.fetch())
         {
+            ripple::AccountID signingAccount;
+            convert(signingAccountBlob, signingAccount);
+
             ripple::PublicKey signingPK;
             convert(publicKeyBlob, signingPK);
 
@@ -139,7 +145,7 @@ doSelectAll(
             }
 
             claims.emplace_back(
-                ripple::calcAccountID(signingPK),
+                signingAccount,
                 signingPK,
                 sigBuf,
                 sendingAccount,
@@ -253,6 +259,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         soci::blob sendingAccountBlob(*session);
         soci::blob rewardAccountBlob(*session);
         soci::blob otherChainDstBlob(*session);
+        soci::blob signingAccountBlob(*session);
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
@@ -265,7 +272,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
             convert(*optDst, otherChainDstBlob);
 
             auto sql = fmt::format(
-                R"sql(SELECT Signature, PublicKey, RewardAccount FROM {table_name}
+                R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount FROM {table_name}
                   WHERE ClaimID = :claimID and
                         Success = 1 and
                         DeliveredAmt = :amt and
@@ -275,16 +282,16 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
             )sql",
                 fmt::arg("table_name", tblName));
 
-            *session << sql, soci::into(signatureBlob, sigInd),
-                soci::into(publicKeyBlob), soci::into(rewardAccountBlob),
-                soci::use(*optClaimID), soci::use(amtBlob),
-                soci::use(bridgeBlob), soci::use(sendingAccountBlob),
-                soci::use(otherChainDstBlob);
+            *session << sql, soci::into(signingAccountBlob),
+                soci::into(signatureBlob, sigInd), soci::into(publicKeyBlob),
+                soci::into(rewardAccountBlob), soci::use(*optClaimID),
+                soci::use(amtBlob), soci::use(bridgeBlob),
+                soci::use(sendingAccountBlob), soci::use(otherChainDstBlob);
         }
         else
         {
             auto sql = fmt::format(
-                R"sql(SELECT Signature, PublicKey, RewardAccount, OtherChainDst FROM {table_name}
+                R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount, OtherChainDst FROM {table_name}
                   WHERE ClaimID = :claimID and
                         Success = 1 and
                         DeliveredAmt = :amt and
@@ -294,8 +301,9 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                 fmt::arg("table_name", tblName));
 
             soci::indicator otherChainDstInd;
-            *session << sql, soci::into(signatureBlob, sigInd),
-                soci::into(publicKeyBlob), soci::into(rewardAccountBlob),
+            *session << sql, soci::into(signingAccountBlob),
+                soci::into(signatureBlob, sigInd), soci::into(publicKeyBlob),
+                soci::into(rewardAccountBlob),
                 soci::into(otherChainDstBlob, otherChainDstInd),
                 soci::use(*optClaimID), soci::use(amtBlob),
                 soci::use(bridgeBlob), soci::use(sendingAccountBlob);
@@ -313,13 +321,15 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         {
             ripple::AccountID rewardAccount;
             convert(rewardAccountBlob, rewardAccount);
+            ripple::AccountID signingAccount;
+            convert(signingAccountBlob, signingAccount);
             ripple::PublicKey signingPK;
             convert(publicKeyBlob, signingPK);
             ripple::Buffer sigBuf;
             convert(signatureBlob, sigBuf);
 
             ripple::Attestations::AttestationClaim claim{
-                ripple::calcAccountID(signingPK),
+                signingAccount,
                 signingPK,
                 sigBuf,
                 sendingAccount,
@@ -461,11 +471,12 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         convert(dst, otherChainDstBlob);
 
         soci::blob rewardAccountBlob(*session);
+        soci::blob signingAccountBlob(*session);
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
         auto sql = fmt::format(
-            R"sql(SELECT Signature, PublicKey, RewardAccount FROM {table_name}
+            R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount FROM {table_name}
                   WHERE CreateCount = :createCount and
                         Success = 1 and
                         DeliveredAmt = :amt and
@@ -476,7 +487,8 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
             )sql",
             fmt::arg("table_name", tblName));
 
-        *session << sql, soci::into(signatureBlob), soci::into(publicKeyBlob),
+        *session << sql, soci::into(signingAccountBlob),
+            soci::into(signatureBlob), soci::into(publicKeyBlob),
             soci::into(rewardAccountBlob), soci::use(createCount),
             soci::use(amtBlob), soci::use(rewardAmtBlob), soci::use(bridgeBlob),
             soci::use(sendingAccountBlob), soci::use(otherChainDstBlob);
@@ -487,13 +499,15 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         {
             ripple::AccountID rewardAccount;
             convert(rewardAccountBlob, rewardAccount);
+            ripple::AccountID signingAccount;
+            convert(signingAccountBlob, signingAccount);
             ripple::PublicKey signingPK;
             convert(publicKeyBlob, signingPK);
             ripple::Buffer sigBuf;
             convert(signatureBlob, sigBuf);
 
             ripple::Attestations::AttestationCreateAccount createAccount{
-                ripple::calcAccountID(signingPK),
+                signingAccount,
                 signingPK,
                 sigBuf,
                 sendingAccount,
