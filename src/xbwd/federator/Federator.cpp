@@ -140,112 +140,9 @@ Federator::init(
     beast::IP::Endpoint const& sidechainIp,
     std::shared_ptr<ChainListener>&& sidechainListener)
 {
-    auto fillLastTxHash = [&]() -> bool {
-        try
-        {
-            auto session = app_.getXChainTxnDB().checkoutDb();
-            auto const sql = fmt::format(
-                R"sql(SELECT ChainType, TransID, LedgerSeq FROM {table_name};
-            )sql",
-                fmt::arg("table_name", db_init::xChainSyncTable));
-
-            std::uint32_t chainType = 0;
-            std::string transID;
-            std::uint32_t ledgerSeq = 0;
-            int rows = 0;
-            soci::statement st =
-                ((*session).prepare << sql,
-                 soci::into(chainType),
-                 soci::into(transID),
-                 soci::into(ledgerSeq));
-            st.execute();
-            while (st.fetch())
-            {
-                if (chainType !=
-                        static_cast<std::uint32_t>(ChainType::issuing) &&
-                    chainType != static_cast<std::uint32_t>(ChainType::locking))
-                {
-                    JLOG(j_.error())
-                        << "error reading database: unknown chain type "
-                        << chainType << ". Recreating init sync table.";
-                    return false;
-                }
-                auto const ct = static_cast<ChainType>(chainType);
-
-                if (!initSync_[ct].dbTxnHash_.parseHex(transID))
-                {
-                    JLOG(j_.error())
-                        << "error reading database: cannot parse transation "
-                           "hash "
-                        << transID << ". Recreating init sync table.";
-                    return false;
-                }
-
-                initSync_[ct].dbLedgerSqn_ = ledgerSeq;
-                ++rows;
-            }
-            return rows == 2;  // both chainTypes
-        }
-        catch (std::exception& e)
-        {
-            JLOGV(
-                j_.error(),
-                "error reading init sync table.",
-                ripple::jv("what", e.what()));
-            return false;
-        }
-    };
-
-    auto initializeInitSyncTable = [&]() {
-        try
-        {
-            {
-                auto session = app_.getXChainTxnDB().checkoutDb();
-                auto const sql = fmt::format(
-                    R"sql(DELETE FROM {table_name};
-            )sql",
-                    fmt::arg("table_name", db_init::xChainSyncTable));
-                *session << sql;
-            }
-            for (auto const ct : {ChainType::locking, ChainType::issuing})
-            {
-                initSync_[ct].dbLedgerSqn_ = 0u;
-                initSync_[ct].dbTxnHash_ = {};
-                auto const txnIdHex = ripple::strHex(
-                    initSync_[ct].dbTxnHash_.begin(),
-                    initSync_[ct].dbTxnHash_.end());
-                auto session = app_.getXChainTxnDB().checkoutDb();
-                auto const sql = fmt::format(
-                    R"sql(INSERT INTO {table_name}
-                      (ChainType, TransID, LedgerSeq)
-                      VALUES
-                      (:ct, :txnId, :lgrSeq);
-                )sql",
-                    fmt::arg("table_name", db_init::xChainSyncTable));
-                *session << sql, soci::use(static_cast<std::uint32_t>(ct)),
-                    soci::use(txnIdHex), soci::use(initSync_[ct].dbLedgerSqn_);
-            }
-            JLOG(j_.info()) << "created DB table for initial sync, "
-                            << db_init::xChainSyncTable;
-        }
-        catch (std::exception& e)
-        {
-            JLOGV(
-                j_.fatal(),
-                "error creating init sync table.",
-                ripple::jv("what", e.what()));
-            throw;
-        }
-    };
-
-    if (!fillLastTxHash())
-        initializeInitSyncTable();
-
     for (auto const ct : {ChainType::locking, ChainType::issuing})
     {
         JLOG(j_.trace()) << "Prepare init sync " << to_string(ct)
-                         << " DB ledgerSqn " << initSync_[ct].dbLedgerSqn_
-                         << " DB txHash " << initSync_[ct].dbTxnHash_
                          << (chains_[ct].lastAttestedCommitTx_
                                  ? (" config txHash " +
                                     to_string(
@@ -546,16 +443,27 @@ Federator::initSync(
         ripple::jv("chain", to_string(ct)),
         ripple::jv("rpcOrder", rpcOrder));
 
-    if (!initSync_[ct].historyDone_)
+    if (!initSync_[ct].attestedTxPresent_)
     {
-        if (initSync_[ct].dbTxnHash_ == eHash ||
-            (chains_[otherChain(ct)].lastAttestedCommitTx_ &&
-             *chains_[otherChain(ct)].lastAttestedCommitTx_ == eHash))
+        // use current chain because event is from the other chain
+        bool const isEq = isEqual(e, initSync_[ct].lastAttestedHistoryTx_);
+        if ((chains_[otherChain(ct)].lastAttestedCommitTx_ == eHash) || isEq)
         {
-            initSync_[ct].historyDone_ = true;
+            initSync_[ct].attestedTxPresent_ = true;
             initSync_[ct].rpcOrder_ = rpcOrder;
-            JLOG(j_.trace()) << "initSync found previous tx " << to_string(ct)
-                             << " " << eHash;
+
+            if (!initSync_[ct].historyDone_ &&
+                initSync_[otherChain(ct)].lastAttestedHistoryTx_)
+                initSync_[ct].historyDone_ = true;
+
+            JLOGV(
+                j_.trace(),
+                "initSync found previous tx",
+                ripple::jv("chain", to_string(ct)),
+                ripple::jv("hash", eHash),
+                ripple::jv("rpcOrder", rpcOrder),
+                ripple::jv("last history tx equal", isEq),
+                ripple::jv("historyDone", initSync_[ct].historyDone_));
         }
     }
 
@@ -596,10 +504,82 @@ Federator::initSync(
     tryFinishInitSync(ct);
 }
 
+bool
+Federator::isEqual(
+    FederatorEvent const& r,
+    std::optional<AttestedHistoryTx> const& att)
+{
+    if (!att)
+        return false;
+
+    if (att->type_ == XChainTxnType::xChainAddClaimAttestation)
+    {
+        if (event::XChainCommitDetected const* pcd =
+                std::get_if<event::XChainCommitDetected>(&r))
+        {
+            bool const bcd = pcd->src_ == att->src_ &&
+                pcd->otherChainDst_ == att->dst_ &&
+                pcd->claimID_ == att->claimID_;
+            return bcd;
+        }
+    }
+    else
+    {
+        if (event::XChainAccountCreateCommitDetected const* pac =
+                std::get_if<event::XChainAccountCreateCommitDetected>(&r))
+        {
+            bool const bac = pac->src_ == att->src_ &&
+                pac->otherChainDst_ == att->dst_ &&
+                pac->createCount_ == att->createCount_;
+            return bac;
+        }
+    }
+
+    return false;
+}
+
+Federator::ReplayContainer::const_iterator
+Federator::findReplayEvent(
+    ReplayContainer const& replays,
+    std::optional<AttestedHistoryTx> const& att,
+    std::optional<ripple::uint256> const& confAtt)
+{
+    if (!att && !confAtt)
+        return replays.begin();
+
+    for (auto it = replays.rbegin(), ite = replays.rend(); it != ite; ++it)
+    {
+        auto const& r(*it);
+
+        if (isEqual(r, att))
+            return it.base();
+
+        auto const txnHash = getHash(r);
+        if (confAtt == txnHash)
+            return it.base();
+    }
+
+    return replays.begin();
+}
+
+std::optional<ripple::uint256>
+Federator::getHash(FederatorEvent const& r)
+{
+    if (event::XChainCommitDetected const* pcd =
+            std::get_if<event::XChainCommitDetected>(&r))
+        return pcd->txnHash_;
+    else if (
+        event::XChainAccountCreateCommitDetected const* pac =
+            std::get_if<event::XChainAccountCreateCommitDetected>(&r))
+        return pac->txnHash_;
+    else
+        return {};
+}
+
 void
 Federator::tryFinishInitSync(ChainType const ct)
 {
-    if (!initSync_[ct].historyDone_ || !initSync_[ct].oldTxExpired_)
+    if (!initSync_[ct].historyDone_)
         return;
 
     JLOGV(
@@ -611,13 +591,54 @@ Federator::tryFinishInitSync(ChainType const ct)
 
     initSync_[ct].syncing_ = false;
     chains_[otherChain(ct)].listener_->stopHistoricalTxns();
-    if (autoSubmit_[ct])
-        sendDBAttests(ct);
-    for (auto const& event : replays_[ct])
+
+    if (!initSync_[otherChain(ct)].historyDone_)
     {
-        std::visit([this](auto const& e) { this->onEvent(e); }, event);
+        JLOGV(
+            j_.debug(),
+            "initSyncDone waiting for other chain",
+            ripple::jv("other chain", to_string(otherChain(ct))));
+        return;
     }
-    replays_[ct].clear();
+
+    for (auto const cht : {ChainType::locking, ChainType::issuing})
+    {
+        if (initSync_[cht].syncing_)
+            continue;
+
+        auto const& ochain = chains_[otherChain(cht)];
+        auto& repl(replays_[cht]);
+        JLOGV(
+            j_.debug(),
+            "initSyncDone start replay",
+            ripple::jv("chain", to_string(cht)),
+            ripple::jv("account", ripple::toBase58(bridge_.door(cht))),
+            ripple::jv("events to replay", repl.size()));
+
+        auto const it = findReplayEvent(
+            repl,
+            initSync_[cht].lastAttestedHistoryTx_,
+            ochain.lastAttestedCommitTx_);
+        if (it != repl.begin())
+        {
+            int const cnt = it - repl.begin();
+            auto const txnHash = getHash(*(it - 1));
+            JLOGV(
+                j_.debug(),
+                "initSyncDone find attested tx",
+                ripple::jv("other chain", to_string(otherChain(cht))),
+                ripple::jv("to delete", cnt),
+                ripple::jv(
+                    "hash", txnHash ? to_string(*txnHash) : std::string()));
+            repl.erase(repl.begin(), it);
+        }
+
+        for (auto const& event : repl)
+        {
+            std::visit([this](auto const& e) { this->onEvent(e); }, event);
+        }
+        repl.clear();
+    }
 }
 
 void
@@ -626,6 +647,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     ChainType const dstChain = e.dir_ == ChainDir::lockingToIssuing
         ? ChainType::issuing
         : ChainType::locking;
+
     JLOGV(
         j_.trace(),
         "onEvent XChainCommitDetected",
@@ -804,15 +826,6 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             soci::use(signingAccountBlob), soci::use(publicKeyBlob),
             soci::use(signatureBlob);
     }
-    {
-        auto session = app_.getXChainTxnDB().checkoutDb();
-        auto const sql = fmt::format(
-            R"sql(UPDATE {table_name} SET TransID = :tx_hash WHERE ChainType = :chain_type;
-            )sql",
-            fmt::arg("table_name", db_init::xChainSyncTable));
-        auto const chainType = static_cast<std::uint32_t>(dstChain);
-        *session << sql, soci::use(txnIdHex), soci::use(chainType);
-    }
 
     if (autoSubmit_[dstChain] && claimOpt)
     {
@@ -986,15 +999,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
             soci::use(otherChainDstBlob), soci::use(signingAccountBlob),
             soci::use(publicKeyBlob), soci::use(signatureBlob);
     }
-    {
-        auto session = app_.getXChainTxnDB().checkoutDb();
-        auto const sql = fmt::format(
-            R"sql(UPDATE {table_name} SET TransID = :tx_hash WHERE ChainType = :chain_type;
-            )sql",
-            fmt::arg("table_name", db_init::xChainSyncTable));
-        auto const chainType = static_cast<std::uint32_t>(dstChain);
-        *session << sql, soci::use(txnIdHex), soci::use(chainType);
-    }
+
     if (autoSubmit_[dstChain] && createOpt)
     {
         bool processNow = e.ledgerBoundary_ || !e.rpcOrder_;
@@ -1019,11 +1024,11 @@ void
 Federator::onEvent(event::EndOfHistory const& e)
 {
     JLOGV(j_.trace(), "onEvent EndOfHistory", ripple::jv("event", e.toJson()));
-    auto const ct = otherChain(e.chainType_);
-    if (initSync_[ct].syncing_)
+    auto const oct = otherChain(e.chainType_);
+    if (initSync_[oct].syncing_)
     {
-        initSync_[ct].historyDone_ = true;
-        tryFinishInitSync(ct);
+        initSync_[oct].historyDone_ = true;
+        tryFinishInitSync(oct);
     }
 }
 
@@ -1111,20 +1116,26 @@ static std::unordered_set<ripple::TERUnderlyingType> SkippableTxnResult(
 void
 Federator::onEvent(event::XChainAttestsResult const& e)
 {
+    auto const ct = e.chainType_;
+
     JLOGV(
         j_.debug(),
         "onEvent XChainAttestsResult",
-        ripple::jv("chain", to_string(e.chainType_)),
+        ripple::jv("chain", to_string(ct)),
         ripple::jv("accountSqn", e.accountSqn_),
         ripple::jv("result", transHuman(e.ter_)));
 
-    if (!autoSubmit_[e.chainType_])
+    if (!autoSubmit_[ct])
         return;
 
-    if (SkippableTxnResult.find(TERtoInt(e.ter_)) != SkippableTxnResult.end())
+    // will resubmit after txn ttl (i.e. TxnTTLLedgers = 4) ledgers
+    // may also get here during init sync.
+    if (!SkippableTxnResult.contains(TERtoInt(e.ter_)))
+        return;
+
     {
         std::lock_guard l{txnsMutex_};
-        auto& subs = submitted_[e.chainType_];
+        auto& subs = submitted_[ct];
         if (auto it = std::find_if(
                 subs.begin(),
                 subs.end(),
@@ -1132,58 +1143,71 @@ Federator::onEvent(event::XChainAttestsResult const& e)
             it != subs.end())
         {
             auto const attestedIDs = (*it)->forAttestIDs(
-                [&](std::uint64_t id) {
-                    deleteFromDB(e.chainType_, id, false);
-                },
-                [&](std::uint64_t id) {
-                    deleteFromDB(e.chainType_, id, true);
-                });
+                [&](std::uint64_t id) { deleteFromDB(ct, id, false); },
+                [&](std::uint64_t id) { deleteFromDB(ct, id, true); });
             JLOGV(
                 j_.trace(),
                 "XChainAttestsResult processed",
-                ripple::jv("chain", to_string(e.chainType_)),
+                ripple::jv("chain", to_string(ct)),
                 ripple::jv("accountSqn", e.accountSqn_),
                 ripple::jv("result", e.ter_),
                 ripple::jv("commitAttests", attestedIDs.first),
                 ripple::jv("createAttests", attestedIDs.second));
 
             subs.erase(it);
+        }
+    }
 
-            // stop processing history if the other chain reach attested tx
-            if (e.history_ && !chains_[e.chainType_].lastAttestedCommitTx_)
+    if (e.isHistory_ && !initSync_[ct].lastAttestedHistoryTx_)
+    {
+        // save latest attestation
+        initSync_[ct].lastAttestedHistoryTx_ = AttestedHistoryTx{
+            e.type_, e.src_, e.dst_, e.createCount_, e.claimID_};
+
+        JLOGV(
+            j_.trace(),
+            "XChainAttestsResult set last att hist tx",
+            ripple::jv("chain", to_string(ct)),
+            ripple::jv("type", static_cast<int>(e.type_)),
+            ripple::jv("src", e.src_),
+            ripple::jv("dst", e.dst_),
+            ripple::jv("createCount", e.createCount_ ? *e.createCount_ : 0),
+            ripple::jv("claimID", e.claimID_ ? *e.claimID_ : 0));
+
+        auto const oct = otherChain(ct);
+
+        // Stop processing history if the chain reach BOTH attested tx AND
+        // latest attestation.
+        if (!initSync_[oct].lastAttestedHistoryTx_)
+            return;
+
+        if (!initSync_[oct].historyDone_ && initSync_[oct].attestedTxPresent_)
+            onEvent(event::EndOfHistory{ct, event::EOHSource::LastAtt});
+
+        // check the other side too
+        if (!initSync_[ct].historyDone_)
+        {
+            auto const oit = findReplayEvent(
+                replays_[ct], initSync_[ct].lastAttestedHistoryTx_);
+            if (oit != replays_[ct].begin())
             {
-                chains_[e.chainType_].lastAttestedCommitTx_ = e.txnHash_;
-                JLOGV(
-                    j_.trace(),
-                    "XChainAttestsResult set last att tx",
-                    ripple::jv("chain", to_string(e.chainType_)),
-                    ripple::jv("last attested txn", to_string(e.txnHash_)));
+                initSync_[ct].attestedTxPresent_ = true;
+                onEvent(event::EndOfHistory{oct, event::EOHSource::LastAtt});
             }
         }
     }
-    // else, will resubmit after txn ttl (i.e. TxnTTLLedgers = 4) ledgers
-    // may also get here during init sync.
 }
 
 void
 Federator::onEvent(event::NewLedger const& e)
 {
-    JLOGV(
-        j_.trace(),
-        "onEvent NewLedger",
-        ripple::jv("chain", to_string(e.chainType_)),
-        ripple::jv("ledgerIndex", e.ledgerIndex_),
-        ripple::jv("dbLedgerSqn", initSync_[e.chainType_].dbLedgerSqn_),
-        ripple::jv("fee", e.fee_));
+    JLOGV(j_.trace(), "onEvent NewLedger", ripple::jv("event", e.toJson()));
 
     ledgerIndexes_[e.chainType_].store(e.ledgerIndex_);
     ledgerFees_[e.chainType_].store(e.fee_);
 
     if (initSync_[e.chainType_].syncing_)
     {
-        initSync_[e.chainType_].oldTxExpired_ =
-            e.ledgerIndex_ > initSync_[e.chainType_].dbLedgerSqn_;
-        tryFinishInitSync(e.chainType_);
         return;
     }
 
@@ -1716,21 +1740,6 @@ Federator::txnSubmitLoop()
                 ledgerIndexes_[submitChain].load() + TxnTTLLedgers;
             txn->lastLedgerSeq_ = lastLedgerSeq;
             txn->accountSqn_ = accountSqns_[submitChain]++;
-            {
-                // TODO move out of submit loop
-                auto session = app_.getXChainTxnDB().checkoutDb();
-                auto const sql = fmt::format(
-                    R"sql(UPDATE {table_name} SET LedgerSeq = :ledger_sqn WHERE ChainType = :chain_type;
-            )sql",
-                    fmt::arg("table_name", db_init::xChainSyncTable));
-                auto const chainType = static_cast<std::uint32_t>(submitChain);
-                *session << sql, soci::use(lastLedgerSeq), soci::use(chainType);
-                JLOGV(
-                    j_.trace(),
-                    "syncDB update ledgerSqn txnSubmitLoop",
-                    ripple::jv("chain", to_string(submitChain)),
-                    ripple::jv("ledgerSqn", lastLedgerSeq));
-            }
             submitTxn(std::move(txn), submitChain);
         }
         localTxns.clear();

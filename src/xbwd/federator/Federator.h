@@ -211,6 +211,13 @@ struct SignerListInfo
     toJson() const;
 };
 
+struct AttestedHistoryTx
+{
+    xbwd::XChainTxnType type_;
+    ripple::AccountID src_, dst_;
+    std::optional<std::uint64_t> createCount_, claimID_;
+};
+
 class Federator : public std::enable_shared_from_this<Federator>
 {
     enum LoopTypes { lt_event, lt_txnSubmit, lt_last };
@@ -227,6 +234,7 @@ class Federator : public std::enable_shared_from_this<Federator>
         ripple::AccountID rewardAccount_;
         std::optional<config::TxnSubmit> txnSubmit_;
         std::optional<ripple::uint256> lastAttestedCommitTx_;
+
         explicit Chain(config::ChainConfig const& config);
     };
 
@@ -279,15 +287,15 @@ class Federator : public std::enable_shared_from_this<Federator>
     struct InitSync
     {
         std::atomic<bool> syncing_{true};
-        ripple::uint256 dbTxnHash_;
-        std::uint32_t dbLedgerSqn_{0u};
         bool historyDone_{false};
-        bool oldTxExpired_{false};
+        bool attestedTxPresent_{false};
         std::int32_t rpcOrder_{std::numeric_limits<std::int32_t>::min()};
+        std::optional<AttestedHistoryTx> lastAttestedHistoryTx_;
     };
 
     ChainArray<InitSync> initSync_;
-    ChainArray<std::deque<FederatorEvent>> replays_;
+    typedef std::deque<FederatorEvent> ReplayContainer;
+    ChainArray<ReplayContainer> replays_;
     beast::Journal j_;
 
     bool const useBatch_;
@@ -407,6 +415,22 @@ private:
 
     void
     tryFinishInitSync(ChainType const ct);
+
+    // return (iterator + 1) if find, or begin() if not find
+    static ReplayContainer::const_iterator
+    findReplayEvent(
+        ReplayContainer const& replays,
+        std::optional<AttestedHistoryTx> const& att,
+        std::optional<ripple::uint256> const& confAtt =
+            std::optional<ripple::uint256>());
+
+    static bool
+    isEqual(
+        FederatorEvent const& r,
+        std::optional<AttestedHistoryTx> const& att);
+
+    static std::optional<ripple::uint256>
+    getHash(FederatorEvent const& r);
 
     void
     pushAtt(
