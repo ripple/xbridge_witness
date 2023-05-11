@@ -107,8 +107,16 @@ XChainAttestsResult::toJson() const
     result["chainType"] = to_string(chainType_);
     result["accountSequence"] = accountSqn_;
     result["txnHash"] = to_string(txnHash_);
-    result["history"] = history_;
     result["ter"] = transHuman(ter_);
+
+    result["isHistory"] = isHistory_;
+    result["type"] = static_cast<int>(type_);
+    result["src"] = toBase58(src_);
+    result["dst"] = toBase58(dst_);
+    if (createCount_)
+        result["createCount"] = to_hex(*createCount_);
+    if (claimID_)
+        result["claimID"] = to_hex(*claimID_);
     return result;
 }
 

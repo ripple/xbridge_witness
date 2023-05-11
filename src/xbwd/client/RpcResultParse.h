@@ -60,6 +60,12 @@ parseSrcAccount(Json::Value const& transaction);
 std::optional<ripple::AccountID>
 parseDstAccount(Json::Value const& transaction, XChainTxnType txnType);
 
+std::optional<ripple::AccountID>
+parseOtherSrcAccount(Json::Value const& transaction, XChainTxnType txnType);
+
+std::optional<ripple::AccountID>
+parseOtherDstAccount(Json::Value const& transaction, XChainTxnType txnType);
+
 std::optional<ripple::STXChainBridge>
 parseBridge(Json::Value const& transaction);
 

@@ -24,6 +24,7 @@
 #include <xbwd/client/ChainListener.h>
 #include <xbwd/federator/FederatorEvents.h>
 
+#include <ripple/basics/hardened_hash.h>
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/json/json_value.h>
@@ -38,6 +39,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <list>
 #include <memory>
 #include <optional>
@@ -211,6 +213,35 @@ struct SignerListInfo
     toJson() const;
 };
 
+struct AttestedHistoryTx
+{
+    xbwd::XChainTxnType type_;
+    ripple::AccountID src_, dst_;
+    std::optional<std::uint64_t> createCount_, claimID_;
+
+    inline bool
+    operator==(AttestedHistoryTx const& o) const noexcept
+    {
+        return type_ == o.type_ && src_ == o.src_ && dst_ == o.dst_ &&
+            createCount_ == o.createCount_ && claimID_ == o.claimID_;
+    }
+
+    template <class Hasher>
+    friend void
+    hash_append(Hasher& h, AttestedHistoryTx const& ah) noexcept
+    {
+        using beast::hash_append;
+        hash_append(h, static_cast<int>(ah.type_));
+        hash_append(h, ah.src_);
+        hash_append(h, ah.dst_);
+        hash_append(h, ah.createCount_ ? *ah.createCount_ : 0);
+        hash_append(h, ah.claimID_ ? *ah.claimID_ : 0);
+    }
+
+    static std::optional<AttestedHistoryTx>
+    fromEvent(FederatorEvent const& e);
+};
+
 class Federator : public std::enable_shared_from_this<Federator>
 {
     enum LoopTypes { lt_event, lt_txnSubmit, lt_last };
@@ -227,6 +258,7 @@ class Federator : public std::enable_shared_from_this<Federator>
         ripple::AccountID rewardAccount_;
         std::optional<config::TxnSubmit> txnSubmit_;
         std::optional<ripple::uint256> lastAttestedCommitTx_;
+
         explicit Chain(config::ChainConfig const& config);
     };
 
@@ -284,6 +316,8 @@ class Federator : public std::enable_shared_from_this<Federator>
         bool historyDone_{false};
         bool oldTxExpired_{false};
         std::int32_t rpcOrder_{std::numeric_limits<std::int32_t>::min()};
+        std::unordered_set<AttestedHistoryTx, ripple::hardened_hash<>>
+            attestedTx_;
     };
 
     ChainArray<InitSync> initSync_;

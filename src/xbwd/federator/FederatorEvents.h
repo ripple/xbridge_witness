@@ -20,6 +20,7 @@
 //==============================================================================
 
 #include <xbwd/basics/ChainTypes.h>
+#include <xbwd/client/RpcResultParse.h>
 
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
@@ -108,7 +109,11 @@ struct XChainAttestsResult
     std::uint32_t accountSqn_;
     ripple::uint256 txnHash_;
     ripple::TER ter_;
-    bool history_;
+
+    bool isHistory_;
+    xbwd::XChainTxnType type_;
+    ripple::AccountID src_, dst_;
+    std::optional<std::uint64_t> createCount_, claimID_;
 
     Json::Value
     toJson() const;

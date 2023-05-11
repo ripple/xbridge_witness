@@ -554,8 +554,13 @@ Federator::initSync(
         {
             initSync_[ct].historyDone_ = true;
             initSync_[ct].rpcOrder_ = rpcOrder;
-            JLOG(j_.trace()) << "initSync found previous tx " << to_string(ct)
-                             << " " << eHash;
+            JLOGV(
+                j_.trace(),
+                "initSync found previous tx",
+                ripple::jv("chain", to_string(ct)),
+                ripple::jv("hash", eHash),
+                ripple::jv("rpcOrder", rpcOrder),
+                ripple::jv("historyDone", initSync_[ct].historyDone_));
         }
     }
 
@@ -596,6 +601,30 @@ Federator::initSync(
     tryFinishInitSync(ct);
 }
 
+std::optional<AttestedHistoryTx>
+AttestedHistoryTx::fromEvent(FederatorEvent const& r)
+{
+    if (event::XChainCommitDetected const* pcd =
+            std::get_if<event::XChainCommitDetected>(&r))
+        return AttestedHistoryTx{
+            xbwd::XChainTxnType::xChainAddClaimAttestation,
+            pcd->src_,
+            pcd->otherChainDst_ ? *pcd->otherChainDst_ : ripple::AccountID(),
+            std::nullopt,
+            pcd->claimID_};
+    else if (
+        event::XChainAccountCreateCommitDetected const* pac =
+            std::get_if<event::XChainAccountCreateCommitDetected>(&r))
+        return AttestedHistoryTx{
+            xbwd::XChainTxnType::xChainAddAccountCreateAttestation,
+            pac->src_,
+            pac->otherChainDst_,
+            pac->createCount_,
+            std::nullopt};
+    else
+        return {};
+}
+
 void
 Federator::tryFinishInitSync(ChainType const ct)
 {
@@ -611,13 +640,54 @@ Federator::tryFinishInitSync(ChainType const ct)
 
     initSync_[ct].syncing_ = false;
     chains_[otherChain(ct)].listener_->stopHistoricalTxns();
+
+    if (initSync_[otherChain(ct)].syncing_)
+    {
+        JLOGV(
+            j_.debug(),
+            "initSyncDone waiting for other chain",
+            ripple::jv("other chain", to_string(otherChain(ct))));
+        return;
+    }
+
     if (autoSubmit_[ct])
         sendDBAttests(ct);
-    for (auto const& event : replays_[ct])
+
+    for (auto const cht : {ChainType::locking, ChainType::issuing})
     {
-        std::visit([this](auto const& e) { this->onEvent(e); }, event);
+        // auto const& ochain = chains_[otherChain(cht)];
+        auto& repl(replays_[cht]);
+
+        unsigned del_cnt = 0;
+        std::size_t const rel_size = repl.size();
+        for (auto it = repl.begin(); it != repl.end();)
+        {
+            auto const ah = AttestedHistoryTx::fromEvent(*it);
+            if (ah && initSync_[cht].attestedTx_.contains(*ah))
+            {
+                ++del_cnt;
+                it = repl.erase(it);
+            }
+            else
+                ++it;
+        }
+
+        JLOGV(
+            j_.debug(),
+            "initSyncDone start replay",
+            ripple::jv("chain", to_string(cht)),
+            ripple::jv("account", ripple::toBase58(bridge_.door(cht))),
+            ripple::jv("events to replay", rel_size),
+            ripple::jv("attested events", initSync_[cht].attestedTx_.size()),
+            ripple::jv("events to delete", del_cnt));
+
+        for (auto const& event : repl)
+        {
+            std::visit([this](auto const& e) { this->onEvent(e); }, event);
+        }
+        repl.clear();
+        initSync_[cht].attestedTx_.clear();
     }
-    replays_[ct].clear();
 }
 
 void
@@ -1019,11 +1089,11 @@ void
 Federator::onEvent(event::EndOfHistory const& e)
 {
     JLOGV(j_.trace(), "onEvent EndOfHistory", ripple::jv("event", e.toJson()));
-    auto const ct = otherChain(e.chainType_);
-    if (initSync_[ct].syncing_)
+    auto const oct = otherChain(e.chainType_);
+    if (initSync_[oct].syncing_)
     {
-        initSync_[ct].historyDone_ = true;
-        tryFinishInitSync(ct);
+        initSync_[oct].historyDone_ = true;
+        tryFinishInitSync(oct);
     }
 }
 
@@ -1111,20 +1181,26 @@ static std::unordered_set<ripple::TERUnderlyingType> SkippableTxnResult(
 void
 Federator::onEvent(event::XChainAttestsResult const& e)
 {
+    auto const ct = e.chainType_;
+
     JLOGV(
         j_.debug(),
         "onEvent XChainAttestsResult",
-        ripple::jv("chain", to_string(e.chainType_)),
+        ripple::jv("chain", to_string(ct)),
         ripple::jv("accountSqn", e.accountSqn_),
         ripple::jv("result", transHuman(e.ter_)));
 
-    if (!autoSubmit_[e.chainType_])
+    if (!autoSubmit_[ct])
         return;
 
-    if (SkippableTxnResult.find(TERtoInt(e.ter_)) != SkippableTxnResult.end())
+    // will resubmit after txn ttl (i.e. TxnTTLLedgers = 4) ledgers
+    // may also get here during init sync.
+    if (!SkippableTxnResult.contains(TERtoInt(e.ter_)))
+        return;
+
     {
         std::lock_guard l{txnsMutex_};
-        auto& subs = submitted_[e.chainType_];
+        auto& subs = submitted_[ct];
         if (auto it = std::find_if(
                 subs.begin(),
                 subs.end(),
@@ -1132,68 +1208,68 @@ Federator::onEvent(event::XChainAttestsResult const& e)
             it != subs.end())
         {
             auto const attestedIDs = (*it)->forAttestIDs(
-                [&](std::uint64_t id) {
-                    deleteFromDB(e.chainType_, id, false);
-                },
-                [&](std::uint64_t id) {
-                    deleteFromDB(e.chainType_, id, true);
-                });
+                [&](std::uint64_t id) { deleteFromDB(ct, id, false); },
+                [&](std::uint64_t id) { deleteFromDB(ct, id, true); });
             JLOGV(
                 j_.trace(),
                 "XChainAttestsResult processed",
-                ripple::jv("chain", to_string(e.chainType_)),
+                ripple::jv("chain", to_string(ct)),
                 ripple::jv("accountSqn", e.accountSqn_),
                 ripple::jv("result", e.ter_),
                 ripple::jv("commitAttests", attestedIDs.first),
                 ripple::jv("createAttests", attestedIDs.second));
 
             subs.erase(it);
-
-            // stop processing history if the other chain reach attested tx
-            if (e.history_ && !chains_[e.chainType_].lastAttestedCommitTx_)
-            {
-                chains_[e.chainType_].lastAttestedCommitTx_ = e.txnHash_;
-                JLOGV(
-                    j_.trace(),
-                    "XChainAttestsResult set last att tx",
-                    ripple::jv("chain", to_string(e.chainType_)),
-                    ripple::jv("last attested txn", to_string(e.txnHash_)));
-            }
         }
     }
-    // else, will resubmit after txn ttl (i.e. TxnTTLLedgers = 4) ledgers
-    // may also get here during init sync.
+
+    if (e.isHistory_)
+    {
+        // save latest attestation
+        initSync_[ct].attestedTx_.insert(AttestedHistoryTx{
+            e.type_, e.src_, e.dst_, e.createCount_, e.claimID_});
+
+        JLOGV(
+            j_.debug(),
+            "XChainAttestsResult add attested tx",
+            ripple::jv("chain", to_string(ct)),
+            ripple::jv("type", static_cast<int>(e.type_)),
+            ripple::jv("src", e.src_),
+            ripple::jv("dst", e.dst_),
+            ripple::jv("createCount", e.createCount_ ? *e.createCount_ : 0),
+            ripple::jv("claimID", e.claimID_ ? *e.claimID_ : 0));
+    }
 }
 
 void
 Federator::onEvent(event::NewLedger const& e)
 {
+    auto const ct = e.chainType_;
+
     JLOGV(
         j_.trace(),
         "onEvent NewLedger",
-        ripple::jv("chain", to_string(e.chainType_)),
-        ripple::jv("ledgerIndex", e.ledgerIndex_),
-        ripple::jv("dbLedgerSqn", initSync_[e.chainType_].dbLedgerSqn_),
-        ripple::jv("fee", e.fee_));
+        ripple::jv("dbLedgerSqn", initSync_[ct].dbLedgerSqn_),
+        ripple::jv("event", e.toJson()));
 
-    ledgerIndexes_[e.chainType_].store(e.ledgerIndex_);
-    ledgerFees_[e.chainType_].store(e.fee_);
+    ledgerIndexes_[ct].store(e.ledgerIndex_);
+    ledgerFees_[ct].store(e.fee_);
 
-    if (initSync_[e.chainType_].syncing_)
+    if (initSync_[ct].syncing_)
     {
-        initSync_[e.chainType_].oldTxExpired_ =
-            e.ledgerIndex_ > initSync_[e.chainType_].dbLedgerSqn_;
-        tryFinishInitSync(e.chainType_);
+        initSync_[ct].oldTxExpired_ =
+            e.ledgerIndex_ > initSync_[ct].dbLedgerSqn_;
+        tryFinishInitSync(ct);
         return;
     }
 
-    if (!autoSubmit_[e.chainType_])
+    if (!autoSubmit_[ct])
         return;
 
     bool notify = false;
     {
         std::lock_guard l{txnsMutex_};
-        auto& subs = submitted_[e.chainType_];
+        auto& subs = submitted_[ct];
         // add expired txn to errored_ for resubmit
         auto notInclude =
             std::find_if(subs.begin(), subs.end(), [&](auto const& s) {
@@ -1201,14 +1277,14 @@ Federator::onEvent(event::NewLedger const& e)
             });
         while (subs.begin() != notInclude)
         {
-            assert(!initSync_[e.chainType_].syncing_);
+            assert(!initSync_[ct].syncing_);
             auto& front = subs.front();
             if (front->retriesAllowed_ > 0)
             {
                 front->retriesAllowed_--;
                 front->accountSqn_ = 0;
                 front->lastLedgerSeq_ = 0;
-                errored_[e.chainType_].emplace_back(std::move(front));
+                errored_[ct].emplace_back(std::move(front));
             }
             else
             {
@@ -1216,14 +1292,14 @@ Federator::onEvent(event::NewLedger const& e)
                 JLOGV(
                     j_.warn(),
                     "Giving up after repeated retries",
-                    ripple::jv("chain", to_string(e.chainType_)),
+                    ripple::jv("chain", to_string(ct)),
                     ripple::jv("commitAttests", attestedIDs.first),
                     ripple::jv("createAttests", attestedIDs.second),
                     ripple::jv(front->getLogName(), front->getJson()));
             }
             subs.pop_front();
         }
-        notify = !errored_[e.chainType_].empty();
+        notify = !errored_[ct].empty();
     }
     if (notify)
     {
@@ -1233,10 +1309,8 @@ Federator::onEvent(event::NewLedger const& e)
     else
     {
         std::lock_guard bl{batchMutex_};
-        if (curClaimAtts_[e.chainType_].size() +
-                curCreateAtts_[e.chainType_].size() >
-            0)
-            pushAttOnSubmitTxn(bridge_, e.chainType_);
+        if (curClaimAtts_[ct].size() + curCreateAtts_[ct].size() > 0)
+            pushAttOnSubmitTxn(bridge_, ct);
     }
 }
 

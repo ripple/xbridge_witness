@@ -266,8 +266,10 @@ ChainListener::processMessage(Json::Value const& msg)
     else if (tryPushNewLedgerEvent(msg))
         return;
 
-    if (msg.isMember(ripple::jss::account_history_tx_first) &&
-        msg[ripple::jss::account_history_tx_first].asBool())
+    bool const history_tx_first =
+        msg.isMember(ripple::jss::account_history_tx_first) &&
+        msg[ripple::jss::account_history_tx_first].asBool();
+    if (history_tx_first)
     {
         pushEvent(event::EndOfHistory{chainType_});
     }
@@ -333,6 +335,7 @@ ChainListener::processMessage(Json::Value const& msg)
         // Only the initial sync needs historical txns.
         return msg[ripple::jss::account_history_tx_index].asInt();
     }();
+    bool const isHistory = txnHistoryIndex && (*txnHistoryIndex < 0);
 
     auto txnTypeOpt = rpcResultParse::parseXChainTxnType(transaction);
     if (!txnTypeOpt)
@@ -598,7 +601,9 @@ ChainListener::processMessage(Json::Value const& msg)
                     ripple::jv("chain_name", chainName));
                 return;
             }
-            pushEvent(event::EndOfHistory{chainType_});
+
+            if (!history_tx_first)
+                pushEvent(event::EndOfHistory{chainType_});
         }
         break;
 #ifdef USE_BATCH_ATTESTATION
@@ -629,18 +634,85 @@ ChainListener::processMessage(Json::Value const& msg)
 #endif
         case XChainTxnType::xChainAddAccountCreateAttestation:
         case XChainTxnType::xChainAddClaimAttestation: {
-            if (rpcResultParse::fieldMatchesStr(
-                    transaction,
-                    ripple::jss::Account,
-                    witnessAccountStr_.c_str()) &&
+            if ((isHistory ||
+                 rpcResultParse::fieldMatchesStr(
+                     transaction,
+                     ripple::jss::Account,
+                     witnessAccountStr_.c_str())) &&
                 txnSeq)
             {
+                JLOGV(
+                    j_.trace(),
+                    "Attestation processing",
+                    ripple::jv("chain_name", chainName),
+                    ripple::jv("src", *src),
+                    ripple::jv(
+                        "dst",
+                        !dst || !*dst ? std::string() : ripple::toBase58(*dst)),
+                    ripple::jv("witnessAccountStr_", witnessAccountStr_));
+
+                auto osrc = rpcResultParse::parseOtherSrcAccount(
+                    transaction, *txnTypeOpt);
+                auto odst = rpcResultParse::parseOtherDstAccount(
+                    transaction, *txnTypeOpt);
+                if (!osrc || !odst)
+                {
+                    JLOGV(
+                        j_.trace(),
+                        "ignoring listener message",
+                        ripple::jv("reason", "osrc/odst account missing"),
+                        ripple::jv("msg", msg),
+                        ripple::jv("chain_name", chainName),
+                        ripple::jv("witnessAccountStr_", witnessAccountStr_));
+                    return;
+                }
+
+                std::optional<std::uint64_t> claimID, accountCreateCount;
+
+                if (txnTypeOpt == XChainTxnType::xChainAddClaimAttestation)
+                {
+                    claimID = Json::getOptional<std::uint64_t>(
+                        transaction, ripple::sfXChainClaimID);
+                    if (!claimID)
+                    {
+                        JLOGV(
+                            j_.warn(),
+                            "ignoring listener message",
+                            ripple::jv("reason", "no claimID"),
+                            ripple::jv("msg", msg),
+                            ripple::jv("chain_name", chainName));
+                        return;
+                    }
+                }
+
+                if (txnTypeOpt ==
+                    XChainTxnType::xChainAddAccountCreateAttestation)
+                {
+                    accountCreateCount = Json::getOptional<std::uint64_t>(
+                        transaction, ripple::sfXChainAccountCreateCount);
+                    if (!accountCreateCount)
+                    {
+                        JLOGV(
+                            j_.warn(),
+                            "ignoring listener message",
+                            ripple::jv("reason", "no accountCreateCount"),
+                            ripple::jv("msg", msg),
+                            ripple::jv("chain_name", chainName));
+                        return;
+                    }
+                }
+
                 pushEvent(event::XChainAttestsResult{
                     chainType_,
                     *txnSeq,
                     *txnHash,
                     txnTER,
-                    txnHistoryIndex < 0});
+                    isHistory,
+                    *txnTypeOpt,
+                    *osrc,
+                    *odst,
+                    accountCreateCount,
+                    claimID});
                 return;
             }
             else
@@ -658,19 +730,19 @@ ChainListener::processMessage(Json::Value const& msg)
         }
         break;
         case XChainTxnType::SignerListSet: {
-            if (txnSuccess && txnHistoryIndex >= 0)
+            if (txnSuccess && !isHistory)
                 processSignerListSet(transaction);
             return;
         }
         break;
         case XChainTxnType::AccountSet: {
-            if (txnSuccess && txnHistoryIndex >= 0)
+            if (txnSuccess && !isHistory)
                 processAccountSet(transaction);
             return;
         }
         break;
         case XChainTxnType::SetRegularKey: {
-            if (txnSuccess && txnHistoryIndex >= 0)
+            if (txnSuccess && !isHistory)
                 processSetRegularKey(transaction);
             return;
         }

@@ -167,6 +167,65 @@ parseSrcAccount(Json::Value const& transaction)
     return {};
 }
 
+std::optional<ripple::AccountID>
+parseOtherSrcAccount(Json::Value const& transaction, XChainTxnType txnType)
+{
+    try
+    {
+        switch (txnType)
+        {
+            case XChainTxnType::xChainCommit:
+                [[fallthrough]];
+            case XChainTxnType::xChainAccountCreateCommit:
+                return ripple::parseBase58<ripple::AccountID>(
+                    transaction[ripple::jss::Account].asString());
+
+            case XChainTxnType::xChainAddClaimAttestation:
+                [[fallthrough]];
+            case XChainTxnType::xChainAddAccountCreateAttestation:
+                return ripple::parseBase58<ripple::AccountID>(
+                    transaction[ripple::sfOtherChainSource.getJsonName()]
+                        .asString());
+            default:
+                break;
+        }
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
+std::optional<ripple::AccountID>
+parseOtherDstAccount(Json::Value const& transaction, XChainTxnType txnType)
+{
+    try
+    {
+        switch (txnType)
+        {
+            case XChainTxnType::xChainAccountCreateCommit:
+                [[fallthrough]];
+            case XChainTxnType::xChainAddClaimAttestation:
+                [[fallthrough]];
+            case XChainTxnType::xChainAddAccountCreateAttestation:
+                return ripple::parseBase58<ripple::AccountID>(
+                    transaction[ripple::sfDestination.getJsonName()]
+                        .asString());
+
+            case XChainTxnType::xChainCommit:
+                return ripple::parseBase58<ripple::AccountID>(
+                    transaction[ripple::sfOtherChainDestination.getJsonName()]
+                        .asString());
+            default:
+                break;
+        }
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
+
 std::optional<ripple::STXChainBridge>
 parseBridge(Json::Value const& transaction)
 {
