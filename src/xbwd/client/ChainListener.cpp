@@ -225,6 +225,34 @@ ChainListener::onMessage(Json::Value const& msg)
     }
 }
 
+namespace {
+
+bool
+isDeletedClaimId(Json::Value const& meta, std::uint64_t claimID)
+{
+    if (!meta.isMember("AffectedNodes"))
+        return false;
+
+    for (auto const& an : meta["AffectedNodes"])
+    {
+        if (!an.isMember("DeletedNode"))
+            continue;
+        auto const& dn = an["DeletedNode"];
+        if (!dn.isMember("FinalFields"))
+            continue;
+        auto const& ff = dn["FinalFields"];
+        auto const optClaimId =
+            Json::getOptional<std::uint64_t>(ff, ripple::sfXChainClaimID);
+
+        if (optClaimId == claimID)
+            return true;
+    }
+
+    return false;
+}
+
+}  // namespace
+
 void
 ChainListener::processMessage(Json::Value const& msg)
 {
@@ -602,7 +630,7 @@ ChainListener::processMessage(Json::Value const& msg)
                 return;
             }
 
-            if (!history_tx_first)
+            if (!history_tx_first && isHistory)
                 pushEvent(event::EndOfHistory{chainType_});
         }
         break;
@@ -634,12 +662,9 @@ ChainListener::processMessage(Json::Value const& msg)
 #endif
         case XChainTxnType::xChainAddAccountCreateAttestation:
         case XChainTxnType::xChainAddClaimAttestation: {
-            if ((isHistory ||
-                 rpcResultParse::fieldMatchesStr(
-                     transaction,
-                     ripple::jss::Account,
-                     witnessAccountStr_.c_str())) &&
-                txnSeq)
+            bool const isOwn = rpcResultParse::fieldMatchesStr(
+                transaction, ripple::jss::Account, witnessAccountStr_.c_str());
+            if ((isHistory || isOwn) && txnSeq)
             {
                 JLOGV(
                     j_.trace(),
@@ -655,14 +680,17 @@ ChainListener::processMessage(Json::Value const& msg)
                     transaction, *txnTypeOpt);
                 auto odst = rpcResultParse::parseOtherDstAccount(
                     transaction, *txnTypeOpt);
-                if (!osrc || !odst)
+                if (!osrc ||
+                    ((txnTypeOpt ==
+                      XChainTxnType::xChainAddAccountCreateAttestation) &&
+                     !odst))
                 {
                     JLOGV(
                         j_.trace(),
                         "ignoring listener message",
                         ripple::jv("reason", "osrc/odst account missing"),
-                        ripple::jv("msg", msg),
                         ripple::jv("chain_name", chainName),
+                        ripple::jv("msg", msg),
                         ripple::jv("witnessAccountStr_", witnessAccountStr_));
                     return;
                 }
@@ -679,8 +707,19 @@ ChainListener::processMessage(Json::Value const& msg)
                             j_.warn(),
                             "ignoring listener message",
                             ripple::jv("reason", "no claimID"),
-                            ripple::jv("msg", msg),
-                            ripple::jv("chain_name", chainName));
+                            ripple::jv("chain_name", chainName),
+                            ripple::jv("msg", msg));
+                        return;
+                    }
+
+                    if (!isOwn && !isDeletedClaimId(meta, *claimID))
+                    {
+                        JLOGV(
+                            j_.warn(),
+                            "ignoring listener message",
+                            ripple::jv("reason", "claimID not in DeletedNode"),
+                            ripple::jv("chain_name", chainName),
+                            ripple::jv("msg", msg));
                         return;
                     }
                 }
@@ -710,7 +749,7 @@ ChainListener::processMessage(Json::Value const& msg)
                     isHistory,
                     *txnTypeOpt,
                     *osrc,
-                    *odst,
+                    odst ? *odst : ripple::AccountID(),
                     accountCreateCount,
                     claimID});
                 return;
