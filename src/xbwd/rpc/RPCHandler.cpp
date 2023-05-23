@@ -15,6 +15,7 @@
 #include <ripple/protocol/jss.h>
 
 #include <fmt/core.h>
+#include <openssl/crypto.h>
 #include <soci/soci-backend.h>
 
 #include <functional>
@@ -634,11 +635,24 @@ isAdmin(
     // verification, if any.
     if (ac.pass)
     {
-        bool userMatch = params.isMember("Username") &&
-            params["Username"].isString() &&
-            params["Username"].asString() == (*ac.pass).user;
-        bool passwordMatch = passwordOp && *passwordOp == (*ac.pass).password;
-        if (!userMatch || !passwordMatch)
+        std::string const paramUser =
+            params.isMember("Username") && params["Username"].isString()
+            ? params["Username"].asString()
+            : std::string();
+
+        unsigned const origAuthSize =
+            ac.pass->user.size() + ac.pass->password.size() + 1;
+        unsigned const inAuthSize =
+            paramUser.size() + (passwordOp ? passwordOp->size() : 0) + 1;
+        unsigned const maxSize = std::max(origAuthSize, inAuthSize);
+
+        std::string inAuth(maxSize, char()), origAuth(maxSize, char());
+        inAuth = paramUser + '\n' + (passwordOp ? *passwordOp : std::string());
+        origAuth = ac.pass->user + '\n' + ac.pass->password;
+
+        bool const dataMatch =
+            !CRYPTO_memcmp(inAuth.c_str(), origAuth.c_str(), origAuthSize + 1);
+        if (!dataMatch)
             return false;
     }
 
