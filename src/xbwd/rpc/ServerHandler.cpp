@@ -165,7 +165,7 @@ getHTTPHeaderTimestamp()
     // CHECKME This is probably called often enough that optimizing it makes
     //         sense. There's no point in doing all this work if this function
     //         gets called multiple times a second.
-    char buffer[96];
+    std::array<char, 96> buffer{};
     time_t now;
     time(&now);
     struct tm now_gmt
@@ -177,11 +177,11 @@ getHTTPHeaderTimestamp()
     gmtime_s(&now_gmt, &now);
 #endif
     strftime(
-        buffer,
-        sizeof(buffer),
+        buffer.data(),
+        buffer.size(),
         "Date: %a, %d %b %Y %H:%M:%S +0000\r\n",
         &now_gmt);
-    return std::string(buffer);
+    return buffer.data();
 }
 
 void

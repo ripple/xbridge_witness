@@ -145,6 +145,8 @@ parseDstAccount(Json::Value const& transaction, XChainTxnType txnType)
                 return ripple::parseBase58<ripple::AccountID>(
                     transaction[ripple::sfOtherChainDestination.getJsonName()]
                         .asString());
+            default:
+                break;
         }
     }
     catch (...)
