@@ -641,17 +641,20 @@ isAdmin(
             : std::string();
 
         unsigned const origAuthSize =
-            ac.pass->user.size() + ac.pass->password.size() + 1;
+            ac.pass->user.size() + ac.pass->password.size();
         unsigned const inAuthSize =
-            paramUser.size() + (passwordOp ? passwordOp->size() : 0) + 1;
-        unsigned const maxSize = std::max(origAuthSize, inAuthSize);
+            paramUser.size() + (passwordOp ? passwordOp->size() : 0);
+        unsigned const toAllocateSize =
+            std::max(origAuthSize, inAuthSize) + 1;  // +1 for \n separator
 
-        std::string inAuth(maxSize, char()), origAuth(maxSize, char());
+        std::string inAuth(toAllocateSize, char()),
+            origAuth(toAllocateSize, char());
         inAuth = paramUser + '\n' + (passwordOp ? *passwordOp : std::string());
         origAuth = ac.pass->user + '\n' + ac.pass->password;
 
+        // +2 == +1 for \n separator and +1 for \0 comparison
         bool const dataMatch =
-            !CRYPTO_memcmp(inAuth.c_str(), origAuth.c_str(), origAuthSize + 1);
+            !CRYPTO_memcmp(inAuth.c_str(), origAuth.c_str(), origAuthSize + 2);
         if (!dataMatch)
             return false;
     }

@@ -331,16 +331,19 @@ authorized(
     std::string strUser = strUserPass.substr(0, nColon);
     std::string strPassword = strUserPass.substr(nColon + 1);
 
-    unsigned const origAuthSize = port.user.size() + port.password.size() + 1;
-    unsigned const inAuthSize = strUser.size() + strPassword.size() + 1;
-    unsigned const maxSize = std::max(origAuthSize, inAuthSize);
+    unsigned const origAuthSize = port.user.size() + port.password.size();
+    unsigned const inAuthSize = strUser.size() + strPassword.size();
+    unsigned const toAllocateSize =
+        std::max(origAuthSize, inAuthSize) + 1;  // +1 for \n separator
 
-    std::string inAuthData(maxSize, char()), origAuthData(maxSize, char());
+    std::string inAuthData(toAllocateSize, char()),
+        origAuthData(toAllocateSize, char());
     inAuthData = strUser + '\n' + strPassword;
     origAuthData = port.user + '\n' + port.password;
 
+    // +2 == +1 for \n separator and +1 for \0 comparison
     bool const dataMatch = !CRYPTO_memcmp(
-        inAuthData.c_str(), origAuthData.c_str(), origAuthSize + 1);
+        inAuthData.c_str(), origAuthData.c_str(), origAuthSize + 2);
 
     return dataMatch;
 }
