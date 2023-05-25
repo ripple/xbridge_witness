@@ -16,8 +16,7 @@
         "door_account": "rEEw6AmPHD28M5AHyrzFSVoLA3oANcmYas",
         "ip": "127.0.0.1",
         "port_ws": 6007
-    },
-    "sntp_servers": ["time.windows.com", "time.apple.com", "time.nist.gov", "pool.ntp.org"]
+    }
 }}
 
 
