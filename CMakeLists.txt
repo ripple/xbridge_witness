@@ -1,5 +1,11 @@
-cmake_minimum_required (VERSION 3.11)
+cmake_minimum_required (VERSION 3.20)
 project (xbridge_witnessd)
+
+if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11))
+  message(FATAL_ERROR "Use gcc >= 11.0")
+elseif((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13))
+  message(FATAL_ERROR "Use clang >= 13.0")
+endif()
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE} " STREQUAL " ")
   set(conan_toolchain ${CMAKE_CURRENT_BINARY_DIR}/build/generators/conan_toolchain.cmake)
@@ -27,7 +33,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
 #include(deps/Boost)
 find_package(SOCI REQUIRED)
 find_package(fmt REQUIRED)
-
+find_package(date REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 include(XBridgeWitnessNIH)
 
@@ -49,62 +56,65 @@ add_compile_definitions(
 if (NOT has_parent)
   find_package(Ripple QUIET)
   if (NOT TARGET Ripple::xrpl_core)
-    find_package(Git)
+    include(deps/FindRipple)
+    if (NOT TARGET Ripple::xrpl_core)
+      find_package(Git)
 
-    if (NOT GIT_FOUND)
-      message (FATAL_ERROR "git is required to determine branch name")
-    endif ()
-
-    execute_process (COMMAND ${GIT_EXECUTABLE} "rev-parse" "--abbrev-ref" "HEAD"
-                     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                     RESULT_VARIABLE _git_exit_code
-                     OUTPUT_VARIABLE _branch
-                     OUTPUT_STRIP_TRAILING_WHITESPACE
-                     ERROR_QUIET)
-    if (NOT _git_exit_code EQUAL 0)
-      message (WARNING "git command failed - deduced branch might be incorrect")
-    endif ()
-
-    # rippled_tag is cache string and can be overriden when configuring
-    # with -Drippled_tag=commit_or_tag in order to pick a specific
-    # rippled version to download. Default tag is develop/master/release as
-    # determined by the branch of this project
-    if (NOT (_branch STREQUAL "master" OR _branch STREQUAL "release"))
-      set (rippled_tag "xbridge" CACHE STRING
-        "tag/commit of rippled to fetch from if a local install is not found")
-    else ()
-      set (rippled_tag "${_branch}" CACHE STRING
-        "tag/commit of rippled to fetch from if a local install is not found")
-    endif ()
-    message(STATUS "Installed rippled not found... \
-      using local copy from tag/commit [${rippled_tag}]")
-    include (FetchContent)
-    FetchContent_Declare(
-      rippled_src
-      GIT_REPOSITORY https://github.com/seelabs/rippled.git
-      GIT_TAG ${rippled_tag}
-    )
-    FetchContent_GetProperties(rippled_src)
-    if(NOT rippled_src_POPULATED)
-      message (STATUS "Pausing to download rippled source...")
-      FetchContent_Populate(rippled_src)
-
-      set (conan_build_type "Release")
-      if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set (conan_build_type "Debug")
-      endif()
-      execute_process (COMMAND conan install ${rippled_src_SOURCE_DIR} --build missing --output-folder . -s build_type=${conan_build_type}
-                     WORKING_DIRECTORY ${rippled_src_BINARY_DIR}
-                     RESULT_VARIABLE _git_exit_code
-                     OUTPUT_STRIP_TRAILING_WHITESPACE
-                     ECHO_OUTPUT_VARIABLE
-                     ECHO_ERROR_VARIABLE
-                     )
-      if (NOT _git_exit_code EQUAL 0)
-        message (WARNING "conan exit_code: ${_git_exit_code}\n conan command failed - build might be incorrect")
+      if (NOT GIT_FOUND)
+        message (FATAL_ERROR "git is required to determine branch name")
       endif ()
 
-      add_subdirectory(${rippled_src_SOURCE_DIR} ${rippled_src_BINARY_DIR})
+      execute_process (COMMAND ${GIT_EXECUTABLE} "rev-parse" "--abbrev-ref" "HEAD"
+                       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                       RESULT_VARIABLE _git_exit_code
+                       OUTPUT_VARIABLE _branch
+                       OUTPUT_STRIP_TRAILING_WHITESPACE
+                       ERROR_QUIET)
+      if (NOT _git_exit_code EQUAL 0)
+        message (WARNING "git command failed - deduced branch might be incorrect")
+      endif ()
+
+      # rippled_tag is cache string and can be overriden when configuring
+      # with -Drippled_tag=commit_or_tag in order to pick a specific
+      # rippled version to download. Default tag is develop/master/release as
+      # determined by the branch of this project
+      if (NOT (_branch STREQUAL "master" OR _branch STREQUAL "release"))
+        set (rippled_tag "xbridge" CACHE STRING
+          "tag/commit of rippled to fetch from if a local install is not found")
+      else ()
+        set (rippled_tag "${_branch}" CACHE STRING
+          "tag/commit of rippled to fetch from if a local install is not found")
+      endif ()
+      message(STATUS "Installed rippled not found... \
+        using local copy from tag/commit [${rippled_tag}]")
+      include (FetchContent)
+      FetchContent_Declare(
+        rippled_src
+        GIT_REPOSITORY https://github.com/seelabs/rippled.git
+        GIT_TAG ${rippled_tag}
+      )
+      FetchContent_GetProperties(rippled_src)
+      if(NOT rippled_src_POPULATED)
+        message (STATUS "Pausing to download rippled source...")
+        FetchContent_Populate(rippled_src)
+
+        set (conan_build_type "Release")
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+          set (conan_build_type "Debug")
+        endif()
+        execute_process (COMMAND conan install ${rippled_src_SOURCE_DIR} --build missing --output-folder . -s build_type=${conan_build_type}
+                       WORKING_DIRECTORY ${rippled_src_BINARY_DIR}
+                       RESULT_VARIABLE _git_exit_code
+                       OUTPUT_STRIP_TRAILING_WHITESPACE
+                       ECHO_OUTPUT_VARIABLE
+                       ECHO_ERROR_VARIABLE
+                       )
+        if (NOT _git_exit_code EQUAL 0)
+          message (WARNING "conan exit_code: ${_git_exit_code}\n conan command failed - build might be incorrect")
+        endif ()
+
+        add_subdirectory(${rippled_src_SOURCE_DIR} ${rippled_src_BINARY_DIR})
+      endif()
     endif()
   endif ()
 endif ()
@@ -189,9 +199,9 @@ add_executable (xbridge_witnessd
   ${HEADERS}
 )
 
-target_include_directories (xbridge_witnessd PRIVATE src)
+target_include_directories (xbridge_witnessd PRIVATE src ${date_INCLUDE_DIR})
 target_link_libraries (xbridge_witnessd PUBLIC Ripple::xrpl_core XBridgeWitness::opts
-  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt)
+  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL)
 
 if (san)
   target_compile_options (xbridge_witnessd
