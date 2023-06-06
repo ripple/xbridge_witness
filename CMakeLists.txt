@@ -102,7 +102,13 @@ if (NOT has_parent)
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
           set (conan_build_type "Debug")
         endif()
-        execute_process (COMMAND conan install ${rippled_src_SOURCE_DIR} --build missing --output-folder . -s build_type=${conan_build_type}
+
+        set (conan_profile "default")
+        if(NOT "${CONAN_PROFILE} " STREQUAL " ")
+          set (conan_profile ${CONAN_PROFILE})
+        endif()
+
+        execute_process (COMMAND conan install ${rippled_src_SOURCE_DIR} --build missing --output-folder . -s build_type=${conan_build_type} -pr=${conan_profile}
                        WORKING_DIRECTORY ${rippled_src_BINARY_DIR}
                        RESULT_VARIABLE _git_exit_code
                        OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -194,37 +200,39 @@ set(SOURCES
   src/xbwd/rpc/ServerHandler.cpp
 )
 
-add_executable (xbridge_witnessd
+add_executable (${PROJECT_NAME}
   ${SOURCES}
   ${HEADERS}
 )
 
-target_include_directories (xbridge_witnessd PRIVATE src ${date_INCLUDE_DIR})
-target_link_libraries (xbridge_witnessd PUBLIC Ripple::xrpl_core XBridgeWitness::opts
+target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector")
+target_link_options(${PROJECT_NAME} PUBLIC "LINKER:-z,relro,-z,now")
+target_include_directories (${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
+target_link_libraries (${PROJECT_NAME} PUBLIC Ripple::xrpl_core XBridgeWitness::opts
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL)
 
 if (san)
-  target_compile_options (xbridge_witnessd
+  target_compile_options (${PROJECT_NAME}
     INTERFACE
       # sanitizers recommend minimum of -O1 for reasonable performance
       $<$<CONFIG:Debug>:-O1>
       ${SAN_FLAG}
       -fno-omit-frame-pointer)
-  target_compile_definitions (xbridge_witnessd
+  target_compile_definitions (${PROJECT_NAME}
     INTERFACE
       $<$<STREQUAL:${san},address>:SANITIZER=ASAN>
       $<$<STREQUAL:${san},thread>:SANITIZER=TSAN>
       $<$<STREQUAL:${san},memory>:SANITIZER=MSAN>
       $<$<STREQUAL:${san},undefined>:SANITIZER=UBSAN>)
-  target_link_libraries (xbridge_witnessd INTERFACE ${SAN_FLAG} ${SAN_LIB})
+  target_link_libraries (${PROJECT_NAME} INTERFACE ${SAN_FLAG} ${SAN_LIB})
 endif ()
 
 if (has_parent)
-  set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_ALL ON)
-  set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
+  set_target_properties (${PROJECT_NAME} PROPERTIES EXCLUDE_FROM_ALL ON)
+  set_target_properties (${PROJECT_NAME} PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
 endif ()
 
 #fix for MAC
 get_target_property(FMT_INC_DIRS fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
 list (GET FMT_INC_DIRS 0 FMT_INC_DIR)
-target_include_directories(xbridge_witnessd BEFORE PRIVATE ${FMT_INC_DIR})
+target_include_directories(${PROJECT_NAME} BEFORE PRIVATE ${FMT_INC_DIR})
