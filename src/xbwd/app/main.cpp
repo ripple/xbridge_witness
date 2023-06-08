@@ -177,6 +177,9 @@ main(int argc, char** argv)
 
         if (vm.count("json") || vm.count("cmd"))
         {
+            // do not show logs to console, only raw response from server
+            config->logSilent = true;
+
             using namespace std::literals;
             beast::setCurrentThreadName(
                 xbwd::build_info::serverName + ": rpc"s);
@@ -219,7 +222,10 @@ main(int argc, char** argv)
             jv[ripple::jss::api_version] =
                 xbwd::rpc_call::apiMaximumSupportedVersion;
 
-            return xbwd::rpc_call::fromCommandLine(*config, jv, logLevel).first;
+            auto [ret, res] =
+                xbwd::rpc_call::fromCommandLine(*config, jv, logLevel);
+            std::cout << res.toStyledString() << std::endl;
+            return ret;
         }
 
         xbwd::App app(std::move(config), logLevel);
