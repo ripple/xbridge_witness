@@ -66,7 +66,7 @@ ChainListener::ChainListener(
 }
 
 // destructor must be defined after WebsocketClient size is known (i.e. it can
-// not be defaulted in the header or the unique_ptr declration of
+// not be defaulted in the header or the unique_ptr declaration of
 // WebsocketClient won't work)
 ChainListener::~ChainListener() = default;
 
@@ -94,18 +94,27 @@ ChainListener::onConnect()
                           doorAccStr](Json::Value const& msg) {
         self->processAccountInfo(msg);
 
+        Json::Value txParams;
+        txParams["account"] = doorAccStr;
+        txParams["ledger_index_min"] = -1;
+        txParams["ledger_index_max"] = -1;
+        txParams["binary"] = false;
+        txParams["limit"] = self->txLimit_;
+        txParams["forward"] = false;
+        self->send("account_tx", txParams, [self](Json::Value const& msg) {
+            self->processAccountTx(msg);
+        });
+
         Json::Value params;
-        params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-        params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
-            doorAccStr;
 
         params[ripple::jss::streams] = Json::arrayValue;
         params[ripple::jss::streams].append("ledger");
+        // params[ripple::jss::streams].append("transactions");
+        params[ripple::jss::accounts] = Json::arrayValue;
+        params[ripple::jss::accounts].append(doorAccStr);
         if (!self->witnessAccountStr_.empty())
-        {
-            params[ripple::jss::accounts] = Json::arrayValue;
             params[ripple::jss::accounts].append(self->witnessAccountStr_);
-        }
+
         self->send("subscribe", params);
     };
 
@@ -123,6 +132,8 @@ ChainListener::onConnect()
         mainFlow();
     };
 
+    txnHistoryIndex_ = prevLedgerIdx_ = 0;
+    stopHistory_ = false;
     if (signingAccount_)
     {
         Json::Value params;
@@ -143,7 +154,7 @@ ChainListener::shutdown()
 }
 
 std::uint32_t
-ChainListener::send(std::string const& cmd, Json::Value const& params)
+ChainListener::send(std::string const& cmd, Json::Value const& params) const
 {
     return wsClient_->send(cmd, params);
 }
@@ -151,16 +162,6 @@ ChainListener::send(std::string const& cmd, Json::Value const& params)
 void
 ChainListener::stopHistoricalTxns()
 {
-    const auto doorAccStr = ripple::toBase58(bridge_.door(chainType_));
-
-    Json::Value params;
-    params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-    params[ripple::jss::account_history_tx_stream]
-          [ripple::jss::stop_history_tx_only] = true;
-    params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
-        doorAccStr;
-    send("unsubscribe", params);
-
     stopHistory_ = true;
 }
 
@@ -170,12 +171,13 @@ ChainListener::send(
     Json::Value const& params,
     RpcCallback onResponse)
 {
+    auto const chainName = to_string(chainType_);
     JLOGV(
         j_.trace(),
         "ChainListener send",
+        jv("chain_name", chainName),
         jv("command", cmd),
-        jv("params", params),
-        jv("chain_name", to_string(chainType_)));
+        jv("params", params));
 
     auto id = wsClient_->send(cmd, params);
     JLOGV(j_.trace(), "ChainListener send id", jv("id", id));
@@ -999,7 +1001,7 @@ ChainListener::processAccountSet(Json::Value const& msg) const noexcept
                 j_.warn(),
                 "processing account set",
                 jv("warning", "Door account type mismatch"),
-                jv("chain_type", to_string(chainType_)),
+                jv("chain_name", chainName),
                 jv("tx_type", to_string(evAccSet.chainType_)));
         }
         pushEvent(std::move(evAccSet));
@@ -1070,7 +1072,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) const noexcept
                 j_.warn(),
                 "processing account set",
                 jv("warning", "Door account type mismatch"),
-                jv("chain_type", to_string(chainType_)),
+                jv("chain_name", chainName),
                 jv("tx_type", to_string(evSetKey.chainType_)));
         }
 
@@ -1251,6 +1253,138 @@ ChainListener::processTx(Json::Value const& v) const noexcept
             jv("exception", "unknown exception"),
             jv("chain_name", chainName),
             jv("msg", v));
+    }
+}
+
+void
+ChainListener::processAccountTx(Json::Value const& msg) noexcept
+{
+    static std::string const errTopic = "ignoring account_tx response";
+
+    auto const chainName = to_string(chainType_);
+
+    auto warn_msg = [&, this](std::string_view reason, auto&&... ts) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg),
+            std::forward<decltype(ts)>(ts)...);
+    };
+
+    auto warn_cont = [&, this](std::string_view reason, auto&&... ts) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            std::forward<decltype(ts)>(ts)...);
+    };
+
+    //    JLOGV( j_.trace(), "chain listener processAccountTx",
+    //    jv("chain_name", chainName),
+    //    jv("msg", msg.toStyledString()),
+    //    );
+
+    if (!msg.isMember(ripple::jss::result))
+        return warn_msg("no result");
+
+    auto const& result = msg[ripple::jss::result];
+
+    if (!result.isMember(ripple::jss::transactions))
+        return warn_msg("no transactions");
+
+    auto const& transactions = result[ripple::jss::transactions];
+    if (!transactions.isArray())
+        return warn_msg("'transactions' is not an array");
+
+    bool const isMarker = result.isMember("marker");
+    std::uint32_t prevLedgerIdx = 0;
+
+    for (auto it = transactions.begin(); it != transactions.end(); ++it)
+    {
+        if (stopHistory_)
+            break;
+
+        try
+        {
+            auto const& entry(*it);
+
+            auto next = it;
+            ++next;
+            bool const isLast = next == transactions.end();
+
+            if (!entry.isMember(ripple::jss::meta))
+            {
+                warn_cont("no tx meta", jv("entry", entry));
+                continue;
+            }
+            auto const& meta = entry[ripple::jss::meta];
+
+            if (!entry.isMember(ripple::jss::tx))
+            {
+                warn_cont("no tx", jv("entry", entry));
+                continue;
+            }
+            auto const& tx = entry[ripple::jss::tx];
+
+            Json::Value history = Json::objectValue;
+
+            if (!isMarker && isLast)
+                history[ripple::jss::account_history_tx_first] = true;
+
+            std::uint32_t const ledgerIdx =
+                tx.isMember("ledger_index") ? tx["ledger_index"].asUInt() : 0;
+            bool const lgrBdr = prevLedgerIdx_ != ledgerIdx;
+            if (lgrBdr)
+            {
+                prevLedgerIdx_ = ledgerIdx;
+                history[ripple::jss::account_history_boundary] = true;
+            }
+            history[ripple::jss::account_history_tx_index] = --txnHistoryIndex_;
+            std::string const tr = meta["TransactionResult"].asString();
+            history[ripple::jss::engine_result] = tr;
+            auto const tc = ripple::transCode(tr);
+            history[ripple::jss::engine_result_code] =
+                tc ? Json::Value(*tc) : Json::Value(0);
+            history[ripple::jss::ledger_index] = ledgerIdx;
+            history[ripple::jss::meta] = meta;
+            history[ripple::jss::transaction] = tx;
+            history[ripple::jss::validated] =
+                entry[ripple::jss::validated].asBool();
+            history[ripple::jss::type] = ripple::jss::transaction;
+
+            processMessage(history);
+        }
+        catch (std::exception const& e)
+        {
+            warn_cont("exception", jv("what", e.what()));
+        }
+        catch (...)
+        {
+            warn_cont("exception", jv("what", "unknown"));
+        }
+    }
+
+    if (isMarker && !stopHistory_)
+    {
+        auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
+
+        Json::Value txParams;
+        txParams["account"] = doorAccStr;
+        // txParams["ledger_index_min"] = -1;
+        // txParams["ledger_index_max"] = -1;
+        txParams["binary"] = false;
+        txParams["limit"] = txLimit_;
+        txParams["forward"] = false;
+        txParams["marker"] = result["marker"];
+        send(
+            "account_tx",
+            txParams,
+            [self = shared_from_this()](Json::Value const& msg) {
+                self->processAccountTx(msg);
+            });
     }
 }
 

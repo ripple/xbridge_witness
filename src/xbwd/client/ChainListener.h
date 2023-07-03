@@ -56,7 +56,10 @@ private:
     std::unordered_map<std::uint32_t, RpcCallback> GUARDED_BY(callbacksMtx_)
         callbacks_;
 
-    bool stopHistory_;
+    std::atomic_bool stopHistory_;
+    int txnHistoryIndex_, prevLedgerIdx_;
+    unsigned const txLimit_ = 10;
+
 
 public:
     ChainListener(
@@ -95,7 +98,7 @@ public:
 
     // Returns command id that will be returned in the response
     std::uint32_t
-    send(std::string const& cmd, Json::Value const& params)
+    send(std::string const& cmd, Json::Value const& params) const
         EXCLUDES(callbacksMtx_);
 
     /**
@@ -114,6 +117,9 @@ private:
 
     void
     processMessage(Json::Value const& msg) const;
+
+    void
+    processAccountTx(Json::Value const& msg) noexcept;
 
     void
     processAccountInfo(Json::Value const& msg) const noexcept;
