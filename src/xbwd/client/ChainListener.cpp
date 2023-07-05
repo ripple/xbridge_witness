@@ -1299,8 +1299,13 @@ ChainListener::processAccountTx(Json::Value const& msg) noexcept
     if (!transactions.isArray())
         return warn_msg("'transactions' is not an array");
 
-    bool const isMarker = result.isMember("marker");
-    std::uint32_t prevLedgerIdx = 0;
+    if (!transactions.size())
+    {
+        pushEvent(event::EndOfHistory{chainType_});
+        return;
+    }
+
+    bool const isMarker = result.isMember("marker");    
 
     for (auto it = transactions.begin(); it != transactions.end(); ++it)
     {
