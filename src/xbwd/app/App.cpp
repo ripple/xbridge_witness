@@ -37,7 +37,7 @@ BasicApp::BasicApp(std::size_t numberOfThreads)
 BasicApp::~BasicApp()
 {
     work_.reset();
-
+    io_service_.stop();
     for (auto& t : threads_)
         t.join();
 }

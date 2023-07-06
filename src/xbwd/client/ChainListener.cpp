@@ -61,12 +61,11 @@ ChainListener::ChainListener(
     , federator_{std::move(federator)}
     , signingAccount_(signingAccount)
     , j_{j}
-    , stopHistory_(false)
 {
 }
 
 // destructor must be defined after WebsocketClient size is known (i.e. it can
-// not be defaulted in the header or the unique_ptr declration of
+// not be defaulted in the header or the unique_ptr declaration of
 // WebsocketClient won't work)
 ChainListener::~ChainListener() = default;
 
@@ -90,22 +89,13 @@ void
 ChainListener::onConnect()
 {
     auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
+
     auto doorAccInfoCb = [self = shared_from_this(),
                           doorAccStr](Json::Value const& msg) {
         self->processAccountInfo(msg);
-
         Json::Value params;
-        params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-        params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
-            doorAccStr;
-
         params[ripple::jss::streams] = Json::arrayValue;
         params[ripple::jss::streams].append("ledger");
-        if (!self->witnessAccountStr_.empty())
-        {
-            params[ripple::jss::accounts] = Json::arrayValue;
-            params[ripple::jss::accounts].append(self->witnessAccountStr_);
-        }
         self->send("subscribe", params);
     };
 
@@ -113,7 +103,6 @@ ChainListener::onConnect()
         Json::Value params;
         params[ripple::jss::account] = doorAccStr;
         params[ripple::jss::signer_lists] = true;
-
         self->send("account_info", params, doorAccInfoCb);
     };
 
@@ -122,6 +111,12 @@ ChainListener::onConnect()
         self->processSigningAccountInfo(msg);
         mainFlow();
     };
+
+    inRequest_ = false;
+    ledgerReqMax_ = 0;
+    prevLedgerIndex_ = 0;
+    txnHistoryIndex_ = 0;
+    hp_.clear();
 
     if (signingAccount_)
     {
@@ -143,7 +138,7 @@ ChainListener::shutdown()
 }
 
 std::uint32_t
-ChainListener::send(std::string const& cmd, Json::Value const& params)
+ChainListener::send(std::string const& cmd, Json::Value const& params) const
 {
     return wsClient_->send(cmd, params);
 }
@@ -151,17 +146,7 @@ ChainListener::send(std::string const& cmd, Json::Value const& params)
 void
 ChainListener::stopHistoricalTxns()
 {
-    const auto doorAccStr = ripple::toBase58(bridge_.door(chainType_));
-
-    Json::Value params;
-    params[ripple::jss::account_history_tx_stream] = Json::objectValue;
-    params[ripple::jss::account_history_tx_stream]
-          [ripple::jss::stop_history_tx_only] = true;
-    params[ripple::jss::account_history_tx_stream][ripple::jss::account] =
-        doorAccStr;
-    send("unsubscribe", params);
-
-    stopHistory_ = true;
+    hp_.stopHistory_ = true;
 }
 
 void
@@ -170,12 +155,13 @@ ChainListener::send(
     Json::Value const& params,
     RpcCallback onResponse)
 {
+    auto const chainName = to_string(chainType_);
     JLOGV(
         j_.trace(),
         "ChainListener send",
+        jv("chain_name", chainName),
         jv("command", cmd),
-        jv("params", params),
-        jv("chain_name", to_string(chainType_)));
+        jv("params", params));
 
     auto id = wsClient_->send(cmd, params);
     JLOGV(j_.trace(), "ChainListener send id", jv("id", id));
@@ -280,14 +266,40 @@ isDeletedAccCnt(Json::Value const& meta, std::uint64_t createCnt)
     return false;
 }
 
+std::optional<event::NewLedger>
+checkLedger(ChainType chainType, Json::Value const& msg)
+{
+    auto checkLedgerHlp =
+        [&](Json::Value const& msg) -> std::optional<event::NewLedger> {
+        if (msg.isMember(ripple::jss::fee_base) &&
+            msg[ripple::jss::fee_base].isIntegral() &&
+            msg.isMember(ripple::jss::ledger_index) &&
+            msg[ripple::jss::ledger_index].isIntegral() &&
+            msg.isMember(ripple::jss::reserve_base) &&
+            msg.isMember(ripple::jss::reserve_inc) &&
+            msg.isMember(ripple::jss::fee_ref) &&
+            msg.isMember(ripple::jss::validated_ledgers))
+        {
+            return event::NewLedger{
+                chainType,
+                msg[ripple::jss::ledger_index].asUInt(),
+                msg[ripple::jss::fee_base].asUInt()};
+        }
+        return {};
+    };
+    return msg.isMember(ripple::jss::result)
+        ? checkLedgerHlp(msg[ripple::jss::result])
+        : checkLedgerHlp(msg);
+}
+
 }  // namespace
 
 void
-ChainListener::processMessage(Json::Value const& msg) const
+ChainListener::processMessage(Json::Value const& msg)
 {
     auto const chainName = to_string(chainType_);
 
-    auto ignore_ret = [&](std::string_view reason, auto&&... v) {
+    auto ignoreRet = [&](std::string_view reason, auto&&... v) {
         JLOGV(
             j_.trace(),
             "ignoring listener message",
@@ -307,8 +319,8 @@ ChainListener::processMessage(Json::Value const& msg) const
     }();
     bool const isHistory = txnHistoryIndex && (*txnHistoryIndex < 0);
 
-    if (isHistory && stopHistory_)
-        return ignore_ret(
+    if (isHistory && hp_.stopHistory_)
+        return ignoreRet(
             "stopped processing historical tx",
             jv(ripple::jss::account_history_tx_index.c_str(),
                *txnHistoryIndex));
@@ -319,56 +331,30 @@ ChainListener::processMessage(Json::Value const& msg) const
         jv("chain_name", chainName),
         jv("msg", msg.toStyledString()));
 
-    auto tryPushNewLedgerEvent = [&](Json::Value const& result) -> bool {
-        if (result.isMember(ripple::jss::fee_base) &&
-            result[ripple::jss::fee_base].isIntegral() &&
-            result.isMember(ripple::jss::ledger_index) &&
-            result[ripple::jss::ledger_index].isIntegral() &&
-            result.isMember(ripple::jss::reserve_base) &&
-            result.isMember(ripple::jss::reserve_inc) &&
-            result.isMember(ripple::jss::fee_ref) &&
-            result.isMember(ripple::jss::validated_ledgers))
-        {
-            event::NewLedger e{
-                chainType_,
-                result[ripple::jss::ledger_index].asUInt(),
-                result[ripple::jss::fee_base].asUInt()};
-            pushEvent(std::move(e));
-            return true;
-        }
-        return false;
-    };
-
-    if (msg.isMember(ripple::jss::result) &&
-        tryPushNewLedgerEvent(msg[ripple::jss::result]))
-        return;
-    else if (tryPushNewLedgerEvent(msg))
-        return;
-
-    bool const history_tx_first =
-        msg.isMember(ripple::jss::account_history_tx_first) &&
-        msg[ripple::jss::account_history_tx_first].asBool();
-    if (history_tx_first)
+    auto newLedgerEv = checkLedger(chainType_, msg);
+    if (newLedgerEv)
     {
-        pushEvent(event::EndOfHistory{chainType_});
+        pushEvent(std::move(*newLedgerEv));
+        processNewLedger(newLedgerEv->ledgerIndex_);
+        return;
     }
 
     if (!msg.isMember(ripple::jss::validated) ||
         !msg[ripple::jss::validated].asBool())
-        return ignore_ret("not validated");
+        return ignoreRet("not validated");
 
     if (!msg.isMember(ripple::jss::transaction))
-        return ignore_ret("no tx");
+        return ignoreRet("no tx");
 
     auto const& transaction = msg[ripple::jss::transaction];
 
     if (!msg.isMember(ripple::jss::meta))
-        return ignore_ret("no meta");
+        return ignoreRet("no meta");
 
     auto const& meta = msg[ripple::jss::meta];
 
     if (!msg.isMember(ripple::jss::engine_result_code))
-        return ignore_ret("no engine result code");
+        return ignoreRet("no engine result code");
 
     ripple::TER const txnTER = [&msg] {
         return ripple::TER::fromInt(
@@ -378,7 +364,7 @@ ChainListener::processMessage(Json::Value const& msg) const
 
     auto txnTypeOpt = rpcResultParse::parseXChainTxnType(transaction);
     if (!txnTypeOpt)
-        return ignore_ret("not a sidechain transaction");
+        return ignoreRet("not a sidechain transaction");
 
     auto const txnBridge = rpcResultParse::parseBridge(transaction);
     if (txnBridge && *txnBridge != bridge_)
@@ -396,24 +382,24 @@ ChainListener::processMessage(Json::Value const& msg) const
         // Note: the federator stores a hard-coded sidechain in the
         // database, if we remove this filter we need to remove
         // sidechain from the app and listener as well
-        return ignore_ret("Sidechain mismatch");
+        return ignoreRet("Sidechain mismatch");
     }
 
     auto const txnHash = rpcResultParse::parseTxHash(transaction);
     if (!txnHash)
-        return ignore_ret("no tx hash");
+        return ignoreRet("no tx hash");
 
     auto const txnSeq = rpcResultParse::parseTxSeq(transaction);
     if (!txnSeq)
-        return ignore_ret("no txnSeq");
+        return ignoreRet("no txnSeq");
 
     auto const lgrSeq = rpcResultParse::parseLedgerSeq(msg);
     if (!lgrSeq)
-        return ignore_ret("no lgrSeq");
+        return ignoreRet("no lgrSeq");
 
     auto const src = rpcResultParse::parseSrcAccount(transaction);
     if (!src)
-        return ignore_ret("no account src");
+        return ignoreRet("no account src");
 
     auto const dst = rpcResultParse::parseDstAccount(transaction, *txnTypeOpt);
 
@@ -450,9 +436,9 @@ ChainListener::processMessage(Json::Value const& msg) const
                 transaction, ripple::sfXChainClaimID);
 
             if (!claimID)
-                return ignore_ret("no claimID");
+                return ignoreRet("no claimID");
             if (!dst)
-                return ignore_ret("no dst in xchain claim");
+                return ignoreRet("no dst in xchain claim");
 
             using namespace event;
             XChainTransferResult e{
@@ -472,9 +458,9 @@ ChainListener::processMessage(Json::Value const& msg) const
                 transaction, ripple::sfXChainClaimID);
 
             if (!claimID)
-                return ignore_ret("no claimID");
+                return ignoreRet("no claimID");
             if (!txnBridge)
-                return ignore_ret("no bridge in xchain commit");
+                return ignoreRet("no bridge in xchain commit");
 
             using namespace event;
             XChainCommitDetected e{
@@ -495,16 +481,16 @@ ChainListener::processMessage(Json::Value const& msg) const
         case XChainTxnType::xChainAccountCreateCommit: {
             auto const createCount = rpcResultParse::parseCreateCount(meta);
             if (!createCount)
-                return ignore_ret("no createCount");
+                return ignoreRet("no createCount");
             if (!txnBridge)
-                return ignore_ret("no bridge in xchain commit");
+                return ignoreRet("no bridge in xchain commit");
 
             auto const rewardAmt = rpcResultParse::parseRewardAmt(transaction);
             if (!rewardAmt)
-                return ignore_ret("no reward amt in xchain create account");
+                return ignoreRet("no reward amt in xchain create account");
 
             if (!dst)
-                return ignore_ret("no dst in xchain create account");
+                return ignoreRet("no dst in xchain create account");
 
             using namespace event;
             XChainAccountCreateCommitDetected e{
@@ -525,10 +511,12 @@ ChainListener::processMessage(Json::Value const& msg) const
         break;
         case XChainTxnType::xChainCreateBridge: {
             if (!txnBridge)
-                return ignore_ret("no bridge in xChainCreateBridge");
-
-            if (!history_tx_first && isHistory)
+                return ignoreRet("no bridge in xChainCreateBridge");
+            if (isHistory)
+            {
                 pushEvent(event::EndOfHistory{chainType_});
+                hp_.stopHistory_ = true;
+            }
         }
         break;
 #ifdef USE_BATCH_ATTESTATION
@@ -571,7 +559,7 @@ ChainListener::processMessage(Json::Value const& msg) const
                     ((txnTypeOpt ==
                       XChainTxnType::xChainAddAccountCreateAttestation) &&
                      !odst))
-                    return ignore_ret(
+                    return ignoreRet(
                         "osrc/odst account missing",
                         jv("witnessAccountStr_", witnessAccountStr_));
 
@@ -582,10 +570,10 @@ ChainListener::processMessage(Json::Value const& msg) const
                     claimID = Json::getOptional<std::uint64_t>(
                         transaction, ripple::sfXChainClaimID);
                     if (!claimID)
-                        return ignore_ret("no claimID");
+                        return ignoreRet("no claimID");
 
                     if (!isOwn && !isDeletedClaimId(meta, *claimID))
-                        return ignore_ret("claimID not in DeletedNode");
+                        return ignoreRet("claimID not in DeletedNode");
                 }
 
                 if (txnTypeOpt ==
@@ -594,10 +582,10 @@ ChainListener::processMessage(Json::Value const& msg) const
                     accountCreateCount = Json::getOptional<std::uint64_t>(
                         transaction, ripple::sfXChainAccountCreateCount);
                     if (!accountCreateCount)
-                        return ignore_ret("no accountCreateCount");
+                        return ignoreRet("no accountCreateCount");
 
                     if (!isOwn && !isDeletedAccCnt(meta, *accountCreateCount))
-                        return ignore_ret(
+                        return ignoreRet(
                             "accountCreateCount not in DeletedNode");
                 }
 
@@ -615,7 +603,7 @@ ChainListener::processMessage(Json::Value const& msg) const
                 return;
             }
             else
-                return ignore_ret(
+                return ignoreRet(
                     "not an attestation sent from this server",
                     jv("witnessAccountStr_", witnessAccountStr_));
         }
@@ -999,7 +987,7 @@ ChainListener::processAccountSet(Json::Value const& msg) const noexcept
                 j_.warn(),
                 "processing account set",
                 jv("warning", "Door account type mismatch"),
-                jv("chain_type", to_string(chainType_)),
+                jv("chain_name", chainName),
                 jv("tx_type", to_string(evAccSet.chainType_)));
         }
         pushEvent(std::move(evAccSet));
@@ -1070,7 +1058,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) const noexcept
                 j_.warn(),
                 "processing account set",
                 jv("warning", "Door account type mismatch"),
-                jv("chain_type", to_string(chainType_)),
+                jv("chain_name", chainName),
                 jv("tx_type", to_string(evSetKey.chainType_)));
         }
 
@@ -1254,12 +1242,410 @@ ChainListener::processTx(Json::Value const& v) const noexcept
     }
 }
 
+void
+ChainListener::processAccountTx(Json::Value const& msg)
+{
+    bool const requestContinue = processAccountTxHlp(msg);
+
+    if (hp_.state_ != HistoryProcessor::FINISHED)
+    {
+        if (hp_.stopHistory_)
+        {
+            inRequest_ = false;
+            txnHistoryIndex_ = 0;
+            hp_.state_ = HistoryProcessor::FINISHED;
+            JLOGV(
+                j_.info(),
+                "History mode off",
+                jv("chain_name", to_string(chainType_)));
+        }
+        else if (!requestContinue)
+            requestLedgers();
+    }
+    else if (!requestContinue)
+        inRequest_ = false;
+}
+
+bool
+ChainListener::processAccountTxHlp(Json::Value const& msg)
+{
+    static std::string const errTopic = "ignoring account_tx response";
+
+    auto const chainName = to_string(chainType_);
+
+    auto warnMsg = [&, this](std::string_view reason, auto&&... ts) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg),
+            std::forward<decltype(ts)>(ts)...);
+        return false;
+    };
+
+    auto warnCont = [&, this](std::string_view reason, auto&&... ts) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            std::forward<decltype(ts)>(ts)...);
+    };
+
+    if (!msg.isMember(ripple::jss::result))
+    {
+        warnMsg("no result");
+        throw std::runtime_error("processAccountTx no result");
+    }
+
+    auto const& result = msg[ripple::jss::result];
+
+    if (!result.isMember(ripple::jss::ledger_index_max) ||
+        !result[ripple::jss::ledger_index_max].isIntegral() ||
+        !result.isMember(ripple::jss::ledger_index_min) ||
+        !result[ripple::jss::ledger_index_min].isIntegral())
+    {
+        warnMsg("no ledger range");
+        throw std::runtime_error("no ledger range");
+    }
+
+    unsigned const ledgerMax = result[ripple::jss::ledger_index_max].asUInt();
+    unsigned const ledgerMin = result[ripple::jss::ledger_index_min].asUInt();
+
+    if (!result.isMember(ripple::jss::account) ||
+        !result[ripple::jss::account].isString())
+    {
+        warnMsg("no account");
+        throw std::runtime_error("processAccountTx no account");
+    }
+
+    if (!result.isMember(ripple::jss::transactions) ||
+        !result[ripple::jss::transactions].isArray())
+    {
+        warnMsg("no transactions");
+        throw std::runtime_error("processAccountTx no transactions");
+    }
+
+    auto const& transactions = result[ripple::jss::transactions];
+    if (!transactions.size())
+        return false;
+
+    bool const isMarker = result.isMember("marker");
+
+    unsigned cnt = 0;
+    for (auto it = transactions.begin(); it != transactions.end(); ++it, ++cnt)
+    {
+        if ((hp_.state_ != HistoryProcessor::FINISHED) && hp_.stopHistory_)
+            break;
+
+        if (hp_.accoutTxProcessed_ &&
+            (hp_.state_ == HistoryProcessor::CHECK_LEDGERS))
+        {
+            // Skip records from previous request if ledgers were not present at
+            // that moment
+            if (cnt < hp_.accoutTxProcessed_)
+                continue;
+            hp_.accoutTxProcessed_ = 0;
+            warnCont("Skipping tx", jv("cnt", cnt));
+        }
+
+        auto const& entry(*it);
+
+        // auto next = it; ++next;
+        // bool const isLast = next == transactions.end();
+
+        if (!entry.isMember(ripple::jss::meta))
+        {
+            warnCont("no meta", jv("entry", entry));
+            throw std::runtime_error("processAccountTx no meta");
+        }
+        auto const& meta = entry[ripple::jss::meta];
+
+        if (!entry.isMember(ripple::jss::tx))
+        {
+            warnCont("no tx", jv("entry", entry));
+            throw std::runtime_error("processAccountTx no tx");
+        }
+        auto const& tx = entry[ripple::jss::tx];
+
+        Json::Value history = Json::objectValue;
+
+        if (!tx.isMember(ripple::jss::ledger_index) ||
+            !tx[ripple::jss::ledger_index].isIntegral())
+        {
+            warnCont("no ledger_index", jv("entry", entry));
+            throw std::runtime_error("processAccountTx no ledger_index");
+        }
+        std::uint32_t const ledgerIdx = tx[ripple::jss::ledger_index].asUInt();
+        bool const isHistorical = hp_.startupLedger_ >= ledgerIdx;
+
+        // if (!isMarker && isLast && isHistorical)
+        //     history[ripple::jss::account_history_tx_first] = true;
+
+        bool const lgrBdr = prevLedgerIndex_ != ledgerIdx;
+        if (lgrBdr)
+        {
+            prevLedgerIndex_ = ledgerIdx;
+            history[ripple::jss::account_history_boundary] = true;
+        }
+        history[ripple::jss::account_history_tx_index] =
+            isHistorical ? (--txnHistoryIndex_) : (++txnHistoryIndex_);
+        std::string const tr = meta["TransactionResult"].asString();
+        history[ripple::jss::engine_result] = tr;
+        auto const tc = ripple::transCode(tr);
+        if (!tc)
+        {
+            warnCont("no TransactionResult", jv("entry", entry));
+            throw std::runtime_error("processAccountTx no TransactionResult");
+        }
+        history[ripple::jss::engine_result_code] = *tc;
+        history[ripple::jss::ledger_index] = ledgerIdx;
+        history[ripple::jss::meta] = meta;
+        history[ripple::jss::transaction] = tx;
+        history[ripple::jss::validated] =
+            entry[ripple::jss::validated].asBool();
+        history[ripple::jss::type] = ripple::jss::transaction;
+
+        processMessage(history);
+    }
+
+    if (cnt >= hp_.accoutTxProcessed_)
+        warnCont("Skipped tx", jv("cnt", cnt));
+
+    if (!isMarker && !hp_.stopHistory_)
+        hp_.accoutTxProcessed_ = cnt;
+
+    if (isMarker &&
+        ((hp_.state_ == HistoryProcessor::FINISHED) || !hp_.stopHistory_))
+    {
+        std::string const account = result[ripple::jss::account].asString();
+        accountTx(account, ledgerMin, ledgerMax, result[ripple::jss::marker]);
+        return true;
+    }
+
+    return false;
+}
+
+void
+ChainListener::accountTx(
+    std::string const& account,
+    unsigned ledger_min,
+    unsigned ledger_max,
+    Json::Value const& marker)
+{
+    inRequest_ = true;
+    if (hp_.state_ != HistoryProcessor::FINISHED)
+        hp_.marker_ = marker;
+
+    Json::Value txParams;
+    txParams[ripple::jss::account] = account;
+
+    if (ledger_min)
+        txParams[ripple::jss::ledger_index_min] = ledger_min;
+    else
+        txParams[ripple::jss::ledger_index_min] = -1;
+
+    if (ledger_max)
+        txParams[ripple::jss::ledger_index_max] = ledger_max;
+    else
+        txParams[ripple::jss::ledger_index_max] = -1;
+
+    txParams[ripple::jss::binary] = false;
+    txParams[ripple::jss::limit] = txLimit_;
+    txParams[ripple::jss::forward] = hp_.state_ == HistoryProcessor::FINISHED;
+    if (!marker.isNull())
+        txParams[ripple::jss::marker] = marker;
+    send(
+        "account_tx",
+        txParams,
+        [self = shared_from_this()](Json::Value const& msg) {
+            self->processAccountTx(msg);
+        });
+}
+
+void
+ChainListener::requestLedgers()
+{
+    if (hp_.state_ == HistoryProcessor::RETR_HISTORY)
+    {
+        hp_.state_ = HistoryProcessor::RETR_LEDGERS;
+        sendLedgerReq();
+    }
+}
+
+void
+ChainListener::sendLedgerReq(unsigned ledger)
+{
+    auto const chainName = to_string(chainType_);
+
+    if (!hp_.startupLedger_)
+    {
+        JLOGV(
+            j_.error(),
+            "Invalid ledgers request",
+            jv("chain_name", chainName),
+            jv("startupLedger", hp_.startupLedger_));
+        throw std::runtime_error("Invalid ledgers request");
+    }
+
+    if (!ledger)
+    {
+        ledger = hp_.startupLedger_ - 1;
+        JLOGV(
+            j_.info(),
+            "History not completed, start requesting more ledgers",
+            jv("chain_name", chainName),
+            jv("startupLedger", hp_.startupLedger_),
+            jv("currentLedgerReqIdx", ledger));
+    }
+
+    if (ledger < minUserLedger_)
+    {
+        hp_.state_ = HistoryProcessor::CHECK_LEDGERS;
+        JLOGV(
+            j_.info(),
+            "Finished requesting ledgers",
+            jv("chain_name", chainName),
+            jv("startupLedger", hp_.startupLedger_));
+        return;
+    }
+
+    auto ledgerReqCb = [self = shared_from_this(), ledger](Json::Value const&) {
+        self->sendLedgerReq(ledger - 1);
+    };
+    Json::Value params;
+    params[ripple::jss::ledger_index] = ledger;
+    send("ledger_request", params, ledgerReqCb);
+}
+
+void
+ChainListener::processNewLedger(unsigned ledgerIdx)
+{
+    auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
+
+    if (hp_.state_ == HistoryProcessor::FINISHED)
+    {
+        if (inRequest_)
+            return;
+
+        if (ledgerIdx > ledgerReqMax_)
+        {
+            auto ledgerReqMin = ledgerReqMax_;
+            if (!ledgerReqMin)
+                ledgerReqMin = hp_.startupLedger_;
+            ledgerReqMax_ = ledgerIdx;
+            accountTx(doorAccStr, ledgerReqMin, ledgerReqMax_);
+            if (!witnessAccountStr_.empty())
+                accountTx(witnessAccountStr_, ledgerReqMin, ledgerReqMax_);
+        }
+
+        return;
+    }
+
+    if (!hp_.startupLedger_)
+        hp_.startupLedger_ = ledgerIdx;
+
+    switch (hp_.state_)
+    {
+        case HistoryProcessor::CHECK_BRIDGE: {
+            auto checkBridgeCb = [self = shared_from_this(),
+                                  doorAccStr](Json::Value const& msg) {
+                if (!self->processBridgeReq(msg))
+                {
+                    JLOGV(
+                        self->j_.info(),
+                        "History mode off, no bridge",
+                        jv("chain_name", to_string(self->chainType_)));
+                    self->hp_.state_ = HistoryProcessor::FINISHED;
+                    self->pushEvent(event::EndOfHistory{self->chainType_});
+                    return;
+                }
+                self->hp_.state_ = HistoryProcessor::RETR_HISTORY;
+                self->accountTx(doorAccStr, 0, self->hp_.startupLedger_);
+            };
+
+            hp_.state_ = HistoryProcessor::WAIT_CB;
+            Json::Value params;
+            params[ripple::jss::bridge_account] = doorAccStr;
+            send("ledger_entry", params, checkBridgeCb);
+
+            break;
+        }
+        case HistoryProcessor::CHECK_LEDGERS: {
+            JLOGV(
+                j_.warn(),
+                "Witness NOT initialized, waiting for ledgers",
+                jv("chain_name", to_string(chainType_)));
+            accountTx(doorAccStr, 0, hp_.startupLedger_, hp_.marker_);
+            break;
+        }
+        case HistoryProcessor::RETR_HISTORY:
+            [[fallthrough]];
+        case HistoryProcessor::WAIT_CB:
+        default:
+            break;
+    }
+}
+
+bool
+ChainListener::processBridgeReq(Json::Value const& msg)
+{
+    auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
+    std::string const doorName = chainType_ == ChainType::locking
+        ? "LockingChainDoor"
+        : "IssuingChainDoor";
+
+    if (msg.isMember(ripple::jss::error) && !msg[ripple::jss::error].isNull())
+        return false;
+
+    if (!msg.isMember(ripple::jss::status) ||
+        !msg[ripple::jss::status].isString() ||
+        (msg[ripple::jss::status].asString() != "success"))
+        return false;
+
+    if (!msg.isMember(ripple::jss::result))
+        return false;
+    auto const& res = msg[ripple::jss::result];
+
+    if (!res.isMember(ripple::jss::ledger_current_index) ||
+        !res[ripple::jss::ledger_current_index].isIntegral())
+        return false;
+
+    if (!res.isMember(ripple::jss::node))
+        return false;
+    auto const& node = res[ripple::jss::node];
+    if (!node.isMember("XChainBridge"))
+        return false;
+    if (!node.isMember("PreviousTxnLgrSeq") ||
+        !node["PreviousTxnLgrSeq"].isIntegral())
+        return false;
+
+    auto const& bridge = node["XChainBridge"];
+    std::string const doorStr =
+        bridge.isMember(doorName) && bridge[doorName].isString()
+        ? bridge[doorName].asString()
+        : std::string();
+
+    return doorAccStr == doorStr;
+}
+
 Json::Value
 ChainListener::getInfo() const
 {
     // TODO
     Json::Value ret{Json::objectValue};
     return ret;
+}
+
+void
+HistoryProcessor::clear()
+{
+    state_ = CHECK_BRIDGE;
+    stopHistory_ = false;
+    marker_.clear();
+    accoutTxProcessed_ = 0;
+    startupLedger_ = 0;
 }
 
 }  // namespace xbwd

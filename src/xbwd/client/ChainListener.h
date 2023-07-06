@@ -38,6 +38,33 @@ namespace xbwd {
 class Federator;
 class WebsocketClient;
 
+struct HistoryProcessor
+{
+    enum state : int {
+        CHECK_BRIDGE,
+        WAIT_CB,
+        RETR_HISTORY,
+        RETR_LEDGERS,
+        CHECK_LEDGERS,
+        FINISHED
+    };
+    state state_ = CHECK_BRIDGE;
+
+    // Flag that ask to stop processing historical trasactions.
+    // Atomic cause can be set from other thread (federator).
+    std::atomic_bool stopHistory_ = false;
+
+    // Save last history request before requesting for ledgers
+    Json::Value marker_;
+    unsigned accoutTxProcessed_ = 0;
+
+    // Ledger that divide transactions on historical and new
+    unsigned startupLedger_ = 0;
+
+    void
+    clear();
+};
+
 class ChainListener : public std::enable_shared_from_this<ChainListener>
 {
 private:
@@ -56,7 +83,23 @@ private:
     std::unordered_map<std::uint32_t, RpcCallback> GUARDED_BY(callbacksMtx_)
         callbacks_;
 
-    bool stopHistory_;
+    unsigned const minUserLedger_ = 3;
+    // Maximum transactions per one request for given account.
+    unsigned const txLimit_ = 10;
+    // accout_tx request can be divided into chunks (txLimit_ size) with
+    // severeal requests. This flag do not allow other transactions request to
+    // be started in the middle of current request.
+    bool inRequest_ = false;
+    // last ledger requested for new tx
+    unsigned ledgerReqMax_ = 0;
+    // To determine ledger boundary acros consecutive requests for given
+    // account.
+    std::int32_t prevLedgerIndex_ = 0;
+    // Artifical counter to emulate account_history_tx_index from
+    // account_history_tx_stream subscription.
+    std::int32_t txnHistoryIndex_ = 0;
+
+    HistoryProcessor hp_;
 
 public:
     ChainListener(
@@ -95,7 +138,7 @@ public:
 
     // Returns command id that will be returned in the response
     std::uint32_t
-    send(std::string const& cmd, Json::Value const& params)
+    send(std::string const& cmd, Json::Value const& params) const
         EXCLUDES(callbacksMtx_);
 
     /**
@@ -113,7 +156,13 @@ private:
     onConnect();
 
     void
-    processMessage(Json::Value const& msg) const;
+    processMessage(Json::Value const& msg);
+
+    void
+    processAccountTx(Json::Value const& msg);
+
+    bool
+    processAccountTxHlp(Json::Value const& msg);
 
     void
     processAccountInfo(Json::Value const& msg) const noexcept;
@@ -130,9 +179,28 @@ private:
     void
     processSetRegularKey(Json::Value const& msg) const noexcept;
 
+    bool
+    processBridgeReq(Json::Value const& msg);
+
+    void
+    processNewLedger(unsigned ledger);
+
     template <class E>
     void
     pushEvent(E&& e) const;
+
+    void
+    accountTx(
+        std::string const& account,
+        unsigned ledger_min = 0,
+        unsigned ledger_max = 0,
+        Json::Value const& marker = Json::Value());
+
+    void
+    requestLedgers();
+
+    void
+    sendLedgerReq(unsigned ledger = 0);
 };
 
 }  // namespace xbwd

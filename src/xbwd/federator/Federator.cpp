@@ -705,14 +705,21 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     if (initSync_[dstChain].syncing_)
     {
         if (!e.rpcOrder_)
+        {
+            JLOGV(j_.error(), "no rpc order", jv("event", e.toJson()));
             return;
+        }
         initSync(dstChain, e.txnHash_, *e.rpcOrder_, e);
         return;
     }
 
     if (e.rpcOrder_ && *e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
-        // don't need older ones
+        JLOGV(
+            j_.info(),
+            "skip older",
+            jv("event", e.toJson()),
+            jv("initSync rpcOrder", initSync_[dstChain].rpcOrder_));
         return;
     }
 
@@ -903,14 +910,21 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     if (initSync_[dstChain].syncing_)
     {
         if (!e.rpcOrder_)
+        {
+            JLOGV(j_.error(), "no rpc order", jv("event", e.toJson()));
             return;
+        }
         initSync(dstChain, e.txnHash_, *e.rpcOrder_, e);
         return;
     }
 
     if (e.rpcOrder_ && *e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
-        // don't need older ones
+        JLOGV(
+            j_.info(),
+            "skip older",
+            jv("event", e.toJson()),
+            jv("initSync rpcOrder", initSync_[dstChain].rpcOrder_));
         return;
     }
 

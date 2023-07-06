@@ -188,17 +188,16 @@ WebsocketClient::onReadMsg(error_code const& ec)
 {
     if (ec)
     {
-        JLOGV(j_.error(), "WebsocketClient::onReadMsg error", jv("ec", ec));
+        auto const& reason = ws_.reason();
+
+        JLOGV(
+            j_.error(),
+            "WebsocketClient::onReadMsg error",
+            jv("ec", ec),
+            jv("code", reason.code),
+            jv("msg", reason.reason));
         if (ec == boost::beast::websocket::error::closed)
-        {
             peerClosed_ = true;
-            auto const& reason = ws_.reason();
-            JLOGV(
-                j_.error(),
-                "WebsocketClient::onReadMsg close reason",
-                jv("code", reason.code),
-                jv("msg", reason.reason));
-        }
 
         std::lock_guard<std::mutex> l(shutdownM_);
         reconnect();
