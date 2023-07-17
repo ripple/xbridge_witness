@@ -224,7 +224,7 @@ WebsocketClient::reconnect()
         return;
     boost::system::error_code ecc;
     stream_.close(ecc);
-    std::weak_ptr<WebsocketClient> wptr = shared_from_this();
+    std::weak_ptr<WebsocketClient> wptr = this->shared_from_this();
     timer_.expires_after(CONNECT_TIMEOUT);
     timer_.async_wait([wptr](boost::system::error_code const& ec) {
         if (ec == boost::asio::error::operation_aborted)

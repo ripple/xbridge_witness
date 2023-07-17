@@ -119,6 +119,7 @@ if (NOT has_parent)
           message (WARNING "conan exit_code: ${_git_exit_code}\n conan command failed - build might be incorrect")
         endif ()
 
+        option (tests "Build tests" OFF)
         add_subdirectory(${rippled_src_SOURCE_DIR} ${rippled_src_BINARY_DIR})
       endif()
     endif()
@@ -206,8 +207,10 @@ add_executable (${PROJECT_NAME}
   ${HEADERS}
 )
 
-target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector")
-target_link_options(${PROJECT_NAME} PUBLIC "LINKER:-z,relro,-z,now")
+target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector-strong")
+if (is_linux)
+  target_link_options(${PROJECT_NAME} PUBLIC "LINKER:-z,relro,-z,now")
+endif()
 target_include_directories (${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
 target_link_libraries (${PROJECT_NAME} PUBLIC Ripple::xrpl_core XBridgeWitness::opts
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL)

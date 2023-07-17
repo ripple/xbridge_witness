@@ -36,6 +36,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 
 namespace xbwd {
 
