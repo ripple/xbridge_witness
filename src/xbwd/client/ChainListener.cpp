@@ -99,11 +99,18 @@ ChainListener::onConnect()
         self->send("subscribe", params);
     };
 
-    auto mainFlow = [self = shared_from_this(), doorAccStr, doorAccInfoCb]() {
+    auto serverInfoCb = [self = shared_from_this(), doorAccStr, doorAccInfoCb](
+                            Json::Value const& msg) {
+        self->processServerInfo(msg);
         Json::Value params;
         params[ripple::jss::account] = doorAccStr;
         params[ripple::jss::signer_lists] = true;
         self->send("account_info", params, doorAccInfoCb);
+    };
+
+    auto mainFlow = [self = shared_from_this(), doorAccStr, serverInfoCb]() {
+        Json::Value params;
+        self->send("server_info", params, serverInfoCb);
     };
 
     auto signAccInfoCb = [self = shared_from_this(),
@@ -786,6 +793,63 @@ ChainListener::processAccountInfo(Json::Value const& msg) const noexcept
 }
 
 void
+ChainListener::processServerInfo(Json::Value const& msg) const noexcept
+{
+    std::string const chainName = to_string(chainType_);
+    std::string_view const errTopic = "ignoring server_info message";
+
+    auto warn_ret = [&, this](std::string_view reason) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg));
+    };
+
+    try
+    {
+        if (!msg.isMember(ripple::jss::result))
+            return warn_ret("'result' missed");
+
+        auto const& jres = msg[ripple::jss::result];
+        if (!jres.isMember(ripple::jss::info))
+            return warn_ret("'info' missed");
+
+        auto const& jinfo = jres[ripple::jss::info];
+        if (!jinfo.isMember(ripple::jss::network_id))
+            return warn_ret("'network_id' missed");
+
+        auto const& jnetID = jinfo[ripple::jss::network_id];
+        if (!jnetID.isIntegral())
+            return warn_ret("'network_id' invalid type");
+
+        std::uint32_t const networkID = jnetID.asUInt();
+        auto fed = federator_.lock();
+        if (fed)
+            fed->setNetwordID(networkID, chainType_);
+    }
+    catch (std::exception const& e)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            jv("exception", e.what()),
+            jv("chain_name", chainName),
+            jv("msg", msg));
+    }
+    catch (...)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            jv("exception", "unknown exception"),
+            jv("chain_name", chainName),
+            jv("msg", msg));
+    }
+}
+
+void
 ChainListener::processSigningAccountInfo(Json::Value const& msg) const noexcept
 {
     std::string const chainName = to_string(chainType_);
@@ -1390,7 +1454,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             history[ripple::jss::account_history_boundary] = true;
         }
         history[ripple::jss::account_history_tx_index] =
-            isHistorical ? (--txnHistoryIndex_) : (++txnHistoryIndex_);
+            isHistorical ? --txnHistoryIndex_ : txnHistoryIndex_++;
         std::string const tr = meta["TransactionResult"].asString();
         history[ripple::jss::engine_result] = tr;
         auto const tc = ripple::transCode(tr);
@@ -1410,7 +1474,8 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
         processMessage(history);
     }
 
-    if (cnt >= hp_.accoutTxProcessed_)
+    if (hp_.accoutTxProcessed_ && (cnt >= hp_.accoutTxProcessed_) &&
+        (hp_.state_ == HistoryProcessor::CHECK_LEDGERS))
         warnCont("Skipped tx", jv("cnt", cnt));
 
     if (!isMarker && !hp_.stopHistory_)
@@ -1524,6 +1589,9 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
 {
     auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
 
+    if (!hp_.startupLedger_)
+        hp_.startupLedger_ = ledgerIdx;
+
     if (hp_.state_ == HistoryProcessor::FINISHED)
     {
         if (inRequest_)
@@ -1531,9 +1599,8 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
 
         if (ledgerIdx > ledgerReqMax_)
         {
-            auto ledgerReqMin = ledgerReqMax_;
-            if (!ledgerReqMin)
-                ledgerReqMin = hp_.startupLedger_;
+            auto const ledgerReqMin =
+                ledgerReqMax_ ? ledgerReqMax_ + 1 : hp_.startupLedger_;
             ledgerReqMax_ = ledgerIdx;
             accountTx(doorAccStr, ledgerReqMin, ledgerReqMax_);
             if (!witnessAccountStr_.empty())
@@ -1542,9 +1609,6 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
 
         return;
     }
-
-    if (!hp_.startupLedger_)
-        hp_.startupLedger_ = ledgerIdx;
 
     switch (hp_.state_)
     {
@@ -1580,9 +1644,12 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
             accountTx(doorAccStr, 0, hp_.startupLedger_, hp_.marker_);
             break;
         }
+        case HistoryProcessor::RETR_LEDGERS:
+            [[fallthrough]];
         case HistoryProcessor::RETR_HISTORY:
             [[fallthrough]];
         case HistoryProcessor::WAIT_CB:
+            [[fallthrough]];
         default:
             break;
     }

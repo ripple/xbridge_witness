@@ -176,7 +176,7 @@ doSelectAll(
             auto& jclaims = (result["claims"] = Json::arrayValue);
             for (auto const& claim : claims)
             {
-                SubmissionClaim sc(0, 0, bridge, claim);
+                SubmissionClaim sc(0, 0, 0, bridge, claim);
                 jclaims.append(sc.getJson(ripple::JsonOptions::none));
             }
         }
@@ -356,7 +356,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
             }
             else
             {
-                SubmissionClaim sc(0, 0, bridge, claim);
+                SubmissionClaim sc(0, 0, 0, bridge, claim);
                 result["claim"] = sc.getJson(ripple::JsonOptions::none);
             }
         }
@@ -540,7 +540,7 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
             }
             else
             {
-                SubmissionCreateAccount ca(0, 0, bridge, createAccount);
+                SubmissionCreateAccount ca(0, 0, 0, bridge, createAccount);
                 result["createAccount"] = ca.getJson(ripple::JsonOptions::none);
             }
         }

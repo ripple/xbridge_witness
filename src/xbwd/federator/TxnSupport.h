@@ -43,6 +43,7 @@ getTxn(
     Json::StaticString const& txFieldName,
     std::uint32_t seq,
     std::uint32_t lastLedgerSeq,
+    std::uint32_t networkID,
     ripple::XRPAmount const& fee)
 {
     using namespace ripple;
@@ -58,6 +59,8 @@ getTxn(
     txnJson[jss::Sequence] = seq;
     txnJson[jss::Fee] = to_string(fee);
     txnJson[jss::LastLedgerSequence] = lastLedgerSeq;
+    if (networkID)
+        txnJson[jss::NetworkID] = networkID;
     return txnJson;
 }
 
@@ -70,14 +73,15 @@ getSignedTxn(
     Json::StaticString const& txFieldName,
     std::uint32_t seq,
     std::uint32_t lastLedgerSeq,
+    std::uint32_t networkID,
     ripple::XRPAmount const& fee,
     std::pair<ripple::PublicKey, ripple::SecretKey> const& keypair,
     beast::Journal j)
 {
     using namespace ripple;
 
-    auto const txnJson =
-        getTxn(acc, batch, txType, txFieldName, seq, lastLedgerSeq, fee);
+    auto const txnJson = getTxn(
+        acc, batch, txType, txFieldName, seq, lastLedgerSeq, networkID, fee);
 
     try
     {

@@ -168,6 +168,9 @@ private:
     processAccountInfo(Json::Value const& msg) const noexcept;
 
     void
+    processServerInfo(Json::Value const& msg) const noexcept;
+
+    void
     processSigningAccountInfo(Json::Value const& msg) const noexcept;
 
     void

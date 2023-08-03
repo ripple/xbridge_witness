@@ -1454,15 +1454,15 @@ Federator::pushAttOnSubmitTxn(
         {
             for (auto const& claim : curClaimAtts_[chainType])
             {
-                auto p =
-                    SubmissionPtr(new SubmissionClaim(0, 0, bridge, claim));
+                auto p = SubmissionPtr(new SubmissionClaim(
+                    0, 0, networkID_[chainType], bridge, claim));
                 txns_[chainType].emplace_back(std::move(p));
             }
 
             for (auto const& create : curCreateAtts_[chainType])
             {
-                auto p = SubmissionPtr(
-                    new SubmissionCreateAccount(0, 0, bridge, create));
+                auto p = SubmissionPtr(new SubmissionCreateAccount(
+                    0, 0, networkID_[chainType], bridge, create));
                 txns_[chainType].emplace_back(std::move(p));
             }
         }
@@ -2048,11 +2048,21 @@ Federator::checkSigningKey(
     }
 }
 
+void
+Federator::setNetwordID(std::uint32_t networkID, ChainType ct)
+{
+    networkID_[ct] = networkID;
+}
+
 Submission::Submission(
-    uint32_t lastLedgerSeq,
-    uint32_t accountSqn,
+    std::uint32_t lastLedgerSeq,
+    std::uint32_t accountSqn,
+    std::uint32_t networkID,
     std::string_view const logName)
-    : lastLedgerSeq_(lastLedgerSeq), accountSqn_(accountSqn), logName_(logName)
+    : lastLedgerSeq_(lastLedgerSeq)
+    , accountSqn_(accountSqn)
+    , networkID_(networkID)
+    , logName_(logName)
 {
 }
 
@@ -2112,11 +2122,12 @@ SubmissionBatch::getSignedTxn(
 #endif
 
 SubmissionClaim::SubmissionClaim(
-    uint32_t lastLedgerSeq,
-    uint32_t accountSqn,
+    std::uint32_t lastLedgerSeq,
+    std::uint32_t accountSqn,
+    std::uint32_t networkID,
     ripple::STXChainBridge const& bridge,
     ripple::Attestations::AttestationClaim const& claim)
-    : Submission(lastLedgerSeq, accountSqn, "claim")
+    : Submission(lastLedgerSeq, accountSqn, networkID, "claim")
     , bridge_(bridge)
     , claim_(claim)
 {
@@ -2159,17 +2170,19 @@ SubmissionClaim::getSignedTxn(
         Json::StaticString(nullptr),
         accountSqn_,
         lastLedgerSeq_,
+        networkID_,
         fee,
         txn.keypair,
         j);
 }
 
 SubmissionCreateAccount::SubmissionCreateAccount(
-    uint32_t lastLedgerSeq,
-    uint32_t accountSqn,
+    std::uint32_t lastLedgerSeq,
+    std::uint32_t accountSqn,
+    std::uint32_t networkID,
     ripple::STXChainBridge const& bridge,
     ripple::Attestations::AttestationCreateAccount const& create)
-    : Submission(lastLedgerSeq, accountSqn, "createAccount")
+    : Submission(lastLedgerSeq, accountSqn, networkID, "createAccount")
     , bridge_(bridge)
     , create_(create)
 {
@@ -2212,6 +2225,7 @@ SubmissionCreateAccount::getSignedTxn(
         Json::StaticString(nullptr),
         accountSqn_,
         lastLedgerSeq_,
+        networkID_,
         fee,
         txn.keypair,
         j);

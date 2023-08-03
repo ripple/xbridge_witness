@@ -67,8 +67,10 @@ struct Submission
     // Probably not enough for tecDIR_FULL and tecXCHAIN_ACCOUNT_CREATE_TOO_MANY
     // But there is not a good number for those. They probably need a flow
     // control mechanism and probably does not worth it?
-    uint32_t lastLedgerSeq_;
-    uint32_t accountSqn_;
+    std::uint32_t lastLedgerSeq_;
+    std::uint32_t accountSqn_;
+
+    std::uint32_t networkID_;
 
     std::string logName_;
 
@@ -103,8 +105,9 @@ struct Submission
 
 protected:
     Submission(
-        uint32_t lastLedgerSeq,
-        uint32_t accountSqn,
+        std::uint32_t lastLedgerSeq,
+        std::uint32_t accountSqn,
+        std::uint32_t networkID,
         std::string_view const logName);
 };
 
@@ -147,8 +150,9 @@ struct SubmissionClaim : public Submission
     ripple::Attestations::AttestationClaim claim_;
 
     SubmissionClaim(
-        uint32_t lastLedgerSeq,
-        uint32_t accountSqn,
+        std::uint32_t lastLedgerSeq,
+        std::uint32_t accountSqn,
+        std::uint32_t networkID,
         ripple::STXChainBridge const& bridge,
         ripple::Attestations::AttestationClaim const& claim);
 
@@ -176,8 +180,9 @@ struct SubmissionCreateAccount : public Submission
     ripple::Attestations::AttestationCreateAccount create_;
 
     SubmissionCreateAccount(
-        uint32_t lastLedgerSeq,
-        uint32_t accountSqn,
+        std::uint32_t lastLedgerSeq,
+        std::uint32_t accountSqn,
+        std::uint32_t networkID,
         ripple::STXChainBridge const& bridge,
         ripple::Attestations::AttestationCreateAccount const& create);
 
@@ -304,8 +309,8 @@ class Federator : public std::enable_shared_from_this<Federator>
         batchMutex_) curClaimAtts_;
     ChainArray<std::vector<ripple::Attestations::AttestationCreateAccount>>
         GUARDED_BY(batchMutex_) curCreateAtts_;
-    ChainArray<std::atomic<std::uint32_t>> ledgerIndexes_{0u, 0u};
-    ChainArray<std::atomic<std::uint32_t>> ledgerFees_{0u, 0u};
+    ChainArray<std::atomic_uint32_t> ledgerIndexes_{0u, 0u};
+    ChainArray<std::atomic_uint32_t> ledgerFees_{0u, 0u};
     ChainArray<std::uint32_t> accountSqns_{0u, 0u};  // tx submit thread only
 
     struct InitSync
@@ -325,6 +330,8 @@ class Federator : public std::enable_shared_from_this<Federator>
     beast::Journal j_;
 
     bool const useBatch_;
+
+    ChainArray<std::atomic_uint32_t> networkID_;
 
 public:
     // Tag so make_Federator can call `std::make_shared`
@@ -381,6 +388,9 @@ public:
         ChainType const ct,
         bool const masterDisabled,
         std::optional<ripple::AccountID> const& regularAcc);
+
+    void
+    setNetwordID(std::uint32_t networkID, ChainType ct);
 
 private:
     // Two phase init needed for shared_from this.
