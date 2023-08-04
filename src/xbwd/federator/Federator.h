@@ -452,6 +452,9 @@ private:
     void
     tryFinishInitSync(ChainType const ct);
 
+    bool
+    isSyncing() const;
+
     void
     pushAtt(
         ripple::STXChainBridge const& bridge,

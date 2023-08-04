@@ -26,6 +26,7 @@
 #include <xbwd/federator/FederatorEvents.h>
 
 #include <ripple/basics/Log.h>
+#include <ripple/basics/RangeSet.h>
 #include <ripple/basics/XRPAmount.h>
 #include <ripple/basics/strHex.h>
 #include <ripple/json/Output.h>
@@ -793,7 +794,7 @@ ChainListener::processAccountInfo(Json::Value const& msg) const noexcept
 }
 
 void
-ChainListener::processServerInfo(Json::Value const& msg) const noexcept
+ChainListener::processServerInfo(Json::Value const& msg) noexcept
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring server_info message";
@@ -803,8 +804,7 @@ ChainListener::processServerInfo(Json::Value const& msg) const noexcept
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
-            jv("msg", msg));
+            jv("chain_name", chainName));
     };
 
     try
@@ -817,17 +817,50 @@ ChainListener::processServerInfo(Json::Value const& msg) const noexcept
             return warn_ret("'info' missed");
 
         auto const& jinfo = jres[ripple::jss::info];
-        if (!jinfo.isMember(ripple::jss::network_id))
-            return warn_ret("'network_id' missed");
 
-        auto const& jnetID = jinfo[ripple::jss::network_id];
-        if (!jnetID.isIntegral())
-            return warn_ret("'network_id' invalid type");
+        std::uint32_t networkID = 0;
+        auto checkNetworkID = [&jinfo, &networkID, this, warn_ret]() {
+            if (!jinfo.isMember(ripple::jss::network_id))
+                return warn_ret("'network_id' missed");
 
-        std::uint32_t const networkID = jnetID.asUInt();
-        auto fed = federator_.lock();
-        if (fed)
-            fed->setNetwordID(networkID, chainType_);
+            auto const& jnetID = jinfo[ripple::jss::network_id];
+            if (!jnetID.isIntegral())
+                return warn_ret("'network_id' invalid type");
+
+            networkID = jnetID.asUInt();
+            auto fed = federator_.lock();
+            if (fed)
+                fed->setNetwordID(networkID, chainType_);
+        };
+        checkNetworkID();
+
+        auto checkCompleteLedgers = [&jinfo, this, warn_ret, chainName]() {
+            if (!jinfo.isMember(ripple::jss::complete_ledgers))
+                return warn_ret("'complete_ledgers' missed");
+
+            auto const& jledgers = jinfo[ripple::jss::complete_ledgers];
+            if (!jledgers.isString())
+                return warn_ret("'complete_ledgers' invalid type");
+
+            std::string const ledgers = jledgers.asString();
+
+            ripple::RangeSet<std::uint32_t> rs;
+            if (!ripple::from_string(rs, ledgers) || rs.empty())
+                return warn_ret("'complete_ledgers' invalid value");
+
+            auto const& interval = *rs.rbegin();
+            auto const m = interval.lower();
+            if (!hp_.minValidatedLedger_ || (m < hp_.minValidatedLedger_))
+                hp_.minValidatedLedger_ = m;
+        };
+        checkCompleteLedgers();
+
+        JLOGV(
+            j_.info(),
+            "server_info",
+            jv("chain_name", chainName),
+            jv("minValidatedLedger", hp_.minValidatedLedger_),
+            jv("networkID", networkID));
     }
     catch (std::exception const& e)
     {
@@ -1374,8 +1407,13 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
         throw std::runtime_error("no ledger range");
     }
 
+    // these should left the same during full account_tx + marker serie
     unsigned const ledgerMax = result[ripple::jss::ledger_index_max].asUInt();
     unsigned const ledgerMin = result[ripple::jss::ledger_index_min].asUInt();
+
+    if ((hp_.state_ != HistoryProcessor::FINISHED) && ledgerMin &&
+        (ledgerMin <= hp_.toRequestLedger_))
+        hp_.toRequestLedger_ = ledgerMin - 1;
 
     if (!result.isMember(ripple::jss::account) ||
         !result[ripple::jss::account].isString())
@@ -1416,8 +1454,9 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
 
         auto const& entry(*it);
 
-        // auto next = it; ++next;
-        // bool const isLast = next == transactions.end();
+        auto next = it;
+        ++next;
+        bool const isLast = next == transactions.end();
 
         if (!entry.isMember(ripple::jss::meta))
         {
@@ -1442,12 +1481,14 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             throw std::runtime_error("processAccountTx no ledger_index");
         }
         std::uint32_t const ledgerIdx = tx[ripple::jss::ledger_index].asUInt();
-        bool const isHistorical = hp_.startupLedger_ >= ledgerIdx;
+        bool const isHistorical = hp_.startupLedger_ > ledgerIdx;
 
         // if (!isMarker && isLast && isHistorical)
         //     history[ripple::jss::account_history_tx_first] = true;
 
-        bool const lgrBdr = prevLedgerIndex_ != ledgerIdx;
+        bool const lgrBdr = (hp_.state_ != HistoryProcessor::FINISHED)
+            ? prevLedgerIndex_ != ledgerIdx
+            : isLast;
         if (lgrBdr)
         {
             prevLedgerIndex_ = ledgerIdx;
@@ -1532,55 +1573,44 @@ ChainListener::accountTx(
 void
 ChainListener::requestLedgers()
 {
-    if (hp_.state_ == HistoryProcessor::RETR_HISTORY)
+    if ((hp_.state_ == HistoryProcessor::RETR_HISTORY) ||
+        (hp_.state_ == HistoryProcessor::CHECK_LEDGERS))
     {
         hp_.state_ = HistoryProcessor::RETR_LEDGERS;
-        sendLedgerReq();
+        sendLedgerReq(hp_.requestLedgerBatch_);
     }
 }
 
 void
-ChainListener::sendLedgerReq(unsigned ledger)
+ChainListener::sendLedgerReq(unsigned cnt)
 {
     auto const chainName = to_string(chainType_);
 
-    if (!hp_.startupLedger_)
-    {
-        JLOGV(
-            j_.error(),
-            "Invalid ledgers request",
-            jv("chain_name", chainName),
-            jv("startupLedger", hp_.startupLedger_));
-        throw std::runtime_error("Invalid ledgers request");
-    }
-
-    if (!ledger)
-    {
-        ledger = hp_.startupLedger_ - 1;
-        JLOGV(
-            j_.info(),
-            "History not completed, start requesting more ledgers",
-            jv("chain_name", chainName),
-            jv("startupLedger", hp_.startupLedger_),
-            jv("currentLedgerReqIdx", ledger));
-    }
-
-    if (ledger < minUserLedger_)
+    if (!cnt || (hp_.toRequestLedger_ < minUserLedger_))
     {
         hp_.state_ = HistoryProcessor::CHECK_LEDGERS;
         JLOGV(
             j_.info(),
             "Finished requesting ledgers",
             jv("chain_name", chainName),
-            jv("startupLedger", hp_.startupLedger_));
+            jv("finish_ledger", hp_.toRequestLedger_ + 1));
         return;
     }
 
-    auto ledgerReqCb = [self = shared_from_this(), ledger](Json::Value const&) {
-        self->sendLedgerReq(ledger - 1);
+    if (cnt == hp_.requestLedgerBatch_)
+    {
+        JLOGV(
+            j_.info(),
+            "History not completed, start requesting more ledgers",
+            jv("chain_name", chainName),
+            jv("start_ledger", hp_.toRequestLedger_));
+    }
+
+    auto ledgerReqCb = [self = shared_from_this(), cnt](Json::Value const&) {
+        self->sendLedgerReq(cnt - 1);
     };
     Json::Value params;
-    params[ripple::jss::ledger_index] = ledger;
+    params[ripple::jss::ledger_index] = hp_.toRequestLedger_--;
     send("ledger_request", params, ledgerReqCb);
 }
 
@@ -1590,7 +1620,25 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
     auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
 
     if (!hp_.startupLedger_)
+    {
         hp_.startupLedger_ = ledgerIdx;
+        hp_.toRequestLedger_ = ledgerIdx - 1;
+        JLOGV(
+            j_.info(),
+            "Init startup ledger",
+            jv("chain_name", to_string(chainType_)),
+            jv("startup_ledger", hp_.startupLedger_));
+
+        if (!ledgerIdx)
+        {
+            JLOGV(
+                j_.error(),
+                "New ledger invalid idx",
+                jv("chain_name", to_string(chainType_)),
+                jv("ledgerIdx", ledgerIdx));
+            throw std::runtime_error("New ledger invalid idx");
+        }
+    }
 
     if (hp_.state_ == HistoryProcessor::FINISHED)
     {
@@ -1600,7 +1648,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
         if (ledgerIdx > ledgerReqMax_)
         {
             auto const ledgerReqMin =
-                ledgerReqMax_ ? ledgerReqMax_ + 1 : hp_.startupLedger_;
+                ledgerReqMax_ ? ledgerReqMax_ + 1 : hp_.startupLedger_ + 1;
             ledgerReqMax_ = ledgerIdx;
             accountTx(doorAccStr, ledgerReqMin, ledgerReqMax_);
             if (!witnessAccountStr_.empty())
@@ -1610,6 +1658,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
         return;
     }
 
+    // History mode
     switch (hp_.state_)
     {
         case HistoryProcessor::CHECK_BRIDGE: {
@@ -1641,7 +1690,22 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
                 j_.warn(),
                 "Witness NOT initialized, waiting for ledgers",
                 jv("chain_name", to_string(chainType_)));
-            accountTx(doorAccStr, 0, hp_.startupLedger_, hp_.marker_);
+
+            auto serverInfoCb = [self = shared_from_this(),
+                                 doorAccStr](Json::Value const& msg) {
+                auto const currentMinLedger = self->hp_.minValidatedLedger_;
+                self->processServerInfo(msg);
+                // check if ledgers were retrieved
+                if (self->hp_.minValidatedLedger_ < currentMinLedger)
+                    self->accountTx(
+                        doorAccStr,
+                        0,
+                        self->hp_.startupLedger_,
+                        self->hp_.marker_);
+            };
+            Json::Value params;
+            send("server_info", params, serverInfoCb);
+
             break;
         }
         case HistoryProcessor::RETR_LEDGERS:
@@ -1713,6 +1777,8 @@ HistoryProcessor::clear()
     marker_.clear();
     accoutTxProcessed_ = 0;
     startupLedger_ = 0;
+    toRequestLedger_ = 0;
+    minValidatedLedger_ = 0;
 }
 
 }  // namespace xbwd

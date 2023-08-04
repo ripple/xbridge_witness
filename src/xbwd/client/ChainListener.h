@@ -61,6 +61,13 @@ struct HistoryProcessor
     // Ledger that divide transactions on historical and new
     unsigned startupLedger_ = 0;
 
+    // requesting ledgers in batch and check transactions after every batch
+    // request
+    unsigned const requestLedgerBatch_ = 100;
+    unsigned toRequestLedger_ = 0;
+
+    unsigned minValidatedLedger_ = 0;
+
     void
     clear();
 };
@@ -168,7 +175,7 @@ private:
     processAccountInfo(Json::Value const& msg) const noexcept;
 
     void
-    processServerInfo(Json::Value const& msg) const noexcept;
+    processServerInfo(Json::Value const& msg) noexcept;
 
     void
     processSigningAccountInfo(Json::Value const& msg) const noexcept;
@@ -203,7 +210,7 @@ private:
     requestLedgers();
 
     void
-    sendLedgerReq(unsigned ledger = 0);
+    sendLedgerReq(unsigned cnt);
 };
 
 }  // namespace xbwd

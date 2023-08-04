@@ -690,6 +690,13 @@ Federator::tryFinishInitSync(ChainType const ct)
     }
 }
 
+bool
+Federator::isSyncing() const
+{
+    return initSync_[ChainType::locking].syncing_ ||
+        initSync_[ChainType::issuing].syncing_;
+}
+
 void
 Federator::onEvent(event::XChainCommitDetected const& e)
 {
@@ -702,7 +709,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         jv("dst chain", to_string(dstChain)),
         jv("event", e.toJson()));
 
-    if (initSync_[dstChain].syncing_)
+    if (isSyncing())
     {
         if (!e.rpcOrder_)
         {
@@ -907,7 +914,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
         jv("dst chain", to_string(dstChain)),
         jv("event", e.toJson()));
 
-    if (initSync_[dstChain].syncing_)
+    if (isSyncing())
     {
         if (!e.rpcOrder_)
         {
@@ -1271,7 +1278,7 @@ Federator::onEvent(event::NewLedger const& e)
         return;
     }
 
-    if (!autoSubmit_[ct])
+    if (!autoSubmit_[ct] || isSyncing())
         return;
 
     bool notify = false;
@@ -1970,7 +1977,7 @@ Federator::pullAndAttestTx(
     Json::Value& result)
 {
     // TODO multi bridge
-    if (initSync_[otherChain(ct)].syncing_)
+    if (isSyncing())
     {
         result["error"] = "syncing";
         return;
