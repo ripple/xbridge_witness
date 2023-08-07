@@ -1377,8 +1377,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             jv("reason", reason),
             jv("chain_name", chainName),
             jv("msg", msg),
-            std::forward<decltype(ts)>(ts)...);
-        return false;
+            std::forward<decltype(ts)>(ts)...);        
     };
 
     auto warnCont = [&, this](std::string_view reason, auto&&... ts) {
@@ -1481,7 +1480,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             throw std::runtime_error("processAccountTx no ledger_index");
         }
         std::uint32_t const ledgerIdx = tx[ripple::jss::ledger_index].asUInt();
-        bool const isHistorical = hp_.startupLedger_ > ledgerIdx;
+        bool const isHistorical = hp_.startupLedger_ >= ledgerIdx;
 
         // if (!isMarker && isLast && isHistorical)
         //     history[ripple::jss::account_history_tx_first] = true;
