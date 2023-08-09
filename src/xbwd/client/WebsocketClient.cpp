@@ -160,7 +160,10 @@ WebsocketClient::connect()
 }
 
 std::uint32_t
-WebsocketClient::send(std::string const& cmd, Json::Value params)
+WebsocketClient::send(
+    std::string const& cmd,
+    Json::Value params,
+    std::string const& chain)
 {
     params[ripple::jss::method] = cmd;
     params[ripple::jss::jsonrpc] = "2.0";
@@ -169,7 +172,11 @@ WebsocketClient::send(std::string const& cmd, Json::Value params)
     auto const id = nextId_++;
     params[ripple::jss::id] = id;
     auto const s = to_string(params);
-    JLOGV(j_.trace(), "WebsocketClient::send", jv("msg", params));
+    JLOGV(
+        j_.trace(),
+        "WebsocketClient::send",
+        jv("chain_name", chain),
+        jv("msg", params));
     try
     {
         std::lock_guard l{m_};
@@ -264,13 +271,6 @@ WebsocketClient::runCallbacks()
                 "WebsocketClient::runCallbacks",
                 jv("Updated maxQueueSize", maxSize));
         }
-        else if (x)
-        {
-            JLOGV(
-                j_.debug(),
-                "WebsocketClient::runCallbacks",
-                jv("size of queue", x));
-        }
 
         for (auto const& rb : processingQueue_)
         {
@@ -278,7 +278,8 @@ WebsocketClient::runCallbacks()
                 break;
 
             auto const s = buffer_string(rb.data());
-            JLOGV(j_.trace(), "WebsocketClient::runCallbacks", jv("msg", s));
+            // JLOGV(j_.trace(), "WebsocketClient::runCallbacks",
+            // jv("queueSize", x), jv("msg", s));
             Json::Value jval;
             Json::Reader jr;
             jr.parse(s, jval);

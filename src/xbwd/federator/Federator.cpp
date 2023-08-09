@@ -1721,10 +1721,6 @@ Federator::txnSubmitLoop()
         }
 
         auto callback = [&, ct = chain](Json::Value const& accountInfo) {
-            JLOGV(
-                j_.trace(),
-                "txn submit account info",
-                jv("accountInfo", accountInfo));
             if (accountInfo.isMember(ripple::jss::result) &&
                 accountInfo[ripple::jss::result].isMember("account_data"))
             {

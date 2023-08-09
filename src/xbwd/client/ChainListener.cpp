@@ -148,7 +148,8 @@ ChainListener::shutdown()
 std::uint32_t
 ChainListener::send(std::string const& cmd, Json::Value const& params) const
 {
-    return wsClient_->send(cmd, params);
+    auto const chainName = to_string(chainType_);
+    return wsClient_->send(cmd, params, chainName);
 }
 
 void
@@ -164,15 +165,15 @@ ChainListener::send(
     RpcCallback onResponse)
 {
     auto const chainName = to_string(chainType_);
-    JLOGV(
-        j_.trace(),
-        "ChainListener send",
-        jv("chain_name", chainName),
-        jv("command", cmd),
-        jv("params", params));
+    // JLOGV(
+    //     j_.trace(),
+    //     "ChainListener send",
+    //     jv("chain_name", chainName),
+    //     jv("command", cmd),
+    //     jv("params", params));
 
-    auto id = wsClient_->send(cmd, params);
-    JLOGV(j_.trace(), "ChainListener send id", jv("id", id));
+    auto id = wsClient_->send(cmd, params, chainName);
+    // JLOGV(j_.trace(), "ChainListener send id", jv("id", id));
 
     std::lock_guard lock(callbacksMtx_);
     callbacks_.emplace(id, onResponse);
@@ -1377,7 +1378,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             jv("reason", reason),
             jv("chain_name", chainName),
             jv("msg", msg),
-            std::forward<decltype(ts)>(ts)...);        
+            std::forward<decltype(ts)>(ts)...);
     };
 
     auto warnCont = [&, this](std::string_view reason, auto&&... ts) {
@@ -1413,6 +1414,15 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
     if ((hp_.state_ != HistoryProcessor::FINISHED) && ledgerMin &&
         (ledgerMin <= hp_.toRequestLedger_))
         hp_.toRequestLedger_ = ledgerMin - 1;
+
+    if (hp_.stopHistory_ && (ledgerMax <= hp_.startupLedger_))
+    {
+        warnCont(
+            "stopped processing historical request",
+            jv("startupLedger", hp_.startupLedger_),
+            jv("ledgerMax", ledgerMax));
+        return false;
+    }
 
     if (!result.isMember(ripple::jss::account) ||
         !result[ripple::jss::account].isString())
@@ -1481,6 +1491,15 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
         }
         std::uint32_t const ledgerIdx = tx[ripple::jss::ledger_index].asUInt();
         bool const isHistorical = hp_.startupLedger_ >= ledgerIdx;
+
+        if (isHistorical && hp_.stopHistory_)
+        {
+            warnCont(
+                "stopped processing historical tx",
+                jv("startupLedger", hp_.startupLedger_),
+                jv("txLedger", ledgerIdx));
+            continue;
+        }
 
         // if (!isMarker && isLast && isHistorical)
         //     history[ripple::jss::account_history_tx_first] = true;

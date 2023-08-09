@@ -103,7 +103,8 @@ public:
 
     // Returns command id that will be returned in the response
     std::uint32_t
-    send(std::string const& cmd, Json::Value params) EXCLUDES(m_);
+    send(std::string const& cmd, Json::Value params, std::string const& chain)
+        EXCLUDES(m_);
 
     void
     shutdown() EXCLUDES(shutdownM_);
