@@ -341,6 +341,16 @@ Federator::sendDBAttests(ChainType ct)
             }
 
             convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            if (bridge != bridge_)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "sendDBAttests bridge mismatch, skipping attestation",
+                    jv("db bridge", bridge.getJson(ripple::JsonOptions::none)),
+                    jv("current bridge",
+                       bridge_.getJson(ripple::JsonOptions::none)));
+                continue;
+            }
 
             pushAtt(
                 bridge,
@@ -442,6 +452,16 @@ Federator::sendDBAttests(ChainType ct)
             convert(otherChainDstBlob, dstAccount);
 
             convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            if (bridge != bridge_)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "sendDBAttests bridge mismatch, skipping attestation",
+                    jv("db bridge", bridge.getJson(ripple::JsonOptions::none)),
+                    jv("current bridge",
+                       bridge_.getJson(ripple::JsonOptions::none)));
+                continue;
+            }
 
             pushAtt(
                 bridge,

@@ -229,7 +229,6 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         }
     }
 
-    auto const& door = *optDoor;
     auto const& sendingAccount = *optSendingAccount;
     auto const& bridge = *optBridge;
     auto const& sendingAmount = *optAmt;
@@ -411,12 +410,10 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         }
     }
 
-    auto const& door = *optDoor;
     auto const& sendingAccount = *optSendingAccount;
     auto const& bridge = *optBridge;
     auto const& sendingAmount = *optAmt;
     auto const& rewardAmount = *optRewardAmt;
-    auto const& rewardAccount = *optRewardAccount;
     auto const& createCount = *optCreateCount;
     auto const& dst = *optDst;
 

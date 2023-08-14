@@ -1239,7 +1239,7 @@ ChainListener::processTx(Json::Value const& v) const noexcept
             return warn_ret("missing or bad tx hash");
 
         auto const txnBridge = rpcResultParse::parseBridge(msg);
-        if (!txnBridge)  // TODO check bridge match
+        if (txnBridge != bridge_)
             return warn_ret("missing or bad bridge");
 
         auto const txnSeq = rpcResultParse::parseTxSeq(msg);
@@ -1699,6 +1699,8 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
             hp_.state_ = HistoryProcessor::WAIT_CB;
             Json::Value params;
             params[ripple::jss::bridge_account] = doorAccStr;
+            params[ripple::jss::bridge] =
+                bridge_.getJson(ripple::JsonOptions::none);
             send("ledger_entry", params, checkBridgeCb);
 
             break;
@@ -1738,13 +1740,8 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
 }
 
 bool
-ChainListener::processBridgeReq(Json::Value const& msg)
+ChainListener::processBridgeReq(Json::Value const& msg) const noexcept
 {
-    auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
-    std::string const doorName = chainType_ == ChainType::locking
-        ? "LockingChainDoor"
-        : "IssuingChainDoor";
-
     if (msg.isMember(ripple::jss::error) && !msg[ripple::jss::error].isNull())
         return false;
 
@@ -1764,19 +1761,9 @@ ChainListener::processBridgeReq(Json::Value const& msg)
     if (!res.isMember(ripple::jss::node))
         return false;
     auto const& node = res[ripple::jss::node];
-    if (!node.isMember("XChainBridge"))
-        return false;
-    if (!node.isMember("PreviousTxnLgrSeq") ||
-        !node["PreviousTxnLgrSeq"].isIntegral())
-        return false;
-
-    auto const& bridge = node["XChainBridge"];
-    std::string const doorStr =
-        bridge.isMember(doorName) && bridge[doorName].isString()
-        ? bridge[doorName].asString()
-        : std::string();
-
-    return doorAccStr == doorStr;
+    auto const bridge = rpc::optFromJson<ripple::STXChainBridge>(
+        node, ripple::sfXChainBridge.getJsonName());
+    return bridge == bridge_;
 }
 
 Json::Value

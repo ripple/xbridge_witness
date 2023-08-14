@@ -132,7 +132,9 @@ Config::Config(Json::Value const& jv)
                      keyType,
                      rpc::fromJson<ripple::Seed>(jv, "SigningKeySeed"))
                      .second}
-    , bridge{rpc::fromJson<ripple::STXChainBridge>(jv, "XChainBridge")}
+    , bridge{rpc::fromJson<ripple::STXChainBridge>(
+          jv,
+          ripple::sfXChainBridge.getJsonName())}
     , adminConfig{jv.isMember("Admin") ? AdminConfig::make(jv["Admin"]) : std::nullopt}
     , logFile(jv.isMember("LogFile") ? jv["LogFile"].asString() : std::string())
     , logLevel(

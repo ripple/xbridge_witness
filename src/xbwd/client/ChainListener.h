@@ -190,7 +190,7 @@ private:
     processSetRegularKey(Json::Value const& msg) const noexcept;
 
     bool
-    processBridgeReq(Json::Value const& msg);
+    processBridgeReq(Json::Value const& msg) const noexcept;
 
     void
     processNewLedger(unsigned ledger);

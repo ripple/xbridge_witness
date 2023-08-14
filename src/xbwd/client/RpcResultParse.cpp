@@ -19,7 +19,9 @@
 
 #include <ripple/protocol/SField.h>
 #include <ripple/protocol/jss.h>
+
 #include <xbwd/client/RpcResultParse.h>
+#include <xbwd/rpc/fromJSON.h>
 
 namespace xbwd {
 
@@ -231,17 +233,8 @@ parseOtherDstAccount(Json::Value const& transaction, XChainTxnType txnType)
 std::optional<ripple::STXChainBridge>
 parseBridge(Json::Value const& transaction)
 {
-    try
-    {
-        if (!transaction.isMember(ripple::sfXChainBridge.getJsonName()))
-            return {};
-        return ripple::STXChainBridge(
-            transaction[ripple::sfXChainBridge.getJsonName()]);
-    }
-    catch (...)
-    {
-    }
-    return {};
+    return rpc::optFromJson<ripple::STXChainBridge>(
+        transaction, ripple::sfXChainBridge.getJsonName());
 }
 
 std::optional<ripple::uint256>
