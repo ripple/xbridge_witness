@@ -17,11 +17,11 @@
 */
 //==============================================================================
 
-#include <ripple/protocol/SField.h>
-#include <ripple/protocol/jss.h>
-
 #include <xbwd/client/RpcResultParse.h>
 #include <xbwd/rpc/fromJSON.h>
+
+#include <ripple/protocol/SField.h>
+#include <ripple/protocol/jss.h>
 
 namespace xbwd {
 

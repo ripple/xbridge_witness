@@ -153,7 +153,7 @@ public:
      * @param v the response
      */
     void
-    processTx(Json::Value const& v) const noexcept;
+    processTx(Json::Value const& v) const;
 
 private:
     void
@@ -172,25 +172,25 @@ private:
     processAccountTxHlp(Json::Value const& msg);
 
     void
-    processAccountInfo(Json::Value const& msg) const noexcept;
+    processAccountInfo(Json::Value const& msg) const;
 
     void
-    processServerInfo(Json::Value const& msg) noexcept;
+    processServerInfo(Json::Value const& msg);
 
     void
-    processSigningAccountInfo(Json::Value const& msg) const noexcept;
+    processSigningAccountInfo(Json::Value const& msg) const;
 
     void
-    processSignerListSet(Json::Value const& msg) const noexcept;
+    processSignerListSet(Json::Value const& msg) const;
 
     void
-    processAccountSet(Json::Value const& msg) const noexcept;
+    processAccountSet(Json::Value const& msg) const;
 
     void
-    processSetRegularKey(Json::Value const& msg) const noexcept;
+    processSetRegularKey(Json::Value const& msg) const;
 
     bool
-    processBridgeReq(Json::Value const& msg) const noexcept;
+    processBridgeReq(Json::Value const& msg) const;
 
     void
     processNewLedger(unsigned ledger);

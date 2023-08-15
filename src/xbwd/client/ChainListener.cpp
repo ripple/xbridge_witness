@@ -695,7 +695,7 @@ processSignerListSetGeneral(
 }  // namespace
 
 void
-ChainListener::processAccountInfo(Json::Value const& msg) const noexcept
+ChainListener::processAccountInfo(Json::Value const& msg) const
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring account_info message";
@@ -795,7 +795,7 @@ ChainListener::processAccountInfo(Json::Value const& msg) const noexcept
 }
 
 void
-ChainListener::processServerInfo(Json::Value const& msg) noexcept
+ChainListener::processServerInfo(Json::Value const& msg)
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring server_info message";
@@ -884,7 +884,7 @@ ChainListener::processServerInfo(Json::Value const& msg) noexcept
 }
 
 void
-ChainListener::processSigningAccountInfo(Json::Value const& msg) const noexcept
+ChainListener::processSigningAccountInfo(Json::Value const& msg) const
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring signing account_info message";
@@ -957,7 +957,7 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const noexcept
 }
 
 void
-ChainListener::processSignerListSet(Json::Value const& msg) const noexcept
+ChainListener::processSignerListSet(Json::Value const& msg) const
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring SignerListSet message";
@@ -1034,7 +1034,7 @@ ChainListener::processSignerListSet(Json::Value const& msg) const noexcept
 }
 
 void
-ChainListener::processAccountSet(Json::Value const& msg) const noexcept
+ChainListener::processAccountSet(Json::Value const& msg) const
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring AccountSet message";
@@ -1111,7 +1111,7 @@ ChainListener::processAccountSet(Json::Value const& msg) const noexcept
 }
 
 void
-ChainListener::processSetRegularKey(Json::Value const& msg) const noexcept
+ChainListener::processSetRegularKey(Json::Value const& msg) const
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring SetRegularKey message";
@@ -1195,14 +1195,17 @@ ChainListener::processSetRegularKey(Json::Value const& msg) const noexcept
 }
 
 void
-ChainListener::processTx(Json::Value const& v) const noexcept
+ChainListener::processTx(Json::Value const& v) const
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring tx RPC response";
 
-    auto warn_ret = [&, this](std::string_view reason) {
+    auto warn_ret = [&, this](
+                        std::string_view reason,
+                        beast::severities::Severity severity =
+                            beast::severities::kWarning) {
         JLOGV(
-            j_.warn(),
+            j_.stream(severity),
             errTopic,
             jv("reason", reason),
             jv("chain_name", chainName),
@@ -1240,7 +1243,7 @@ ChainListener::processTx(Json::Value const& v) const noexcept
 
         auto const txnBridge = rpcResultParse::parseBridge(msg);
         if (txnBridge != bridge_)
-            return warn_ret("missing or bad bridge");
+            return warn_ret("missing or bad bridge", beast::severities::kTrace);
 
         auto const txnSeq = rpcResultParse::parseTxSeq(msg);
         if (!txnSeq)
@@ -1740,7 +1743,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
 }
 
 bool
-ChainListener::processBridgeReq(Json::Value const& msg) const noexcept
+ChainListener::processBridgeReq(Json::Value const& msg) const
 {
     if (msg.isMember(ripple::jss::error) && !msg[ripple::jss::error].isNull())
         return false;
