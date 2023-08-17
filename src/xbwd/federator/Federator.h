@@ -390,7 +390,7 @@ public:
         std::optional<ripple::AccountID> const& regularAcc);
 
     void
-    setNetwordID(std::uint32_t networkID, ChainType ct);
+    setNetworkID(std::uint32_t networkID, ChainType ct);
 
 private:
     // Two phase init needed for shared_from this.

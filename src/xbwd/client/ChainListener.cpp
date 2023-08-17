@@ -831,7 +831,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
             networkID = jnetID.asUInt();
             auto fed = federator_.lock();
             if (fed)
-                fed->setNetwordID(networkID, chainType_);
+                fed->setNetworkID(networkID, chainType_);
         };
         checkNetworkID();
 

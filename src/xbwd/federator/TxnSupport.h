@@ -59,7 +59,8 @@ getTxn(
     txnJson[jss::Sequence] = seq;
     txnJson[jss::Fee] = to_string(fee);
     txnJson[jss::LastLedgerSequence] = lastLedgerSeq;
-    if (networkID)
+    // networks with ID <= 1023 shouldn't send networkID
+    if (networkID > 1023)
         txnJson[jss::NetworkID] = networkID;
     return txnJson;
 }

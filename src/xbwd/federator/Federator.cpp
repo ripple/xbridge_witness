@@ -2072,7 +2072,7 @@ Federator::checkSigningKey(
 }
 
 void
-Federator::setNetwordID(std::uint32_t networkID, ChainType ct)
+Federator::setNetworkID(std::uint32_t networkID, ChainType ct)
 {
     networkID_[ct] = networkID;
 }
