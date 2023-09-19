@@ -99,6 +99,8 @@ private:
     bool inRequest_ = false;
     // last ledger requested for new tx
     unsigned ledgerReqMax_ = 0;
+    // last ledger that was processed (in case of errors / disconnects)
+    unsigned ledgerProcessedDoor_ = 0, ledgerProcessedSign_ = 0;
     // To determine ledger boundary acros consecutive requests for given
     // account.
     std::int32_t prevLedgerIndex_ = 0;
@@ -171,13 +173,13 @@ private:
     bool
     processAccountTxHlp(Json::Value const& msg);
 
-    void
+    bool
     processAccountInfo(Json::Value const& msg) const;
 
     void
     processServerInfo(Json::Value const& msg);
 
-    void
+    bool
     processSigningAccountInfo(Json::Value const& msg) const;
 
     void
@@ -205,6 +207,9 @@ private:
         unsigned ledger_min = 0,
         unsigned ledger_max = 0,
         Json::Value const& marker = Json::Value());
+
+    void
+    accountInfo();
 
     void
     requestLedgers();

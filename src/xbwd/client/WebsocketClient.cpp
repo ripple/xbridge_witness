@@ -136,16 +136,18 @@ WebsocketClient::connect()
             }));
         ws_.handshake(
             ep_.address().to_string() + ":" + std::to_string(ep_.port()), "/");
-        ws_.async_read(
-            rb_,
-            std::bind(
-                &WebsocketClient::onReadMsg, this, std::placeholders::_1));
-        onConnectCallback_();
+
         JLOGV(
             j_.info(),
             "WebsocketClient connected to",
             jv("ip", ep_.address()),
             jv("port", ep_.port()));
+
+        ws_.async_read(
+            rb_,
+            std::bind(
+                &WebsocketClient::onReadMsg, this, std::placeholders::_1));
+        onConnectCallback_();
     }
     catch (std::exception& e)
     {

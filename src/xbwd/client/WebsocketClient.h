@@ -109,12 +109,12 @@ public:
     void
     shutdown() EXCLUDES(shutdownM_);
 
+    void
+    reconnect() REQUIRES(shutdownM_);
+
 private:
     void
     onReadMsg(error_code const& ec) EXCLUDES(m_);
-
-    void
-    reconnect() REQUIRES(shutdownM_);
 
     // Called when the read op terminates
     void

@@ -32,6 +32,7 @@
 #include <ripple/json/Output.h>
 #include <ripple/json/json_writer.h>
 #include <ripple/protocol/AccountID.h>
+#include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/LedgerFormats.h>
 #include <ripple/protocol/SField.h>
 #include <ripple/protocol/STAmount.h>
@@ -63,6 +64,11 @@ ChainListener::ChainListener(
     , signingAccount_(signingAccount)
     , j_{j}
 {
+    inRequest_ = false;
+    ledgerReqMax_ = 0;
+    prevLedgerIndex_ = 0;
+    txnHistoryIndex_ = 0;
+    hp_.clear();
 }
 
 // destructor must be defined after WebsocketClient size is known (i.e. it can
@@ -93,7 +99,11 @@ ChainListener::onConnect()
 
     auto doorAccInfoCb = [self = shared_from_this(),
                           doorAccStr](Json::Value const& msg) {
-        self->processAccountInfo(msg);
+        if (!self->processAccountInfo(msg))
+        {
+            self->wsClient_->reconnect();
+            return;
+        }
         Json::Value params;
         params[ripple::jss::streams] = Json::arrayValue;
         params[ripple::jss::streams].append("ledger");
@@ -116,16 +126,15 @@ ChainListener::onConnect()
 
     auto signAccInfoCb = [self = shared_from_this(),
                           mainFlow](Json::Value const& msg) {
-        self->processSigningAccountInfo(msg);
+        if (!self->processSigningAccountInfo(msg))
+        {
+            self->wsClient_->reconnect();
+            return;
+        }
         mainFlow();
     };
 
     inRequest_ = false;
-    ledgerReqMax_ = 0;
-    prevLedgerIndex_ = 0;
-    txnHistoryIndex_ = 0;
-    hp_.clear();
-
     if (signingAccount_)
     {
         Json::Value params;
@@ -694,7 +703,7 @@ processSignerListSetGeneral(
 
 }  // namespace
 
-void
+bool
 ChainListener::processAccountInfo(Json::Value const& msg) const
 {
     std::string const chainName = to_string(chainType_);
@@ -707,10 +716,19 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
             jv("reason", reason),
             jv("chain_name", chainName),
             jv("msg", msg));
+        return false;
     };
 
     try
     {
+        if (msg.isMember(ripple::jss::error))
+        {
+            auto const& jerr = msg[ripple::jss::error];
+            return jerr.isString() &&
+                (jerr.asString() ==
+                 ripple::RPC::get_error_info(ripple::rpcACT_NOT_FOUND).token);
+        }
+
         if (!msg.isMember(ripple::jss::result))
             return warn_ret("'result' missed");
 
@@ -760,7 +778,10 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
         // check signer list
         {
             if (!jaccData.isMember(ripple::jss::signer_lists))
-                return warn_ret("'signer_lists' missed");
+            {
+                warn_ret("'signer_lists' missed");
+                return true;
+            }
             auto const& jslArray = jaccData[ripple::jss::signer_lists];
             if (!jslArray.isArray() || jslArray.size() != 1)
                 return warn_ret("'signer_lists'  isn't array of size 1");
@@ -768,11 +789,13 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
             auto opEntries = processSignerListSetGeneral(
                 jslArray[0u], chainName, errTopic, j_);
             if (!opEntries)
-                return;
+                return true;
 
             pushEvent(event::XChainSignerListSet{
                 chainType_, *parsedAcc, std::move(*opEntries)});
         }
+
+        return true;
     }
     catch (std::exception const& e)
     {
@@ -792,6 +815,8 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
             jv("chain_name", chainName),
             jv("msg", msg));
     }
+
+    return false;
 }
 
 void
@@ -883,7 +908,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
     }
 }
 
-void
+bool
 ChainListener::processSigningAccountInfo(Json::Value const& msg) const
 {
     std::string const chainName = to_string(chainType_);
@@ -896,10 +921,19 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const
             jv("reason", reason),
             jv("chain_name", chainName),
             jv("msg", msg));
+        return false;
     };
 
     try
     {
+        if (msg.isMember(ripple::jss::error))
+        {
+            auto const& jerr = msg[ripple::jss::error];
+            return jerr.isString() &&
+                (jerr.asString() ==
+                 ripple::RPC::get_error_info(ripple::rpcACT_NOT_FOUND).token);
+        }
+
         if (!msg.isMember(ripple::jss::result))
             return warn_ret("'result' missed");
 
@@ -935,6 +969,8 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const
             return warn_ret("federator not available");
 
         f->checkSigningKey(chainType_, fDisableMaster, regularAcc);
+
+        return true;
     }
     catch (std::exception const& e)
     {
@@ -954,6 +990,8 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const
             jv("chain_name", chainName),
             jv("msg", msg));
     }
+
+    return false;
 }
 
 void
@@ -1393,6 +1431,13 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             std::forward<decltype(ts)>(ts)...);
     };
 
+    if (ripple::RPC::contains_error(msg))
+    {
+        // request this ledger once more
+        warnMsg("error in msg");
+        return false;
+    }
+
     if (!msg.isMember(ripple::jss::result))
     {
         warnMsg("no result");
@@ -1407,7 +1452,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
         !result[ripple::jss::ledger_index_min].isIntegral())
     {
         warnMsg("no ledger range");
-        throw std::runtime_error("no ledger range");
+        throw std::runtime_error("processAccountTx no ledger range");
     }
 
     // these should left the same during full account_tx + marker serie
@@ -1433,6 +1478,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
         warnMsg("no account");
         throw std::runtime_error("processAccountTx no account");
     }
+    auto const account = result[ripple::jss::account].asString();
 
     if (!result.isMember(ripple::jss::transactions) ||
         !result[ripple::jss::transactions].isArray())
@@ -1442,11 +1488,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
     }
 
     auto const& transactions = result[ripple::jss::transactions];
-    if (!transactions.size())
-        return false;
-
     bool const isMarker = result.isMember("marker");
-
     unsigned cnt = 0;
     for (auto it = transactions.begin(); it != transactions.end(); ++it, ++cnt)
     {
@@ -1542,6 +1584,16 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
 
     if (!isMarker && !hp_.stopHistory_)
         hp_.accoutTxProcessed_ = cnt;
+
+    // everything is ok, update last processed ledger for new transactions
+    if (!isMarker && (hp_.state_ == HistoryProcessor::FINISHED))
+    {
+        auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
+        if (account == doorAccStr)
+            ledgerProcessedDoor_ = ledgerMax;
+        else if (account == witnessAccountStr_)
+            ledgerProcessedSign_ = ledgerMax;
+    }
 
     if (isMarker &&
         ((hp_.state_ == HistoryProcessor::FINISHED) || !hp_.stopHistory_))
@@ -1668,12 +1720,18 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
 
         if (ledgerIdx > ledgerReqMax_)
         {
-            auto const ledgerReqMin =
-                ledgerReqMax_ ? ledgerReqMax_ + 1 : hp_.startupLedger_ + 1;
+            auto const ledgerReqMinDoor = ledgerProcessedDoor_
+                ? ledgerProcessedDoor_ + 1
+                : hp_.startupLedger_ + 1;
             ledgerReqMax_ = ledgerIdx;
-            accountTx(doorAccStr, ledgerReqMin, ledgerReqMax_);
+            accountTx(doorAccStr, ledgerReqMinDoor, ledgerReqMax_);
             if (!witnessAccountStr_.empty())
-                accountTx(witnessAccountStr_, ledgerReqMin, ledgerReqMax_);
+            {
+                auto const ledgerReqMinSign = ledgerProcessedSign_
+                    ? ledgerProcessedSign_ + 1
+                    : hp_.startupLedger_ + 1;
+                accountTx(witnessAccountStr_, ledgerReqMinSign, ledgerReqMax_);
+            }
         }
 
         return;
@@ -1719,12 +1777,16 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
                 auto const currentMinLedger = self->hp_.minValidatedLedger_;
                 self->processServerInfo(msg);
                 // check if ledgers were retrieved
-                if (self->hp_.minValidatedLedger_ < currentMinLedger)
+                if (!currentMinLedger ||
+                    (self->hp_.minValidatedLedger_ < currentMinLedger) ||
+                    (self->hp_.minValidatedLedger_ <= self->minUserLedger_))
+                {
                     self->accountTx(
                         doorAccStr,
                         0,
                         self->hp_.startupLedger_,
                         self->hp_.marker_);
+                }
             };
             Json::Value params;
             send("server_info", params, serverInfoCb);
