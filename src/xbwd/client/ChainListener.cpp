@@ -64,11 +64,6 @@ ChainListener::ChainListener(
     , signingAccount_(signingAccount)
     , j_{j}
 {
-    inRequest_ = false;
-    ledgerReqMax_ = 0;
-    prevLedgerIndex_ = 0;
-    txnHistoryIndex_ = 0;
-    hp_.clear();
 }
 
 // destructor must be defined after WebsocketClient size is known (i.e. it can
@@ -101,6 +96,12 @@ ChainListener::onConnect()
                           doorAccStr](Json::Value const& msg) {
         if (!self->processAccountInfo(msg))
         {
+            // Reconnect here cause AccountInfo not in the Cycle, so it won't be
+            // requested once more.
+            // All the new changes to the account will be
+            // processed with transaction parsing.
+            // account_tx present in the
+            // Cycle, so there is no reconnect for it
             self->wsClient_->reconnect();
             return;
         }
@@ -1433,7 +1434,8 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
 
     if (ripple::RPC::contains_error(msg))
     {
-        // request this ledger once more
+        // When rippled synchronized this can happen. It is not critical.
+        // Request this ledger once more time later
         warnMsg("error in msg");
         return false;
     }
@@ -1585,7 +1587,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
     if (!isMarker && !hp_.stopHistory_)
         hp_.accoutTxProcessed_ = cnt;
 
-    // everything is ok, update last processed ledger for new transactions
+    // Everything is ok, update last processed ledger for new transactions
     if (!isMarker && (hp_.state_ == HistoryProcessor::FINISHED))
     {
         auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
