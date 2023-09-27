@@ -57,7 +57,7 @@ ChainListener::ChainListener(
     beast::Journal j)
     : chainType_{chainType}
     , bridge_{sidechain}
-    , witnessAccountStr_(
+    , submittingAccountStr_(
           submitAccountOpt ? ripple::toBase58(*submitAccountOpt)
                            : std::string{})
     , federator_{std::move(federator)}
@@ -543,7 +543,7 @@ ChainListener::processMessage(Json::Value const& msg)
             if (rpcResultParse::fieldMatchesStr(
                     transaction,
                     ripple::jss::Account,
-                    witnessAccountStr_.c_str()) &&
+                    submittingAccount.c_str()) &&
                 txnSeq)
             {
                 pushEvent(
@@ -558,7 +558,9 @@ ChainListener::processMessage(Json::Value const& msg)
         case XChainTxnType::xChainAddAccountCreateAttestation:
         case XChainTxnType::xChainAddClaimAttestation: {
             bool const isOwn = rpcResultParse::fieldMatchesStr(
-                transaction, ripple::jss::Account, witnessAccountStr_.c_str());
+                transaction,
+                ripple::jss::Account,
+                submittingAccountStr_.c_str());
             if ((isHistory || isOwn) && txnSeq)
             {
                 JLOGV(
@@ -568,7 +570,7 @@ ChainListener::processMessage(Json::Value const& msg)
                     jv("src", *src),
                     jv("dst",
                        !dst || !*dst ? std::string() : ripple::toBase58(*dst)),
-                    jv("witnessAccountStr_", witnessAccountStr_));
+                    jv("submittingAccount", submittingAccountStr_));
 
                 auto osrc = rpcResultParse::parseOtherSrcAccount(
                     transaction, *txnTypeOpt);
@@ -580,7 +582,7 @@ ChainListener::processMessage(Json::Value const& msg)
                      !odst))
                     return ignoreRet(
                         "osrc/odst account missing",
-                        jv("witnessAccountStr_", witnessAccountStr_));
+                        jv("submittingAccount", submittingAccountStr_));
 
                 std::optional<std::uint64_t> claimID, accountCreateCount;
 
@@ -624,7 +626,7 @@ ChainListener::processMessage(Json::Value const& msg)
             else
                 return ignoreRet(
                     "not an attestation sent from this server",
-                    jv("witnessAccountStr_", witnessAccountStr_));
+                    jv("submittingAccount", submittingAccountStr_));
         }
         break;
         case XChainTxnType::SignerListSet: {
@@ -1388,6 +1390,12 @@ ChainListener::getProcessedLedger() const
     return ledgerProcessedDoor_;
 }
 
+std::uint32_t
+ChainListener::getHistoryProcessedLedger() const
+{
+    return hp_.ledgerProcessed_;
+}
+
 void
 ChainListener::processAccountTx(Json::Value const& msg)
 {
@@ -1557,6 +1565,10 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
         // if (!isMarker && isLast && isHistorical)
         //     history[ripple::jss::account_history_tx_first] = true;
 
+        if ((hp_.state_ != HistoryProcessor::FINISHED) &&
+            (prevLedgerIndex_ != ledgerIdx))
+            hp_.ledgerProcessed_ = prevLedgerIndex_;
+
         bool const lgrBdr = (hp_.state_ != HistoryProcessor::FINISHED)
             ? prevLedgerIndex_ != ledgerIdx
             : isLast;
@@ -1599,8 +1611,8 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
         auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
         if (account == doorAccStr)
             ledgerProcessedDoor_ = ledgerMax;
-        else if (account == witnessAccountStr_)
-            ledgerProcessedSign_ = ledgerMax;
+        else if (account == submittingAccountStr_)
+            ledgerProcessedSubmit_ = ledgerMax;
     }
 
     if (isMarker &&
@@ -1733,12 +1745,13 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
                 : hp_.startupLedger_ + 1;
             ledgerReqMax_ = ledgerIdx;
             accountTx(doorAccStr, ledgerReqMinDoor, ledgerReqMax_);
-            if (!witnessAccountStr_.empty())
+            if (!submittingAccountStr_.empty())
             {
-                auto const ledgerReqMinSign = ledgerProcessedSign_
-                    ? ledgerProcessedSign_ + 1
+                auto const ledgerReqMinSub = ledgerProcessedSubmit_
+                    ? ledgerProcessedSubmit_ + 1
                     : hp_.startupLedger_ + 1;
-                accountTx(witnessAccountStr_, ledgerReqMinSign, ledgerReqMax_);
+                accountTx(
+                    submittingAccountStr_, ledgerReqMinSub, ledgerReqMax_);
             }
         }
 

@@ -648,7 +648,7 @@ AttestedHistoryTx::fromEvent(FederatorEvent const& r)
 void
 Federator::tryFinishInitSync(ChainType const ct)
 {
-    if (!initSync_[ct].historyDone_ || !initSync_[ct].oldTxExpired_)
+    if (!initSync_[ct].historyDone_)
         return;
 
     JLOGV(
@@ -1281,25 +1281,56 @@ Federator::onEvent(event::NewLedger const& e)
 {
     auto const ct = e.chainType_;
 
-    JLOGV(
-        j_.trace(),
-        "onEvent NewLedger",
-        jv("dbLedgerSqn", initSync_[ct].dbLedgerSqn_),
-        jv("event", e.toJson()));
+    JLOGV(j_.trace(), "onEvent NewLedger", jv("event", e.toJson()));
 
     ledgerIndexes_[ct].store(e.ledgerIndex_);
     ledgerFees_[ct].store(e.fee_);
 
-    if (initSync_[ct].syncing_)
+    auto const oct = otherChain(ct);
+    auto const historyProcessedLedger =
+        chains_[ct].listener_->getHistoryProcessedLedger();
+    // If last tx not set (expected for issuing side) then check last processed
+    // ledger
+    if (initSync_[oct].syncing_ && !initSync_[oct].historyDone_ &&
+        !initSync_[oct].dbTxnHash_ && initSync_[oct].dbLedgerSqn_ &&
+        historyProcessedLedger &&
+        (historyProcessedLedger <= initSync_[oct].dbLedgerSqn_))
     {
-        initSync_[ct].oldTxExpired_ =
-            e.ledgerIndex_ > initSync_[ct].dbLedgerSqn_;
-        tryFinishInitSync(ct);
-        return;
+        initSync_[oct].historyDone_ = true;
+        JLOGV(
+            j_.trace(),
+            "initSync found previous processed ledger",
+            jv("other chain", to_string(oct)),
+            jv("db ledger", initSync_[oct].dbLedgerSqn_),
+            jv("history processed ledger", historyProcessedLedger));
+        tryFinishInitSync(oct);
     }
 
     if (!autoSubmit_[ct] || isSyncing())
         return;
+
+    // History mode OFF
+
+    auto const processedLedger = chains_[ct].listener_->getProcessedLedger();
+    // Save last processed ledger, cause issuing side doesn't save last
+    // transaction
+    if (processedLedger > initSync_[oct].dbLedgerSqn_)
+    {
+        auto session = app_.getXChainTxnDB().checkoutDb();
+        auto const sql = fmt::format(
+            "UPDATE {} SET LedgerSeq = :ledger_sqn WHERE ChainType = "
+            ":chain_type;",
+            db_init::xChainSyncTable);
+        // Use other chain to be consistent with dbTxnHash_
+        auto const uct = static_cast<std::uint32_t>(oct);
+        *session << sql, soci::use(processedLedger), soci::use(uct);
+        initSync_[oct].dbLedgerSqn_ = processedLedger;
+        JLOGV(
+            j_.trace(),
+            "syncDB update processed ledger",
+            jv("otherChain", to_string(oct)),
+            jv("ledger", processedLedger));
+    }
 
     bool notify = false;
     {
@@ -1829,21 +1860,6 @@ Federator::txnSubmitLoop()
                 ledgerIndexes_[submitChain].load() + TxnTTLLedgers;
             txn->lastLedgerSeq_ = lastLedgerSeq;
             txn->accountSqn_ = accountSqns_[submitChain]++;
-            {
-                // TODO move out of submit loop
-                auto session = app_.getXChainTxnDB().checkoutDb();
-                auto const sql = fmt::format(
-                    R"sql(UPDATE {table_name} SET LedgerSeq = :ledger_sqn WHERE ChainType = :chain_type;
-            )sql",
-                    fmt::arg("table_name", db_init::xChainSyncTable));
-                auto const chainType = static_cast<std::uint32_t>(submitChain);
-                *session << sql, soci::use(lastLedgerSeq), soci::use(chainType);
-                JLOGV(
-                    j_.trace(),
-                    "syncDB update ledgerSqn txnSubmitLoop",
-                    jv("chain", to_string(submitChain)),
-                    jv("ledgerSqn", lastLedgerSeq));
-            }
             submitTxn(std::move(txn), submitChain);
         }
         localTxns.clear();

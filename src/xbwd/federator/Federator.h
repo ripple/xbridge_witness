@@ -319,7 +319,6 @@ class Federator : public std::enable_shared_from_this<Federator>
         ripple::uint256 dbTxnHash_;
         std::uint32_t dbLedgerSqn_{0u};
         bool historyDone_{false};
-        bool oldTxExpired_{false};
         std::int32_t rpcOrder_{std::numeric_limits<std::int32_t>::min()};
         std::unordered_set<AttestedHistoryTx, ripple::hardened_hash<>>
             attestedTx_;

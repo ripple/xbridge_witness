@@ -62,12 +62,16 @@ struct HistoryProcessor
     // Ledger that divide transactions on historical and new
     unsigned startupLedger_ = 0;
 
-    // requesting ledgers in batch and check transactions after every batch
+    // Requesting ledgers in batch and check transactions after every batch
     // request
     unsigned const requestLedgerBatch_ = 100;
     unsigned toRequestLedger_ = 0;
 
+    // Minimal ledger validated by rippled. Retrieved from server_info
     unsigned minValidatedLedger_ = 0;
+
+    // History processed ledger
+    std::atomic_uint ledgerProcessed_ = 0;
 
     void
     clear();
@@ -79,7 +83,7 @@ private:
     ChainType const chainType_;
 
     ripple::STXChainBridge const bridge_;
-    std::string const witnessAccountStr_;
+    std::string const submittingAccountStr_;
     std::weak_ptr<Federator> const federator_;
     std::optional<ripple::AccountID> const signingAccount_;
     beast::Journal j_;
@@ -105,7 +109,7 @@ private:
     std::atomic_uint ledgerProcessedDoor_ = 0;
     // last ledger that was processed for Signing account (in case of errors /
     // disconnects)
-    unsigned ledgerProcessedSign_ = 0;
+    unsigned ledgerProcessedSubmit_ = 0;
     // To determine ledger boundary acros consecutive requests for given
     // account.
     std::int32_t prevLedgerIndex_ = 0;
@@ -164,6 +168,9 @@ public:
 
     std::uint32_t
     getProcessedLedger() const;
+
+    std::uint32_t
+    getHistoryProcessedLedger() const;
 
 private:
     void
