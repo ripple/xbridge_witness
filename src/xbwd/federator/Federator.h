@@ -104,6 +104,11 @@ struct Submission
         ripple::XRPAmount const& fee,
         beast::Journal j) const = 0;
 
+    virtual bool
+    checkID(
+        std::optional<std::uint32_t> const& claim,
+        std::optional<std::uint32_t> const& create) = 0;
+
 protected:
     Submission(
         std::uint32_t lastLedgerSeq,
@@ -173,6 +178,11 @@ struct SubmissionClaim : public Submission
         config::TxnSubmit const& txn,
         ripple::XRPAmount const& fee,
         beast::Journal j) const override;
+
+    virtual bool
+    checkID(
+        std::optional<std::uint32_t> const& claim,
+        std::optional<std::uint32_t> const& create) override;
 };
 
 struct SubmissionCreateAccount : public Submission
@@ -203,6 +213,11 @@ struct SubmissionCreateAccount : public Submission
         config::TxnSubmit const& txn,
         ripple::XRPAmount const& fee,
         beast::Journal j) const override;
+
+    virtual bool
+    checkID(
+        std::optional<std::uint32_t> const& claim,
+        std::optional<std::uint32_t> const& create) override;
 };
 
 struct SignerListInfo

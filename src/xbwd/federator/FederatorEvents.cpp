@@ -121,6 +121,7 @@ XChainAttestsResult::toJson() const
     result["ter"] = text;
 
     result["isHistory"] = isHistory_;
+    result["isFinal"] = isFinal_;
     result["type"] = static_cast<int>(type_);
     result["src"] = toBase58(src_);
     result["dst"] = toBase58(dst_);

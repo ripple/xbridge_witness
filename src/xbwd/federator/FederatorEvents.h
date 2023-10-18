@@ -105,13 +105,14 @@ struct XChainTransferResult
 
 struct XChainAttestsResult
 {
-    ChainType chainType_;
-    std::uint32_t accountSqn_;
+    ChainType chainType_ = ChainType::locking;
+    std::uint32_t accountSqn_ = 0;
     ripple::uint256 txnHash_;
     ripple::TER ter_;
 
-    bool isHistory_;
-    xbwd::XChainTxnType type_;
+    bool isHistory_ = false;
+    bool isFinal_ = false;
+    xbwd::XChainTxnType type_ = xbwd::XChainTxnType::xChainAddClaimAttestation;
     ripple::AccountID src_, dst_;
     std::optional<std::uint64_t> createCount_, claimID_;
 

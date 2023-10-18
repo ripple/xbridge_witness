@@ -547,9 +547,30 @@ ChainListener::processMessage(Json::Value const& msg)
 #endif
         case XChainTxnType::xChainAddAccountCreateAttestation:
         case XChainTxnType::xChainAddClaimAttestation: {
+            std::optional<std::uint64_t> claimID, accountCreateCount;
+
             bool const isOwn = rpcResultParse::fieldMatchesStr(
                 transaction, ripple::jss::Account, submitAccountStr_.c_str());
-            if ((isHistory || isOwn) && txnSeq)
+            bool const isFinal = [&]() {
+                if (txnTypeOpt == XChainTxnType::xChainAddClaimAttestation)
+                {
+                    claimID = Json::getOptional<std::uint64_t>(
+                        transaction, ripple::sfXChainClaimID);
+                    return claimID && isDeletedClaimId(meta, *claimID);
+                }
+                else if (
+                    txnTypeOpt ==
+                    XChainTxnType::xChainAddAccountCreateAttestation)
+                {
+                    accountCreateCount = Json::getOptional<std::uint64_t>(
+                        transaction, ripple::sfXChainAccountCreateCount);
+                    return accountCreateCount &&
+                        isDeletedAccCnt(meta, *accountCreateCount);
+                }
+                return false;
+            }();
+
+            if ((isFinal || isOwn) && txnSeq)
             {
                 JLOGV(
                     j_.trace(),
@@ -572,31 +593,14 @@ ChainListener::processMessage(Json::Value const& msg)
                         "osrc/odst account missing",
                         jv("submitAccount", submitAccountStr_));
 
-                std::optional<std::uint64_t> claimID, accountCreateCount;
-
-                if (txnTypeOpt == XChainTxnType::xChainAddClaimAttestation)
-                {
-                    claimID = Json::getOptional<std::uint64_t>(
-                        transaction, ripple::sfXChainClaimID);
-                    if (!claimID)
-                        return ignoreRet("no claimID");
-
-                    if (!isOwn && !isDeletedClaimId(meta, *claimID))
-                        return ignoreRet("claimID not in DeletedNode");
-                }
-
-                if (txnTypeOpt ==
-                    XChainTxnType::xChainAddAccountCreateAttestation)
-                {
-                    accountCreateCount = Json::getOptional<std::uint64_t>(
-                        transaction, ripple::sfXChainAccountCreateCount);
-                    if (!accountCreateCount)
-                        return ignoreRet("no accountCreateCount");
-
-                    if (!isOwn && !isDeletedAccCnt(meta, *accountCreateCount))
-                        return ignoreRet(
-                            "accountCreateCount not in DeletedNode");
-                }
+                if ((txnTypeOpt == XChainTxnType::xChainAddClaimAttestation) &&
+                    !claimID)
+                    return ignoreRet("no claimID");
+                else if (
+                    (txnTypeOpt ==
+                     XChainTxnType::xChainAddAccountCreateAttestation) &&
+                    !accountCreateCount)
+                    return ignoreRet("no accountCreateCount");
 
                 pushEvent(event::XChainAttestsResult{
                     chainType_,
@@ -604,6 +608,7 @@ ChainListener::processMessage(Json::Value const& msg)
                     *txnHash,
                     txnTER,
                     isHistory,
+                    isFinal,
                     *txnTypeOpt,
                     *osrc,
                     odst ? *odst : ripple::AccountID(),

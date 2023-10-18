@@ -1245,30 +1245,44 @@ Federator::onEvent(event::XChainAttestsResult const& e)
     if (!SkippableTxnResult.contains(TERtoInt(e.ter_)))
         return;
 
+    // Can be several attestations with the same ClaimID
+    std::list<SubmissionPtr> subToDelete;
     {
         std::lock_guard l{txnsMutex_};
         auto& subs = submitted_[ct];
-        if (auto it = std::find_if(
-                subs.begin(),
-                subs.end(),
-                [&](auto const& i) { return i->accountSqn_ == e.accountSqn_; });
-            it != subs.end())
+        std::list<SubmissionPtr>::iterator it = subs.begin();
+        do
         {
-            // Deleting events from the opposite side of attestations
-            auto const attestedIDs = (*it)->forAttestIDs(
-                [&](std::uint64_t id) { deleteFromDB(oct, id, false); },
-                [&](std::uint64_t id) { deleteFromDB(oct, id, true); });
-            JLOGV(
-                j_.trace(),
-                "XChainAttestsResult processed",
-                jv("chainType", to_string(ct)),
-                jv("accountSqn", e.accountSqn_),
-                jv("result", e.ter_),
-                jv("commitAttests", attestedIDs.first),
-                jv("createAttests", attestedIDs.second));
+            if (it = std::find_if(
+                    it,
+                    subs.end(),
+                    [&](auto const& i) {
+                        return e.isFinal_
+                            ? i->checkID(e.claimID_, e.createCount_)
+                            : i->accountSqn_ == e.accountSqn_;
+                    });
+                it != subs.end())
+            {
+                subToDelete.push_back(std::move(*it));
+                it = subs.erase(it);
+            }
+        } while (e.isFinal_ && (it != subs.end()));
+    }
 
-            subs.erase(it);
-        }
+    for (auto& sub : subToDelete)
+    {
+        // Deleting events from the opposite side of the attestations
+        auto const attestedIDs = sub->forAttestIDs(
+            [&](std::uint64_t id) { deleteFromDB(oct, id, false); },
+            [&](std::uint64_t id) { deleteFromDB(oct, id, true); });
+        JLOGV(
+            j_.trace(),
+            "XChainAttestsResult processed",
+            jv("chainType", to_string(ct)),
+            jv("accountSqn", e.accountSqn_),
+            jv("result", e.ter_),
+            jv("commitAttests", attestedIDs.first),
+            jv("createAttests", attestedIDs.second));
     }
 
     if (e.isHistory_)
@@ -1284,8 +1298,12 @@ Federator::onEvent(event::XChainAttestsResult const& e)
             jv("type", static_cast<int>(e.type_)),
             jv("src", e.src_),
             jv("dst", e.dst_),
-            jv("createCount", e.createCount_ ? *e.createCount_ : 0),
-            jv("claimID", e.claimID_ ? *e.claimID_ : 0));
+            jv("createCount",
+               e.createCount_ ? fmt::format("{:x}", *e.createCount_)
+                              : std::string("0")),
+            jv("claimID",
+               e.claimID_ ? fmt::format("{:x}", *e.claimID_)
+                          : std::string("0")));
     }
 }
 
@@ -1299,7 +1317,7 @@ Federator::onEvent(event::NewLedger const& e)
         chains_[ct].listener_->getSubmitProcessedLedger();
 
     JLOGV(
-        j_.trace(),
+        j_.debug(),
         "onEvent NewLedger",
         jv("processedDoorLedger", doorLedgerIndex),
         jv("processedSubmitLedger", submitLedgerIndex),
@@ -1343,15 +1361,19 @@ Federator::checkExpired(ChainType ct, std::uint32_t ledger)
             auto& front = subs.front();
             if (front->retriesAllowed_ > 0)
             {
-                front->retriesAllowed_--;
-                front->accountSqn_ = 0;
-                front->lastLedgerSeq_ = 0;
                 JLOGV(
                     j_.warn(),
                     "Ledger TTL expired, move to errored",
                     jv("chainType", to_string(ct)),
-                    jv("lastLedgerSeq", front->lastLedgerSeq_),
+                    jv("retries",
+                       static_cast<unsigned>(front->retriesAllowed_)),
+                    jv("accSqn", front->accountSqn_),
+                    jv("lastLedger", front->lastLedgerSeq_),
                     jv("tx", front->getJson()));
+
+                front->retriesAllowed_--;
+                front->accountSqn_ = 0;
+                front->lastLedgerSeq_ = 0;
                 errored_[ct].emplace_back(std::move(front));
             }
             else
@@ -2237,6 +2259,14 @@ SubmissionClaim::getSignedTxn(
         j);
 }
 
+bool
+SubmissionClaim::checkID(
+    std::optional<std::uint32_t> const& claim,
+    std::optional<std::uint32_t> const&)
+{
+    return claim == claim_.claimID;
+}
+
 SubmissionCreateAccount::SubmissionCreateAccount(
     std::uint32_t lastLedgerSeq,
     std::uint32_t accountSqn,
@@ -2290,6 +2320,14 @@ SubmissionCreateAccount::getSignedTxn(
         fee,
         txn.keypair,
         j);
+}
+
+bool
+SubmissionCreateAccount::checkID(
+    std::optional<std::uint32_t> const&,
+    std::optional<std::uint32_t> const& create)
+{
+    return create == create_.createCount;
 }
 
 Json::Value
