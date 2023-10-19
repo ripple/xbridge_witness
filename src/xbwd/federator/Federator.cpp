@@ -1246,7 +1246,8 @@ Federator::onEvent(event::XChainAttestsResult const& e)
         return;
 
     // Can be several attestations with the same ClaimID
-    std::list<SubmissionPtr> subToDelete;
+    std::vector<SubmissionPtr> subToDelete;
+    subToDelete.reserve(2);  // no more expected
     {
         std::lock_guard l{txnsMutex_};
         auto& subs = submitted_[ct];
