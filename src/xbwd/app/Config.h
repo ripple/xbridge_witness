@@ -76,6 +76,10 @@ public:
     ripple::STXChainBridge bridge;
     std::optional<AdminConfig> adminConfig;
 
+    // "Window" size for sending attestations
+    // 0 - no "window"
+    std::uint32_t maxAttToSend = 0;
+
     std::string logFile;
     std::string logLevel;
     bool logSilent;

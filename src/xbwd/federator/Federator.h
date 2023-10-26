@@ -61,6 +61,17 @@ static constexpr std::uint8_t TxnTTLLedgers = 4;
 // txn fee in addition to the reference txn fee in the last observed ledger
 static constexpr std::uint32_t FeeExtraDrops = 10;
 
+struct SubmissionSort
+{
+    std::optional<std::uint32_t> v1;
+    std::optional<std::uint32_t> v2;
+
+    bool
+    operator<(const SubmissionSort& s) const;
+    bool
+    operator==(const SubmissionSort& s) const;
+};
+
 struct Submission
 {
     std::uint8_t retriesAllowed_ = MaxResubmits;
@@ -108,6 +119,15 @@ struct Submission
     checkID(
         std::optional<std::uint32_t> const& claim,
         std::optional<std::uint32_t> const& create) = 0;
+
+    virtual SubmissionSort
+    getSort() const = 0;
+
+    bool
+    operator<(const Submission& s) const;
+
+    bool
+    operator==(const Submission& s) const;
 
 protected:
     Submission(
@@ -183,6 +203,9 @@ struct SubmissionClaim : public Submission
     checkID(
         std::optional<std::uint32_t> const& claim,
         std::optional<std::uint32_t> const& create) override;
+
+    virtual SubmissionSort
+    getSort() const override;
 };
 
 struct SubmissionCreateAccount : public Submission
@@ -218,6 +241,9 @@ struct SubmissionCreateAccount : public Submission
     checkID(
         std::optional<std::uint32_t> const& claim,
         std::optional<std::uint32_t> const& create) override;
+
+    virtual SubmissionSort
+    getSort() const override;
 };
 
 struct SignerListInfo
@@ -297,6 +323,10 @@ class Federator : public std::enable_shared_from_this<Federator>
     ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) txns_;
     ChainArray<std::list<SubmissionPtr>> GUARDED_BY(txnsMutex_) submitted_;
     ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) errored_;
+
+    // "Window" size for sending attestations
+    // 0 - no "window"
+    std::uint32_t const maxAttToSend_ = 0;
 
     std::optional<ripple::AccountID> signingAccount_;
     ripple::KeyType const keyType_;

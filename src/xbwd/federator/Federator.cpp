@@ -117,6 +117,7 @@ Federator::Federator(
                   chains_[ChainType::locking].txnSubmit_->shouldSubmit,
                   chains_[ChainType::issuing].txnSubmit_ &&
                   chains_[ChainType::issuing].txnSubmit_->shouldSubmit}
+    , maxAttToSend_(config.maxAttToSend)
     , keyType_{config.keyType}
     , signingAccount_(config.signingAccount)
     , signingPK_{derivePublicKey(config.keyType, config.signingKey)}
@@ -273,123 +274,6 @@ Federator::readDBAttests(ChainType ct)
 
     try
     {
-        auto const& tblName = db_init::xChainTableName(ct);
-        auto session = app_.getXChainTxnDB().checkoutDb();
-        soci::blob amtBlob(*session);
-        soci::blob bridgeBlob(*session);
-        soci::blob sendingAccountBlob(*session);
-        soci::blob rewardAccountBlob(*session);
-        soci::blob otherChainDstBlob(*session);
-        soci::blob signingAccountBlob(*session);
-        soci::blob publicKeyBlob(*session);
-        soci::blob signatureBlob(*session);
-
-        std::string transID;
-        int ledgerSeq;
-        int claimID;
-        int success;
-
-        auto const sql = fmt::format(
-            R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
-                     Bridge, SendingAccount, RewardAccount, OtherChainDst,
-                     SigningAccount, PublicKey, Signature
-                  FROM {table_name} ORDER BY ClaimID;
-        )sql",
-            fmt::arg("table_name", tblName));
-
-        soci::indicator otherChainDstInd;
-        soci::statement st =
-            ((*session).prepare << sql,
-             soci::into(transID),
-             soci::into(ledgerSeq),
-             soci::into(claimID),
-             soci::into(success),
-             soci::into(amtBlob),
-             soci::into(bridgeBlob),
-             soci::into(sendingAccountBlob),
-             soci::into(rewardAccountBlob),
-             soci::into(otherChainDstBlob, otherChainDstInd),
-             soci::into(signingAccountBlob),
-             soci::into(publicKeyBlob),
-             soci::into(signatureBlob));
-        st.execute();
-
-        ripple::STXChainBridge bridge;
-
-        while (st.fetch())
-        {
-            ripple::AccountID signingAccount;
-            convert(signingAccountBlob, signingAccount);
-
-            ripple::PublicKey signingPK;
-            convert(publicKeyBlob, signingPK);
-
-            ripple::Buffer sigBuf;
-            convert(signatureBlob, sigBuf);
-
-            ripple::STAmount sendingAmount;
-            convert(amtBlob, sendingAmount, ripple::sfAmount);
-
-            ripple::AccountID sendingAccount;
-            convert(sendingAccountBlob, sendingAccount);
-
-            ripple::AccountID rewardAccount;
-            convert(rewardAccountBlob, rewardAccount);
-
-            std::optional<ripple::AccountID> optDst;
-            if (otherChainDstInd == soci::i_ok)
-            {
-                optDst.emplace();
-                convert(otherChainDstBlob, *optDst);
-            }
-
-            convert(bridgeBlob, bridge, ripple::sfXChainBridge);
-            if (bridge != bridge_)
-            {
-                JLOGV(
-                    j_.warn(),
-                    "readDBAttests bridge mismatch, skipping attestation",
-                    jv("db bridge", bridge.getJson(ripple::JsonOptions::none)),
-                    jv("current bridge",
-                       bridge_.getJson(ripple::JsonOptions::none)));
-                continue;
-            }
-
-            // The attestation will be created by the other chain
-            auto p = SubmissionPtr(new SubmissionClaim(
-                0,  // will be updated when new ledger arrive
-                0,  // will be updated if resubmitted
-                0,  // will be updated when NetworkID arrive
-                bridge,
-                ripple::Attestations::AttestationClaim{
-                    signingAccount,
-                    signingPK,
-                    sigBuf,
-                    sendingAccount,
-                    sendingAmount,
-                    rewardAccount,
-                    ct == ChainType::locking,
-                    static_cast<std::uint64_t>(claimID),
-                    optDst}));
-            {
-                std::lock_guard tl{txnsMutex_};
-                submitted_[oct].emplace_back(std::move(p));
-            }
-
-            ++commits;
-        }
-    }
-    catch (std::exception& e)
-    {
-        JLOGV(
-            j_.fatal(),
-            "readDBAttests error reading commit table.",
-            jv("what", e.what()));
-        throw;
-    }
-
-    try
-    {
         auto const& tblName = db_init::xChainCreateAccountTableName(ct);
         auto session = app_.getXChainTxnDB().checkoutDb();
         soci::blob amtBlob(*session);
@@ -503,6 +387,123 @@ Federator::readDBAttests(ChainType ct)
         JLOGV(
             j_.fatal(),
             "readDBAttests error reading createAccount table.",
+            jv("what", e.what()));
+        throw;
+    }
+
+    try
+    {
+        auto const& tblName = db_init::xChainTableName(ct);
+        auto session = app_.getXChainTxnDB().checkoutDb();
+        soci::blob amtBlob(*session);
+        soci::blob bridgeBlob(*session);
+        soci::blob sendingAccountBlob(*session);
+        soci::blob rewardAccountBlob(*session);
+        soci::blob otherChainDstBlob(*session);
+        soci::blob signingAccountBlob(*session);
+        soci::blob publicKeyBlob(*session);
+        soci::blob signatureBlob(*session);
+
+        std::string transID;
+        int ledgerSeq;
+        int claimID;
+        int success;
+
+        auto const sql = fmt::format(
+            R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
+                     Bridge, SendingAccount, RewardAccount, OtherChainDst,
+                     SigningAccount, PublicKey, Signature
+                  FROM {table_name} ORDER BY ClaimID;
+        )sql",
+            fmt::arg("table_name", tblName));
+
+        soci::indicator otherChainDstInd;
+        soci::statement st =
+            ((*session).prepare << sql,
+             soci::into(transID),
+             soci::into(ledgerSeq),
+             soci::into(claimID),
+             soci::into(success),
+             soci::into(amtBlob),
+             soci::into(bridgeBlob),
+             soci::into(sendingAccountBlob),
+             soci::into(rewardAccountBlob),
+             soci::into(otherChainDstBlob, otherChainDstInd),
+             soci::into(signingAccountBlob),
+             soci::into(publicKeyBlob),
+             soci::into(signatureBlob));
+        st.execute();
+
+        ripple::STXChainBridge bridge;
+
+        while (st.fetch())
+        {
+            ripple::AccountID signingAccount;
+            convert(signingAccountBlob, signingAccount);
+
+            ripple::PublicKey signingPK;
+            convert(publicKeyBlob, signingPK);
+
+            ripple::Buffer sigBuf;
+            convert(signatureBlob, sigBuf);
+
+            ripple::STAmount sendingAmount;
+            convert(amtBlob, sendingAmount, ripple::sfAmount);
+
+            ripple::AccountID sendingAccount;
+            convert(sendingAccountBlob, sendingAccount);
+
+            ripple::AccountID rewardAccount;
+            convert(rewardAccountBlob, rewardAccount);
+
+            std::optional<ripple::AccountID> optDst;
+            if (otherChainDstInd == soci::i_ok)
+            {
+                optDst.emplace();
+                convert(otherChainDstBlob, *optDst);
+            }
+
+            convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            if (bridge != bridge_)
+            {
+                JLOGV(
+                    j_.warn(),
+                    "readDBAttests bridge mismatch, skipping attestation",
+                    jv("db bridge", bridge.getJson(ripple::JsonOptions::none)),
+                    jv("current bridge",
+                       bridge_.getJson(ripple::JsonOptions::none)));
+                continue;
+            }
+
+            // The attestation will be created by the other chain
+            auto p = SubmissionPtr(new SubmissionClaim(
+                0,  // will be updated when new ledger arrive
+                0,  // will be updated if resubmitted
+                0,  // will be updated when NetworkID arrive
+                bridge,
+                ripple::Attestations::AttestationClaim{
+                    signingAccount,
+                    signingPK,
+                    sigBuf,
+                    sendingAccount,
+                    sendingAmount,
+                    rewardAccount,
+                    ct == ChainType::locking,
+                    static_cast<std::uint64_t>(claimID),
+                    optDst}));
+            {
+                std::lock_guard tl{txnsMutex_};
+                submitted_[oct].emplace_back(std::move(p));
+            }
+
+            ++commits;
+        }
+    }
+    catch (std::exception& e)
+    {
+        JLOGV(
+            j_.fatal(),
+            "readDBAttests error reading commit table.",
             jv("what", e.what()));
         throw;
     }
@@ -1359,17 +1360,20 @@ Federator::checkExpired(ChainType ct, std::uint32_t ledger)
     bool notify = false;
     {
         std::lock_guard l{txnsMutex_};
+
         auto& subs = submitted_[ct];
+        auto& errs = errored_[ct];
 
         // add expired txn to errored_ for resubmit
         auto firstFresh =
             std::find_if(subs.begin(), subs.end(), [ledger](auto const& s) {
                 return s->lastLedgerSeq_ > ledger;
             });
-        while (subs.begin() != firstFresh)
+
+        for (auto it = subs.begin(); it != firstFresh;)
         {
             assert(!initSync_[ct].syncing_);
-            auto& front = subs.front();
+            auto& front = *it;
             if (front->retriesAllowed_ > 0)
             {
                 JLOGV(
@@ -1385,7 +1389,7 @@ Federator::checkExpired(ChainType ct, std::uint32_t ledger)
                 front->retriesAllowed_--;
                 front->accountSqn_ = 0;
                 front->lastLedgerSeq_ = 0;
-                errored_[ct].emplace_back(std::move(front));
+                ++it;
             }
             else
             {
@@ -1397,9 +1401,24 @@ Federator::checkExpired(ChainType ct, std::uint32_t ledger)
                     jv("commitAttests", attestedIDs.first),
                     jv("createAttests", attestedIDs.second),
                     jv(front->getLogName(), front->getJson()));
+                it = subs.erase(it);
             }
-            subs.pop_front();
         }
+
+        if (subs.begin() != firstFresh)
+        {
+            auto& front = subs.front();
+            auto where =
+                std::find_if(errs.begin(), errs.end(), [&front](auto const& s) {
+                    return *front < *s;
+                });
+            errs.insert(
+                where,
+                std::make_move_iterator(subs.begin()),
+                std::make_move_iterator(firstFresh));
+            subs.erase(subs.begin(), firstFresh);
+        }
+
         notify = !errored_[ct].empty();
     }
     if (notify)
@@ -1809,6 +1828,7 @@ Federator::txnSubmitLoop()
     if (accountStrs[ChainType::locking].empty() &&
         accountStrs[ChainType::issuing].empty())
     {
+        JLOG(j_.error()) << "Will not submit transaction for ANY chain ";
         return;
     }
 
@@ -1876,44 +1896,91 @@ Federator::txnSubmitLoop()
         return false;
     };
 
-    decltype(txns_)::type localTxns;
-    ChainType submitChain = ChainType::locking;
     while (!requestStop_)
     {
-        {
-            std::lock_guard l{txnsMutex_};
-            assert(localTxns.empty());
+        bool waitForEvent = true;
 
-            for (auto const ct : {ChainType::locking, ChainType::issuing})
+        for (auto const ct : {ChainType::locking, ChainType::issuing})
+        {
+            decltype(txns_)::type localTxns;
+            decltype(txns_)::type* pLocal = nullptr;
+            bool checkReady = false;
+
             {
-                submitChain = ct;
-                if (accountStrs[submitChain].empty())
+                std::lock_guard l{txnsMutex_};
+
+                if (accountStrs[ct].empty())
                     continue;
-                if (errored_[submitChain].empty())
+                if (maxAttToSend_ && (submitted_[ct].size() > maxAttToSend_))
+                    continue;
+
+                if (errored_[ct].empty())
                 {
-                    if (!txns_[submitChain].empty())
+                    if (!txns_[ct].empty())
                     {
-                        if (!getReady(submitChain))
-                            continue;
-                        localTxns.swap(txns_[submitChain]);
-                        break;
+                        checkReady = true;
+                        pLocal = &(txns_[ct]);
                     }
                 }
                 else
                 {
-                    if (submitted_[submitChain].empty())
+                    if (submitted_[ct].empty())
                     {
-                        accountSqns_[submitChain] = 0;
-                        if (!getReady(submitChain))
-                            continue;
-                        localTxns.swap(errored_[submitChain]);
-                        break;
+                        accountSqns_[ct] = 0;
+                        checkReady = true;
+                        pLocal = &(errored_[ct]);
                     }
                 }
             }
+
+            if (checkReady)
+            {
+                if (!getReady(ct))
+                    continue;
+                std::lock_guard l{txnsMutex_};
+
+                std::uint32_t const numToSend = maxAttToSend_
+                    ? (submitted_[ct].size() <= maxAttToSend_
+                           ? maxAttToSend_ - submitted_[ct].size()
+                           : 0)
+                    : pLocal->size();
+                if (!numToSend)
+                    continue;
+
+                if (pLocal->size() <= numToSend)
+                    localTxns.swap(*pLocal);
+                else
+                {
+                    JLOGV(
+                        j_.trace(),
+                        "Waiting size exceed window size",
+                        jv("chainType", to_string(ct)),
+                        jv("waiting size", pLocal->size()),
+                        jv("window size", maxAttToSend_),
+                        jv("send size", numToSend));
+
+                    auto start = pLocal->begin();
+                    auto finish = start + numToSend;
+                    localTxns.assign(
+                        std::make_move_iterator(start),
+                        std::make_move_iterator(finish));
+                    pLocal->erase(start, finish);
+                }
+            }
+
+            waitForEvent = waitForEvent && localTxns.empty();
+
+            for (auto& txn : localTxns)
+            {
+                auto const lastLedgerSeq =
+                    ledgerIndexes_[ct].load() + TxnTTLLedgers;
+                txn->lastLedgerSeq_ = lastLedgerSeq;
+                txn->accountSqn_ = accountSqns_[ct]++;
+                submitTxn(std::move(txn), ct);
+            }
         }
 
-        if (localTxns.empty())
+        if (waitForEvent)
         {
             using namespace std::chrono_literals;
             // In rare cases, an event may be pushed and the condition
@@ -1925,16 +1992,6 @@ Federator::txnSubmitLoop()
             cvs_[lt].wait_for(l, 1s);
             continue;
         }
-
-        for (auto& txn : localTxns)
-        {
-            auto const lastLedgerSeq =
-                ledgerIndexes_[submitChain].load() + TxnTTLLedgers;
-            txn->lastLedgerSeq_ = lastLedgerSeq;
-            txn->accountSqn_ = accountSqns_[submitChain]++;
-            submitTxn(std::move(txn), submitChain);
-        }
-        localTxns.clear();
     }
 }
 
@@ -2178,6 +2235,18 @@ Federator::setNetworkID(std::uint32_t networkID, ChainType ct)
     }
 }
 
+bool
+SubmissionSort::operator<(const SubmissionSort& s) const
+{
+    return v1 ? v1 < s.v1 : v2 < s.v2;
+}
+
+bool
+SubmissionSort::operator==(const SubmissionSort& s) const
+{
+    return v1 ? v1 == s.v1 : v2 == s.v2;
+}
+
 Submission::Submission(
     std::uint32_t lastLedgerSeq,
     std::uint32_t accountSqn,
@@ -2194,6 +2263,18 @@ std::string const&
 Submission::getLogName() const
 {
     return logName_;
+}
+
+bool
+Submission::operator<(const Submission& s) const
+{
+    return getSort() < s.getSort();
+}
+
+bool
+Submission::operator==(const Submission& s) const
+{
+    return getSort() == s.getSort();
 }
 
 #ifdef USE_BATCH_ATTESTATION
@@ -2308,6 +2389,12 @@ SubmissionClaim::checkID(
     return claim == claim_.claimID;
 }
 
+SubmissionSort
+SubmissionClaim::getSort() const
+{
+    return {{}, claim_.claimID};
+}
+
 SubmissionCreateAccount::SubmissionCreateAccount(
     std::uint32_t lastLedgerSeq,
     std::uint32_t accountSqn,
@@ -2369,6 +2456,12 @@ SubmissionCreateAccount::checkID(
     std::optional<std::uint32_t> const& create)
 {
     return create == create_.createCount;
+}
+
+SubmissionSort
+SubmissionCreateAccount::getSort() const
+{
+    return {create_.createCount, {}};
 }
 
 Json::Value
