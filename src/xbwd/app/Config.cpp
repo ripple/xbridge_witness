@@ -136,6 +136,8 @@ Config::Config(Json::Value const& jv)
           jv,
           ripple::sfXChainBridge.getJsonName())}
     , adminConfig{jv.isMember("Admin") ? AdminConfig::make(jv["Admin"]) : std::nullopt}
+    , maxAttToSend(
+          jv.isMember("MaxAttToSend") ? jv["MaxAttToSend"].asUInt() : 200)
     , logFile(jv.isMember("LogFile") ? jv["LogFile"].asString() : std::string())
     , logLevel(
           jv.isMember("LogLevel") ? jv["LogLevel"].asString() : std::string())
