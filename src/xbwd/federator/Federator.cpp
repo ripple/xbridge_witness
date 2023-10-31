@@ -539,6 +539,9 @@ Federator::start()
 void
 Federator::stop()
 {
+    chains_[ChainType::locking].listener_->shutdown();
+    chains_[ChainType::issuing].listener_->shutdown();
+
     if (running_)
     {
         requestStop_ = true;
@@ -552,8 +555,6 @@ Federator::stop()
             threads_[i].join();
         running_ = false;
     }
-    chains_[ChainType::locking].listener_->shutdown();
-    chains_[ChainType::issuing].listener_->shutdown();
 }
 
 void
@@ -1841,7 +1842,11 @@ Federator::txnSubmitLoop()
     ChainArray<bool> waitingAccountInfo{false, false};
     ChainArray<std::uint32_t> accountInfoSqns{0u, 0u};
     std::mutex accountInfoMutex;
-    // return if ready to submit txn
+
+    // Return true if ready to submit txn.
+    // Lifetime of the captured variables is almost program-wide, cause 'while
+    // (!requestStop_)' loop will never stop. The loop will stop just before
+    // shutdown and connections will be closed too, so callback will not fire.
     auto getReady = [&](ChainType chain) -> bool {
         if (ledgerIndexes_[chain] == 0 || ledgerFees_[chain] == 0)
         {
