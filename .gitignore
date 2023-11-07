@@ -28,6 +28,13 @@
 build
 .nih_c
 .vs
+__pycache__
+packages
 
 # Conan presets
 CMakeUserPresets.json
+
+# pyenv virtualenv
+.python-version
+
+.vscode/
