@@ -1,0 +1,23 @@
+include(GNUInstallDirs)
+set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
+set(CPACK_PACKAGE_VENDOR "Ripple")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/xbwd")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "xchain witness")
+include(XBridgeWitnessVersion)
+set(CPACK_PACKAGE_VERSION "${xbwd_version}")
+set(CPACK_PACKAGE_VENDOR "Ripple")
+set(CPACK_PACKAGE_CONTACT "Ripple Labs Inc. <support@ripple.com>")
+set(CPACK_PACKAGE_DIRECTORY ${CMAKE_SOURCE_DIR}/packages)
+
+if(${PKG} STREQUAL deb)
+    include(packaging/deb)
+elseif(${PKG} STREQUAL rpm)
+    include(packaging/rpm)
+else()
+    message(ERROR "No package type provided!")
+endif()
+message("Building ${PKG} package.")
+
+set(CPACK_SOURCE_IGNORE_FILES ${CMAKE_BINARY_DIR})
+
+include(CPack)

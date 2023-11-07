@@ -226,6 +226,8 @@ add_executable (${PROJECT_NAME}
   ${UNIT_TESTS}
 )
 
+install (TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+
 target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector-strong")
 if (is_linux)
   target_link_options(${PROJECT_NAME} PUBLIC "LINKER:-z,relro,-z,now")
@@ -259,3 +261,5 @@ endif ()
 get_target_property(FMT_INC_DIRS fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
 list (GET FMT_INC_DIRS 0 FMT_INC_DIR)
 target_include_directories(${PROJECT_NAME} BEFORE PRIVATE ${FMT_INC_DIR})
+
+include(packaging/package)
