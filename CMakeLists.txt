@@ -203,9 +203,14 @@ set(SOURCES
   src/xbwd/rpc/ServerHandler.cpp
 )
 
+set(UNIT_TESTS
+  src/test/Config_test.cpp
+)
+
 add_executable (${PROJECT_NAME}
   ${SOURCES}
   ${HEADERS}
+  ${UNIT_TESTS}
 )
 
 target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector-strong")
