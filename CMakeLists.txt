@@ -35,6 +35,7 @@ find_package(SOCI REQUIRED)
 find_package(fmt REQUIRED)
 find_package(date REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(Threads)
 
 include(XBridgeWitnessNIH)
 

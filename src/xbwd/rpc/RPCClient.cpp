@@ -10,8 +10,6 @@
 
 #include <ripple/basics/Log.h>
 #include <ripple/json/json_reader.h>
-#include <ripple/net/HTTPClient.h>
-#include <ripple/net/RPCErr.h>
 #include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/jss.h>
 

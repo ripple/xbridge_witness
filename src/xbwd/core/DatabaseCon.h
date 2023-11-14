@@ -20,9 +20,6 @@
 
 #include <xbwd/core/SociDB.h>
 
-#include <ripple/app/main/DBInit.h>
-#include <ripple/core/Config.h>
-
 #include <boost/filesystem/path.hpp>
 
 #include <mutex>

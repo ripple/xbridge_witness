@@ -21,7 +21,9 @@
 
 #include <xbwd/basics/ThreadSaftyAnalysis.h>
 
-#include <ripple/core/Config.h>
+#include <ripple/beast/net/IPEndpoint.h>
+#include <ripple/beast/utility/Journal.h>
+#include <ripple/json/json_value.h>
 
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/tcp.hpp>
