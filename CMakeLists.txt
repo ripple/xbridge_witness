@@ -203,9 +203,14 @@ set(SOURCES
   src/xbwd/rpc/ServerHandler.cpp
 )
 
-set(UNIT_TESTS
-  src/test/Config_test.cpp
-)
+option(tests "Enable unit tests" ON)
+
+if (tests)
+  set(UNIT_TESTS
+    src/test/Config_test.cpp
+    src/test/DB_test.cpp
+  )
+endif () #tests
 
 add_executable (${PROJECT_NAME}
   ${SOURCES}
