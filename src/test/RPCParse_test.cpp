@@ -44,6 +44,8 @@ private:
     void
     testToString()
     {
+        testcase("Test enum to string conversion");
+
         BEAST_EXPECT(to_string(XChainTxnType::xChainCommit) == "xChainCommit");
         BEAST_EXPECT(to_string(XChainTxnType::xChainClaim) == "xChainClaim");
         BEAST_EXPECT(
@@ -68,6 +70,7 @@ private:
     void
     testMatchStr()
     {
+        testcase("Test matching string");
         using namespace rpcResultParse;
 
         Json::Value j;
@@ -79,6 +82,7 @@ private:
     void
     testParse()
     {
+        testcase("Test parser");
         using namespace rpcResultParse;
 
         Json::Value jvCreate;

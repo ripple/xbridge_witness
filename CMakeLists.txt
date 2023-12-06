@@ -210,6 +210,7 @@ if (tests)
     src/test/Config_test.cpp
     src/test/DB_test.cpp
     src/test/RPCParse_test.cpp
+    src/test/WS_test.cpp
   )
 endif () #tests
 
