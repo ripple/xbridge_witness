@@ -18,7 +18,7 @@
 //==============================================================================
 
 #include <xbwd/basics/StructuredLog.h>
-#include <xbwd/client/WebsocketClient.h>
+#include <xbwd/rpc/RPCClient.h>
 #include <xbwd/rpc/fromJSON.h>
 
 #include <ripple/beast/unit_test.h>
@@ -27,9 +27,11 @@
 #include <ripple/protocol/AccountID.h>
 #include <ripple/protocol/jss.h>
 
+#include <boost/asio/dispatch.hpp>
 #include <boost/asio/strand.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/core/error.hpp>
+#include <boost/beast/http.hpp>
 #include <boost/beast/websocket.hpp>
 #include <fmt/format.h>
 
@@ -42,6 +44,7 @@ namespace xbwd {
 namespace tests {
 
 namespace websocket = boost::beast::websocket;
+namespace http = boost::beast::http;
 using tcp = boost::asio::ip::tcp;
 
 using namespace std::chrono_literals;
@@ -51,7 +54,8 @@ static std::mutex gMcv;
 
 static unsigned const NUM_THREADS = 2;
 static std::string const LHOST = "127.0.0.1";
-static std::uint16_t const LPORT = 55555;
+static std::uint16_t const LPORT = 55556;
+static std::string MIME_TYPE = "application/json";
 
 static void
 fail(boost::beast::error_code ec, char const* what)
@@ -60,51 +64,70 @@ fail(boost::beast::error_code ec, char const* what)
     throw std::runtime_error(s);
 }
 
-// Echoes back all received WebSocket messages
+template <class Body, class Allocator>
+http::message_generator
+handleRequest(http::request<Body, http::basic_fields<Allocator>>&& req)
+{
+    auto const badRequest = [&req](boost::beast::string_view why) {
+        http::response<http::string_body> res{
+            http::status::bad_request, req.version()};
+        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+        res.set(http::field::content_type, "text/html");
+        res.keep_alive(false);
+        res.body() = std::string(why);
+        res.prepare_payload();
+        return res;
+    };
+
+    if (req.method() != http::verb::post)
+        return badRequest("Unknown HTTP-method");
+
+    http::response<http::string_body> res{
+        std::piecewise_construct,
+        std::make_tuple(req.body()),
+        std::make_tuple(http::status::ok, req.version())};
+    res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+    res.set(http::field::content_type, MIME_TYPE);
+    res.keep_alive(false);
+    return res;
+}
+
+// Handles an HTTP server connection
 class session : public std::enable_shared_from_this<session>
 {
-    boost::asio::io_context& ios_;
-    websocket::stream<boost::beast::tcp_stream> ws_;
+    boost::asio::io_context& ioc_;
+    boost::beast::tcp_stream stream_;
     boost::beast::flat_buffer buffer_;
+    http::request<http::string_body> req_;
 
 public:
-    explicit session(boost::asio::io_context& ios, tcp::socket&& socket)
-        : ios_(ios), ws_(std::move(socket))
+    session(boost::asio::io_context& ioc, tcp::socket&& socket)
+        : ioc_(ioc), stream_(std::move(socket))
     {
     }
 
     void
     run()
     {
-        ws_.set_option(websocket::stream_base::timeout::suggested(
-            boost::beast::role_type::server));
-        ws_.set_option(websocket::stream_base::decorator(
-            [](websocket::response_type& res) {
-                res.set(
-                    boost::beast::http::field::server,
-                    std::string(BOOST_BEAST_VERSION_STRING) +
-                        " websocket-server-async");
-            }));
-
-        ws_.async_accept(boost::beast::bind_front_handler(
-            &session::onAccept, shared_from_this()));
-    }
-
-    void
-    onAccept(boost::beast::error_code ec)
-    {
-        if (ec == websocket::error::closed)
-            return;
-        if (ec)
-            return fail(ec, "accept");
-        doRead();
+        // We need to be executing within a strand to perform async operations
+        // on the I/O objects in this session. Although not strictly necessary
+        // for single-threaded contexts, this example code is written to be
+        // thread-safe by default.
+        boost::asio::dispatch(
+            stream_.get_executor(),
+            boost::beast::bind_front_handler(
+                &session::doRead, shared_from_this()));
     }
 
     void
     doRead()
     {
-        ws_.async_read(
+        req_ = {};
+        stream_.expires_after(std::chrono::seconds(30));
+        http::async_read(
+            stream_,
             buffer_,
+            req_,
             boost::beast::bind_front_handler(
                 &session::onRead, shared_from_this()));
     }
@@ -113,67 +136,89 @@ public:
     onRead(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
         boost::ignore_unused(bytes_transferred);
-        if (ec == websocket::error::closed)
-            return;
 
-        if (ec)
-            fail(ec, "read");
-
-        ws_.text(ws_.got_text());
-        ws_.async_write(
-            buffer_.data(),
-            boost::beast::bind_front_handler(
-                &session::onWrite, shared_from_this()));
+        if (ec == http::error::end_of_stream)
+            return doClose();
+        else if (ec)
+            return fail(ec, "read");
+        else
+            sendResponse(handleRequest(std::move(req_)));
     }
 
     void
-    onWrite(boost::beast::error_code ec, std::size_t bytes_transferred)
+    sendResponse(http::message_generator&& msg)
+    {
+        bool const keepAlive = msg.keep_alive();
+        boost::beast::async_write(
+            stream_,
+            std::move(msg),
+            boost::beast::bind_front_handler(
+                &session::onWrite, shared_from_this(), keepAlive));
+    }
+
+    void
+    onWrite(
+        bool keepAlive,
+        boost::beast::error_code ec,
+        std::size_t bytes_transferred)
     {
         boost::ignore_unused(bytes_transferred);
-        if (ec == websocket::error::closed)
-            return;
+
         if (ec)
             return fail(ec, "write");
-        buffer_.consume(buffer_.size());
+
+        if (!keepAlive)
+        {
+            // This means we should close the connection, usually because
+            // the response indicated the "Connection: close" semantic.
+            return doClose();
+        }
+
         doRead();
+    }
+
+    void
+    doClose()
+    {
+        boost::beast::error_code ec;
+        stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
     }
 
     void
     shutdown()
     {
-        ios_.post([this] {
-            ws_.async_close(
-                {}, [](boost::beast::error_code const&) { gCv.notify_all(); });
+        ioc_.post([this] {
+            stream_.cancel();
+            doClose();
+            gCv.notify_all();
         });
     }
 };
 
 //------------------------------------------------------------------------------
 
+// Accepts incoming connections and launches the sessions
 class listener : public std::enable_shared_from_this<listener>
 {
-    boost::asio::io_context& ios_;
+    boost::asio::io_context& ioc_;
     tcp::acceptor acceptor_;
     std::shared_ptr<session> session_;
 
 public:
     listener(boost::asio::io_context& ioc, tcp::endpoint endpoint)
-        : ios_(ioc), acceptor_(ioc)
+        : ioc_(ioc), acceptor_(boost::asio::make_strand(ioc))
     {
         boost::beast::error_code ec;
 
         acceptor_.open(endpoint.protocol(), ec);
         if (ec)
             fail(ec, "open");
-
         acceptor_.set_option(boost::asio::socket_base::reuse_address(true), ec);
         if (ec)
             fail(ec, "set_option");
-
         acceptor_.bind(endpoint, ec);
         if (ec)
             fail(ec, "bind");
-
         acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
         if (ec)
             fail(ec, "listen");
@@ -197,8 +242,9 @@ private:
     void
     doAccept()
     {
+        // The new connection gets its own strand
         acceptor_.async_accept(
-            boost::asio::make_strand(ios_),
+            boost::asio::make_strand(ioc_),
             boost::beast::bind_front_handler(
                 &listener::onAccept, shared_from_this()));
     }
@@ -208,11 +254,17 @@ private:
     {
         if (ec == boost::system::errc::operation_canceled)
             return;
-        if (ec)
-            fail(ec, "accept");
 
-        session_ = std::make_shared<session>(ios_, std::move(socket));
-        session_->run();
+        if (ec)
+        {
+            fail(ec, "accept");
+            return;
+        }
+        else
+        {
+            session_ = std::make_shared<session>(ioc_, std::move(socket));
+            session_->run();
+        }
 
         doAccept();
     }
@@ -234,20 +286,6 @@ struct Connection
     {
         shutdownServer();
         waitIOThreads();
-    }
-
-    void
-    onConnect()
-    {
-        connected_ = true;
-        gCv.notify_all();
-    }
-
-    void
-    onMessage(Json::Value const& msg)
-    {
-        repl_ = msg;
-        gCv.notify_all();
     }
 
     void
@@ -279,20 +317,23 @@ struct Connection
     void
     shutdownServer()
     {
-        server_->shutdown();
-        std::unique_lock l{gMcv};
-        gCv.wait_for(l, 1s);
-        server_.reset();
+        if (server_)
+        {
+            server_->shutdown();
+            std::unique_lock l{gMcv};
+            gCv.wait_for(l, 1s);
+            server_.reset();
+        }
     }
 };
 
-class WS_test : public beast::unit_test::suite
+class RPCClient_test : public beast::unit_test::suite
 {
     ripple::Logs logs_;
     beast::Journal j_;
 
 public:
-    WS_test()
+    RPCClient_test()
         : logs_(beast::severities::kInfo), j_([&, this]() {
             logs_.silent(true);
             return logs_.journal("Tests");
@@ -302,95 +343,69 @@ public:
 
 private:
     void
-    testWS()
+    testRpc()
     {
-        testcase("Test Websocket");
+        testcase("Test http rpc client");
 
         Connection c;
         c.startServer(LHOST, LPORT);
         c.startIOThreads();
 
-        std::shared_ptr<WebsocketClient> wsClient =
-            std::make_shared<WebsocketClient>(
-                [self = &c](Json::Value const& msg) { self->onMessage(msg); },
-                [self = &c]() { self->onConnect(); },
-                c.ios_,
-                beast::IP::Endpoint{
-                    boost::asio::ip::make_address(LHOST), LPORT},
-                std::unordered_map<std::string, std::string>{},
-                j_);
-
-        wsClient->connect();
+        std::shared_ptr<rpc_call::RPCClient> rpcClient =
+            std::make_shared<rpc_call::RPCClient>(
+                c.ios_, rpc::AddrEndpoint{LHOST, LPORT}, j_);
 
         Json::Value params;
-        params[ripple::jss::account] = "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg";
-        auto id = wsClient->send("account_info", params, "locking");
-        {
-            std::unique_lock l{gMcv};
-            gCv.wait_for(l, 1s);
-        }
+        params[ripple::jss::method] = "test_cmd";
+        params[ripple::jss::api_version] =
+            xbwd::rpc_call::apiMaximumSupportedVersion;
 
-        params[ripple::jss::id] = id;
-        params[ripple::jss::method] = "account_info";
-        params[ripple::jss::jsonrpc] = "2.0";
-        params[ripple::jss::ripplerpc] = "2.0";
+        auto resp = rpcClient->post(params);
 
-        BEAST_EXPECT(c.repl_ == params);
+        BEAST_EXPECT(resp.second == params);
     }
 
     void
-    testReconnect()
+    testRpcNoConnection()
     {
-        testcase("Test Websocket reconnect");
+        testcase("Test http rpc client - no connection");
+
         Connection c;
-
-        std::shared_ptr<WebsocketClient> wsClient =
-            std::make_shared<WebsocketClient>(
-                [self = &c](Json::Value const& msg) { self->onMessage(msg); },
-                [self = &c]() { self->onConnect(); },
-                c.ios_,
-                beast::IP::Endpoint{
-                    boost::asio::ip::make_address(LHOST), LPORT},
-                std::unordered_map<std::string, std::string>{},
-                j_);
-        wsClient->connect();
-
-        c.startServer(LHOST, LPORT);
         c.startIOThreads();
 
-        if (!c.connected_)
+        bool exc = false;
+
+        try
         {
-            std::unique_lock l{gMcv};
-            gCv.wait_for(l, 10s);
-        }
-        BEAST_EXPECT(c.connected_ == true);
+            std::shared_ptr<rpc_call::RPCClient> rpcClient =
+                std::make_shared<rpc_call::RPCClient>(
+                    c.ios_, rpc::AddrEndpoint{LHOST, LPORT}, j_);
 
-        Json::Value params;
-        params[ripple::jss::account] = "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg";
-        auto id = wsClient->send("account_info", params, "locking");
+            Json::Value params;
+            params[ripple::jss::method] = "test_cmd";
+            params[ripple::jss::api_version] =
+                xbwd::rpc_call::apiMaximumSupportedVersion;
+
+            auto resp = rpcClient->post(params);
+        }
+        catch (std::exception const&)
         {
-            std::unique_lock l{gMcv};
-            gCv.wait_for(l, 1s);
+            exc = true;
         }
 
-        params[ripple::jss::id] = id;
-        params[ripple::jss::method] = "account_info";
-        params[ripple::jss::jsonrpc] = "2.0";
-        params[ripple::jss::ripplerpc] = "2.0";
-
-        BEAST_EXPECT(c.repl_ == params);
+        BEAST_EXPECT(exc);
     }
 
 public:
     void
     run() override
     {
-        testWS();
-        testReconnect();
+        testRpc();
+        testRpcNoConnection();
     }
 };
 
-BEAST_DEFINE_TESTSUITE(WS, client, xbwd);
+BEAST_DEFINE_TESTSUITE(RPCClient, rpc, xbwd);
 
 }  // namespace tests
 
