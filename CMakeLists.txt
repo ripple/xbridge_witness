@@ -54,6 +54,10 @@ add_compile_definitions(
   HAS_UNCAUGHT_EXCEPTIONS=1
 )
 
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(_DEBUG)
+endif()
+
 if (NOT has_parent)
   find_package(Ripple QUIET)
   if (NOT TARGET Ripple::xrpl_core)

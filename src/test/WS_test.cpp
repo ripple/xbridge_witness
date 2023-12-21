@@ -40,6 +40,15 @@
 
 namespace xbwd {
 namespace tests {
+namespace ws_client {
+
+#if defined(_DEBUG) && defined(TESTS_DEBUG)
+#define DBG(...) __VA_ARGS__
+#define DBG_ARGS(...) __VA_OPT__(, ) __VA_ARGS__
+#else
+#define DBG_ARGS(...)
+#define DBG(...)
+#endif
 
 namespace websocket = boost::beast::websocket;
 using tcp = boost::asio::ip::tcp;
@@ -60,12 +69,29 @@ fail(boost::beast::error_code ec, char const* what)
     throw std::runtime_error(s);
 }
 
+template <class Rep, class Period>
+static bool
+wait_for(
+    std::chrono::duration<Rep, Period> const& to,
+    std::function<bool()> stop DBG_ARGS(std::string const& msg))
+{
+    std::unique_lock l{gMcv};
+    if (stop())
+        return true;
+
+    auto const b = gCv.wait_for(l, to, stop);
+    DBG(std::cout << msg << ", wait finished: " << (b ? "condition" : "timeout")
+                  << std::endl;)
+    return b;
+}
+
 // Echoes back all received WebSocket messages
 class session : public std::enable_shared_from_this<session>
 {
     boost::asio::io_context& ios_;
     websocket::stream<boost::beast::tcp_stream> ws_;
     boost::beast::flat_buffer buffer_;
+    std::atomic_bool finished_ = false;
 
 public:
     explicit session(boost::asio::io_context& ios, tcp::socket&& socket)
@@ -76,6 +102,7 @@ public:
     void
     run()
     {
+        DBG(std::cout << "session::run()" << std::endl;)
         ws_.set_option(websocket::stream_base::timeout::suggested(
             boost::beast::role_type::server));
         ws_.set_option(websocket::stream_base::decorator(
@@ -93,6 +120,7 @@ public:
     void
     onAccept(boost::beast::error_code ec)
     {
+        DBG(std::cout << "session::onAccept(), ec:" << ec << std::endl;)
         if (ec == websocket::error::closed)
             return;
         if (ec)
@@ -103,6 +131,7 @@ public:
     void
     doRead()
     {
+        DBG(std::cout << "session::doRead()" << std::endl;)
         ws_.async_read(
             buffer_,
             boost::beast::bind_front_handler(
@@ -112,6 +141,8 @@ public:
     void
     onRead(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
+        DBG(std::cout << "session::onRead(), ec:" << ec
+                      << " bytes: " << bytes_transferred << std::endl;)
         boost::ignore_unused(bytes_transferred);
         if (ec == websocket::error::closed)
             return;
@@ -129,6 +160,8 @@ public:
     void
     onWrite(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
+        DBG(std::cout << "session::onWrite(), ec:" << ec
+                      << " bytes: " << bytes_transferred << std::endl;)
         boost::ignore_unused(bytes_transferred);
         if (ec == websocket::error::closed)
             return;
@@ -141,10 +174,22 @@ public:
     void
     shutdown()
     {
+        DBG(std::cout << "session::shutdown()" << std::endl;)
         ios_.post([this] {
-            ws_.async_close(
-                {}, [](boost::beast::error_code const&) { gCv.notify_all(); });
+            ws_.async_close({}, [this](boost::beast::error_code const& ec) {
+                DBG(std::cout << "session::onAsync_close(), ec:" << ec
+                              << std::endl;)
+                std::unique_lock l(gMcv);
+                this->finished_ = true;
+                gCv.notify_all();
+            });
         });
+    }
+
+    bool
+    finished() const
+    {
+        return finished_;
     }
 };
 
@@ -174,6 +219,7 @@ public:
         if (ec)
             fail(ec, "bind");
 
+        DBG(std::cout << "listener::listen()" << std::endl;)
         acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
         if (ec)
             fail(ec, "listen");
@@ -182,21 +228,30 @@ public:
     void
     run()
     {
+        DBG(std::cout << "listener::run()" << std::endl);
         doAccept();
     }
 
     void
     shutdown()
     {
+        DBG(std::cout << "listener::shutdown()" << std::endl);
         acceptor_.cancel();
         if (session_)
             session_->shutdown();
+    }
+
+    bool
+    finished() const
+    {
+        return session_ ? session_->finished() : true;
     }
 
 private:
     void
     doAccept()
     {
+        DBG(std::cout << "listener::doAccept()" << std::endl);
         acceptor_.async_accept(
             boost::asio::make_strand(ios_),
             boost::beast::bind_front_handler(
@@ -206,6 +261,7 @@ private:
     void
     onAccept(boost::beast::error_code ec, tcp::socket socket)
     {
+        DBG(std::cout << "listener::onAccept(), ec:" << ec << std::endl);
         if (ec == boost::system::errc::operation_canceled)
             return;
         if (ec)
@@ -239,6 +295,8 @@ struct Connection
     void
     onConnect()
     {
+        DBG(std::cout << "Connection::onConnect()" << std::endl;)
+        std::unique_lock l{gMcv};
         connected_ = true;
         gCv.notify_all();
     }
@@ -246,6 +304,9 @@ struct Connection
     void
     onMessage(Json::Value const& msg)
     {
+        DBG(std::cout << "Connection::onMessage(): " << to_string(msg)
+                      << std::endl;)
+        std::unique_lock l{gMcv};
         repl_ = msg;
         gCv.notify_all();
     }
@@ -253,14 +314,19 @@ struct Connection
     void
     startIOThreads()
     {
+        DBG(std::cout << "Connection::startIOThreads()" << std::endl;)
         ioThreads_.reserve(NUM_THREADS);
         for (auto i = 0; i < NUM_THREADS; ++i)
-            ioThreads_.emplace_back([this] { ios_.run(); });
+            ioThreads_.emplace_back([this, i] {
+                ios_.run();
+                DBG(std::cout << "ioThread #" << i << " finished" << std::endl;)
+            });
     }
 
     void
     waitIOThreads()
     {
+        DBG(std::cout << "Connection::waitIOThreads()" << std::endl;)
         for (auto& t : ioThreads_)
             if (t.joinable())
                 t.join();
@@ -270,6 +336,7 @@ struct Connection
     void
     startServer(std::string const& host, std::uint16_t port)
     {
+        DBG(std::cout << "Connection::startServer()" << std::endl;)
         auto const address = boost::asio::ip::make_address(host);
         server_ =
             std::make_shared<listener>(ios_, tcp::endpoint{address, port});
@@ -279,9 +346,11 @@ struct Connection
     void
     shutdownServer()
     {
+        DBG(std::cout << "Connection::shutdownServer()" << std::endl;)
         server_->shutdown();
-        std::unique_lock l{gMcv};
-        gCv.wait_for(l, 1s);
+        wait_for(1s, [this]() {
+            return server_->finished();
+        } DBG_ARGS("Connection::shutdownServer()"));
         server_.reset();
     }
 };
@@ -322,20 +391,25 @@ private:
 
         wsClient->connect();
 
+        wait_for(60s, [&c]() {
+            return c.connected_ == true;
+        } DBG_ARGS("onConnect()"));
+        BEAST_EXPECT(c.connected_ == true);
+
         Json::Value params;
         params[ripple::jss::account] = "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg";
         auto id = wsClient->send("account_info", params, "locking");
-        {
-            std::unique_lock l{gMcv};
-            gCv.wait_for(l, 1s);
-        }
 
         params[ripple::jss::id] = id;
         params[ripple::jss::method] = "account_info";
         params[ripple::jss::jsonrpc] = "2.0";
         params[ripple::jss::ripplerpc] = "2.0";
 
+        wait_for(
+            1s, [&c]() { return !c.repl_.isNull(); } DBG_ARGS("onMessage()"));
         BEAST_EXPECT(c.repl_ == params);
+        DBG(std::cout << "params: " << to_string(params)
+                      << "\nrepl: " << to_string(c.repl_) << std::endl;)
     }
 
     void
@@ -353,25 +427,22 @@ private:
                     boost::asio::ip::make_address(LHOST), LPORT},
                 std::unordered_map<std::string, std::string>{},
                 j_);
-        wsClient->connect();
+        wsClient->connect();  // No server, should wait and reconnect
 
         c.startServer(LHOST, LPORT);
         c.startIOThreads();
 
-        if (!c.connected_)
-        {
-            std::unique_lock l{gMcv};
-            gCv.wait_for(l, 10s);
-        }
+        wait_for(10s, [&c]() {
+            return c.connected_ == true;
+        } DBG_ARGS("reconnected"));
         BEAST_EXPECT(c.connected_ == true);
 
         Json::Value params;
         params[ripple::jss::account] = "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg";
         auto id = wsClient->send("account_info", params, "locking");
-        {
-            std::unique_lock l{gMcv};
-            gCv.wait_for(l, 1s);
-        }
+        // Waiting for reply
+        wait_for(
+            1s, [&c]() { return !c.repl_.isNull(); } DBG_ARGS("onMessage()"));
 
         params[ripple::jss::id] = id;
         params[ripple::jss::method] = "account_info";
@@ -392,6 +463,6 @@ public:
 
 BEAST_DEFINE_TESTSUITE(WS, client, xbwd);
 
+}  // namespace ws_client
 }  // namespace tests
-
 }  // namespace xbwd

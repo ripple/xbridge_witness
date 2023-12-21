@@ -42,6 +42,15 @@
 
 namespace xbwd {
 namespace tests {
+namespace rpcc {
+
+#if defined(_DEBUG) && defined(TESTS_DEBUG)
+#define DBG(...) __VA_ARGS__
+#define DBG_ARGS(...) __VA_OPT__(, ) __VA_ARGS__
+#else
+#define DBG_ARGS(...)
+#define DBG(...)
+#endif
 
 namespace websocket = boost::beast::websocket;
 namespace http = boost::beast::http;
@@ -62,6 +71,22 @@ fail(boost::beast::error_code ec, char const* what)
 {
     auto s = fmt::format("{}: {}", what, ec.message());
     throw std::runtime_error(s);
+}
+
+template <class Rep, class Period>
+static bool
+wait_for(
+    std::chrono::duration<Rep, Period> const& to,
+    std::function<bool()> stop DBG_ARGS(std::string const& msg))
+{
+    std::unique_lock l{gMcv};
+    if (stop())
+        return true;
+
+    auto const b = gCv.wait_for(l, to, stop);
+    DBG(std::cout << msg << ", wait finished: " << (b ? "condition" : "timeout")
+                  << std::endl;)
+    return b;
 }
 
 template <class Body, class Allocator>
@@ -99,6 +124,7 @@ class session : public std::enable_shared_from_this<session>
     boost::beast::tcp_stream stream_;
     boost::beast::flat_buffer buffer_;
     http::request<http::string_body> req_;
+    std::atomic_bool finished_ = false;
 
 public:
     session(boost::asio::io_context& ioc, tcp::socket&& socket)
@@ -190,8 +216,16 @@ public:
         ioc_.post([this] {
             stream_.cancel();
             doClose();
+            std::unique_lock l(gMcv);
+            finished_ = true;
             gCv.notify_all();
         });
+    }
+
+    bool
+    finished() const
+    {
+        return finished_;
     }
 };
 
@@ -236,6 +270,12 @@ public:
         acceptor_.cancel();
         if (session_)
             session_->shutdown();
+    }
+
+    bool
+    finished() const
+    {
+        return session_ ? session_->finished() : true;
     }
 
 private:
@@ -320,8 +360,9 @@ struct Connection
         if (server_)
         {
             server_->shutdown();
-            std::unique_lock l{gMcv};
-            gCv.wait_for(l, 1s);
+            wait_for(1s, [this]() {
+                return server_->finished();
+            } DBG_ARGS("Connection::shutdownServer()"));
             server_.reset();
         }
     }
@@ -407,6 +448,6 @@ public:
 
 BEAST_DEFINE_TESTSUITE(RPCClient, rpc, xbwd);
 
+}  // namespace rpcc
 }  // namespace tests
-
 }  // namespace xbwd
