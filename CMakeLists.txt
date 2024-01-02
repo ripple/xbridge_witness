@@ -54,6 +54,10 @@ add_compile_definitions(
   HAS_UNCAUGHT_EXCEPTIONS=1
 )
 
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(_DEBUG)
+endif()
+
 if (NOT has_parent)
   find_package(Ripple QUIET)
   if (NOT TARGET Ripple::xrpl_core)
@@ -209,6 +213,7 @@ if (tests)
   set(UNIT_TESTS
     src/test/Config_test.cpp
     src/test/DB_test.cpp
+    src/test/RPCClient_test.cpp
     src/test/RPCParse_test.cpp
     src/test/WS_test.cpp
   )
