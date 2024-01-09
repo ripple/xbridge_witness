@@ -9,12 +9,16 @@ set(CPACK_PACKAGE_VENDOR "Ripple")
 set(CPACK_PACKAGE_CONTACT "Ripple Labs Inc. <support@ripple.com>")
 set(CPACK_PACKAGE_DIRECTORY ${CMAKE_SOURCE_DIR}/packages)
 
+if(NOT PKG)
+    set(PKG deb)
+endif()
+
 if(${PKG} STREQUAL deb)
     include(packaging/deb)
 elseif(${PKG} STREQUAL rpm)
     include(packaging/rpm)
 else()
-    message(ERROR "No package type provided!")
+    message(FATAL_ERROR "Invalid package type provided!")
 endif()
 message("Building ${PKG} package.")
 
