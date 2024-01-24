@@ -552,7 +552,8 @@ Federator::stop()
         }
 
         for (int i = 0; i < lt_last; ++i)
-            threads_[i].join();
+            if (threads_[i].joinable())
+                threads_[i].join();
         running_ = false;
     }
 }

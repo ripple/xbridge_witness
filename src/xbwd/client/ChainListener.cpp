@@ -65,11 +65,6 @@ ChainListener::ChainListener(
 {
 }
 
-// destructor must be defined after WebsocketClient size is known (i.e. it can
-// not be defaulted in the header or the unique_ptr declaration of
-// WebsocketClient won't work)
-ChainListener::~ChainListener() = default;
-
 void
 ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
 {
@@ -151,7 +146,11 @@ void
 ChainListener::shutdown()
 {
     if (wsClient_)
+    {
         wsClient_->shutdown();
+        // wsClient has shared_ptr to ChainListener
+        wsClient_.reset();
+    }
 }
 
 std::uint32_t

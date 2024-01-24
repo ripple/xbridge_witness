@@ -128,7 +128,7 @@ public:
         std::optional<ripple::AccountID> signAccount,
         beast::Journal j);
 
-    virtual ~ChainListener();
+    ~ChainListener() = default;
 
     void
     init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip);

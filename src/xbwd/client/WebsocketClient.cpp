@@ -82,9 +82,12 @@ WebsocketClient::cleanup()
 void
 WebsocketClient::shutdown()
 {
+    if (isShutdown_)
+        return;
     cleanup();
     std::unique_lock l{shutdownM_};
-    shutdownCv_.wait(l, [this] { return isShutdown_.load(); });
+    if (!isShutdown_)
+        shutdownCv_.wait(l, [this] { return isShutdown_.load(); });
 }
 
 WebsocketClient::WebsocketClient(

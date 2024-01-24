@@ -39,7 +39,8 @@ BasicApp::~BasicApp()
     work_.reset();
     io_service_.stop();
     for (auto& t : threads_)
-        t.join();
+        if (t.joinable())
+            t.join();
 }
 
 App::App(
