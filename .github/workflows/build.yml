@@ -57,7 +57,7 @@ jobs:
           DH_TAGS="${SHA} ${BRANCH}"
           GH_TAGS="${SHA} ${BRANCH}"
 
-          DH_IMAGE_NAME=${{ vars.DOCKERHUB_REPO }}/${IMAGE_NAME}
+          DH_IMAGE_NAME=${DOCKERHUB_REPO}/${IMAGE_NAME}
           echo "DH_IMAGE_NAME=${DH_IMAGE_NAME}" >> $GITHUB_OUTPUT
 
           GH_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}"
