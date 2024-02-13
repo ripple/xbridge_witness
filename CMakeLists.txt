@@ -1,9 +1,9 @@
-cmake_minimum_required (VERSION 3.20)
-project (xbridge_witnessd)
+cmake_minimum_required(VERSION 3.20)
+project(xbridge_witnessd)
 
-if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11))
+if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11))
   message(FATAL_ERROR "Use gcc >= 11.0")
-elseif((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13))
+elseif((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13))
   message(FATAL_ERROR "Use clang >= 13.0")
 endif()
 
@@ -33,20 +33,13 @@ include(XBridgeWitnessNIH)
 
 get_directory_property(has_parent PARENT_DIRECTORY)
 
-if(coverage)
-  # Rippled also responds to the "coverage" flag, so clear it if it's set until
-  # the dependency is set up.
-  set(xbridge_witness_coverage ${coverage})
-  set(coverage OFF CACHE BOOL "gcc/clang only" FORCE)
-endif()
-
 add_compile_definitions(
   BOOST_ASIO_USE_TS_EXECUTOR_AS_DEFAULT
   BOOST_CONTAINER_FWD_BAD_DEQUE
   HAS_UNCAUGHT_EXCEPTIONS=1
 )
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(_DEBUG)
 endif()
 
@@ -55,31 +48,31 @@ if(xbridge_witness_coverage)
 endif()
 
 # this one is a string and therefore can't be an option
-set (san "" CACHE STRING "On gcc & clang, add sanitizer instrumentation")
-set_property (CACHE san PROPERTY STRINGS ";undefined;memory;address;thread")
-if (san)
-  string (TOLOWER ${san} san)
-  set (SAN_FLAG "-fsanitize=${san}")
-  set (SAN_LIB "")
-  if (is_gcc)
-    if (san STREQUAL "address")
-      set (SAN_LIB "asan")
-    elseif (san STREQUAL "thread")
-      set (SAN_LIB "tsan")
-    elseif (san STREQUAL "memory")
-      set (SAN_LIB "msan")
-    elseif (san STREQUAL "undefined")
-      set (SAN_LIB "ubsan")
-    endif ()
-  endif ()
-  set (_saved_CRL ${CMAKE_REQUIRED_LIBRARIES})
-  set (CMAKE_REQUIRED_LIBRARIES "${SAN_FLAG};${SAN_LIB}")
-  check_cxx_compiler_flag (${SAN_FLAG} COMPILER_SUPPORTS_SAN)
-  set (CMAKE_REQUIRED_LIBRARIES ${_saved_CRL})
-  if (NOT COMPILER_SUPPORTS_SAN)
-    message (FATAL_ERROR "${san} sanitizer does not seem to be supported by your compiler")
-  endif ()
-endif ()
+set(san "" CACHE STRING "On gcc & clang, add sanitizer instrumentation")
+set_property(CACHE san PROPERTY STRINGS ";undefined;memory;address;thread")
+if(san)
+  string(TOLOWER ${san} san)
+  set(SAN_FLAG "-fsanitize=${san}")
+  set(SAN_LIB "")
+  if(is_gcc)
+    if(san STREQUAL "address")
+      set(SAN_LIB "asan")
+    elseif(san STREQUAL "thread")
+      set(SAN_LIB "tsan")
+    elseif(san STREQUAL "memory")
+      set(SAN_LIB "msan")
+    elseif(san STREQUAL "undefined")
+      set(SAN_LIB "ubsan")
+    endif()
+  endif()
+  set(_saved_CRL ${CMAKE_REQUIRED_LIBRARIES})
+  set(CMAKE_REQUIRED_LIBRARIES "${SAN_FLAG};${SAN_LIB}")
+  check_cxx_compiler_flag(${SAN_FLAG} COMPILER_SUPPORTS_SAN)
+  set(CMAKE_REQUIRED_LIBRARIES ${_saved_CRL})
+  if(NOT COMPILER_SUPPORTS_SAN)
+    message(FATAL_ERROR "${san} sanitizer does not seem to be supported by your compiler")
+  endif()
+endif()
 
 include(XBridgeWitnessSanity)
 include(XBridgeWitnessCov)
@@ -128,7 +121,7 @@ set(SOURCES
 
 option(tests "Enable unit tests" ON)
 
-if (tests)
+if(tests)
   set(UNIT_TESTS
     src/test/Config_test.cpp
     src/test/DB_test.cpp
@@ -139,51 +132,56 @@ if (tests)
   )
 endif ()
 
-add_executable (${PROJECT_NAME}
+add_executable(${PROJECT_NAME}
   ${SOURCES}
   ${HEADERS}
   ${UNIT_TESTS}
 )
 
-install (TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 
 target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector-strong")
-if (is_linux)
+if(is_linux)
   target_link_options(${PROJECT_NAME} PUBLIC "LINKER:-z,relro,-z,now")
 endif()
+<<<<<<< HEAD
 target_include_directories (${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
 <<<<<<< HEAD
 target_link_libraries (${PROJECT_NAME} PUBLIC Ripple::xrpl_core XBridgeWitness::opts
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL xxHash::xxhash)
 =======
 target_link_libraries (${PROJECT_NAME} PUBLIC xrpl::libxrpl XBridgeWitness::opts
+=======
+target_include_directories(${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} PUBLIC xrpl::libxrpl XBridgeWitness::opts
+>>>>>>> a480329 (Build packages with libxrpl)
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL)
 >>>>>>> 75c520c (Remove old rippled integration)
 
-if (san)
-  target_compile_options (${PROJECT_NAME}
+if(san)
+  target_compile_options(${PROJECT_NAME}
     INTERFACE
       # sanitizers recommend minimum of -O1 for reasonable performance
       $<$<CONFIG:Debug>:-O1>
       ${SAN_FLAG}
       -fno-omit-frame-pointer)
-  target_compile_definitions (${PROJECT_NAME}
+  target_compile_definitions(${PROJECT_NAME}
     INTERFACE
       $<$<STREQUAL:${san},address>:SANITIZER=ASAN>
       $<$<STREQUAL:${san},thread>:SANITIZER=TSAN>
       $<$<STREQUAL:${san},memory>:SANITIZER=MSAN>
       $<$<STREQUAL:${san},undefined>:SANITIZER=UBSAN>)
-  target_link_libraries (${PROJECT_NAME} INTERFACE ${SAN_FLAG} ${SAN_LIB})
-endif ()
+  target_link_libraries(${PROJECT_NAME} INTERFACE ${SAN_FLAG} ${SAN_LIB})
+endif()
 
-if (has_parent)
-  set_target_properties (${PROJECT_NAME} PROPERTIES EXCLUDE_FROM_ALL ON)
-  set_target_properties (${PROJECT_NAME} PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
-endif ()
+if(has_parent)
+  set_target_properties(${PROJECT_NAME} PROPERTIES EXCLUDE_FROM_ALL ON)
+  set_target_properties(${PROJECT_NAME} PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
+endif()
 
 #fix for MAC
 get_target_property(FMT_INC_DIRS fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
-list (GET FMT_INC_DIRS 0 FMT_INC_DIR)
+list(GET FMT_INC_DIRS 0 FMT_INC_DIR)
 target_include_directories(${PROJECT_NAME} BEFORE PRIVATE ${FMT_INC_DIR})
 
 include(packaging/package)
