@@ -19,18 +19,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_VERBOSE_MAKEFILE 1)
 
-
-
-#[===========================================[
-  The tool depends on the xrpl_core
-  library which is defined by the rippled
-  project. This looks for installed rippled
-  libs and, if not found, pulls them in with
-  FetchContent.
-#]===========================================]
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
 
-#include(deps/Boost)
 find_package(SOCI REQUIRED)
 find_package(fmt REQUIRED)
 find_package(date REQUIRED)
@@ -39,6 +29,7 @@ find_package(Threads)
 find_package(xxHash)
 
 include(XBridgeWitnessNIH)
+# find_package(xrpl REQUIRED)
 
 get_directory_property(has_parent PARENT_DIRECTORY)
 
@@ -58,79 +49,6 @@ add_compile_definitions(
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(_DEBUG)
 endif()
-
-if (NOT has_parent)
-  find_package(Ripple QUIET)
-  if (NOT TARGET Ripple::xrpl_core)
-    include(deps/FindRipple)
-    if (NOT TARGET Ripple::xrpl_core)
-      find_package(Git)
-
-      if (NOT GIT_FOUND)
-        message (FATAL_ERROR "git is required to determine branch name")
-      endif ()
-
-      execute_process (COMMAND ${GIT_EXECUTABLE} "rev-parse" "--abbrev-ref" "HEAD"
-                       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                       RESULT_VARIABLE _git_exit_code
-                       OUTPUT_VARIABLE _branch
-                       OUTPUT_STRIP_TRAILING_WHITESPACE
-                       ERROR_QUIET)
-      if (NOT _git_exit_code EQUAL 0)
-        message (WARNING "git command failed - deduced branch might be incorrect")
-      endif ()
-
-      # rippled_tag is cache string and can be overriden when configuring
-      # with -Drippled_tag=commit_or_tag in order to pick a specific
-      # rippled version to download. Default tag is develop/master/release as
-      # determined by the branch of this project
-      if (NOT (_branch STREQUAL "master" OR _branch STREQUAL "release"))
-        set (rippled_tag "develop" CACHE STRING
-          "tag/commit of rippled to fetch from if a local install is not found")
-      else ()
-        set (rippled_tag "${_branch}" CACHE STRING
-          "tag/commit of rippled to fetch from if a local install is not found")
-      endif ()
-      message(STATUS "Installed rippled not found... \
-        using local copy from tag/commit [${rippled_tag}]")
-      include (FetchContent)
-      FetchContent_Declare(
-        rippled_src
-        GIT_REPOSITORY https://github.com/XRPLF/rippled.git
-        GIT_TAG ${rippled_tag}
-      )
-      FetchContent_GetProperties(rippled_src)
-      if(NOT rippled_src_POPULATED)
-        message (STATUS "Pausing to download rippled source...")
-        FetchContent_Populate(rippled_src)
-
-        set (conan_build_type "Release")
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-          set (conan_build_type "Debug")
-        endif()
-
-        set (conan_profile "default")
-        if(NOT "${CONAN_PROFILE} " STREQUAL " ")
-          set (conan_profile ${CONAN_PROFILE})
-        endif()
-
-        execute_process (COMMAND conan install ${rippled_src_SOURCE_DIR} --build missing --output-folder . -s build_type=${conan_build_type} -pr=${conan_profile}
-                       WORKING_DIRECTORY ${rippled_src_BINARY_DIR}
-                       RESULT_VARIABLE _git_exit_code
-                       OUTPUT_STRIP_TRAILING_WHITESPACE
-                       ECHO_OUTPUT_VARIABLE
-                       ECHO_ERROR_VARIABLE
-                       )
-        if (NOT _git_exit_code EQUAL 0)
-          message (WARNING "conan exit_code: ${_git_exit_code}\n conan command failed - build might be incorrect")
-        endif ()
-
-        option (tests "Build tests" OFF)
-        add_subdirectory(${rippled_src_SOURCE_DIR} ${rippled_src_BINARY_DIR})
-      endif()
-    endif()
-  endif ()
-endif ()
 
 if(xbridge_witness_coverage)
   set(coverage ${xbridge_witness_coverage} CACHE BOOL "gcc/clang only" FORCE)
@@ -219,7 +137,7 @@ if (tests)
     src/test/RPCParse_test.cpp
     src/test/WS_test.cpp
   )
-endif () #tests
+endif ()
 
 add_executable (${PROJECT_NAME}
   ${SOURCES}
@@ -234,8 +152,13 @@ if (is_linux)
   target_link_options(${PROJECT_NAME} PUBLIC "LINKER:-z,relro,-z,now")
 endif()
 target_include_directories (${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
+<<<<<<< HEAD
 target_link_libraries (${PROJECT_NAME} PUBLIC Ripple::xrpl_core XBridgeWitness::opts
   SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL xxHash::xxhash)
+=======
+target_link_libraries (${PROJECT_NAME} PUBLIC xrpl::libxrpl XBridgeWitness::opts
+  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL)
+>>>>>>> 75c520c (Remove old rippled integration)
 
 if (san)
   target_compile_options (${PROJECT_NAME}

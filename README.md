@@ -1,71 +1,140 @@
+
+
+
+
 # Witness Server for XRPL Sidechains
 
-## Table of contents
+This is the Witness Server for [XLS-38d Cross-Chain bridge project](https://github.com/XRPLF/XRPL-Standards/tree/master/XLS-0038d-cross-chain-bridge). "Witness Servers" validate transfers between "door accounts" that connect a locking chain to each issuing chain by listening for transactions on one or both of the chains and signing attestations to prove certain events happened on a chain.
 
-* [Documentation](#documentation)
-* [Build guide](#build-guide)
-  * [Dependencies](#dependencies)
-    * [Conan inclusion](#conan-inclusion)
-    * [Other dependencies](#other-dependencies)
-  * [Build steps](#build-and-run)
-
-## Documentation
+## Additional documentation
 
 - [XRPL Sidechains concept](https://xrpl.org/xrpl-sidechains.html)
-- [Cross bridge transactions](https://opensource.ripple.com/docs/xls-38d-cross-chain-bridge/cross-chain-bridges/)
+- [Cross bridge transactions](https://xrpl.org/cross-chain-bridges.html#how-do-bridges-work/)
 - [XRPL-Standards documentation](https://github.com/XRPLF/XRPL-Standards/tree/master/XLS-0038d-cross-chain-bridge)
 
 
-## Build guide
-### Dependencies
+## Minimum Requirements
 
-#### Conan inclusion
+- [Python 3.7](https://www.python.org/downloads/)
+- [Conan 1.55](https://conan.io/downloads.html) Conan 2.0 is **_not_** supported yet
+- [CMake 3.20](https://cmake.org/download/)
 
-This project depends on conan (v1.5 and higher, v2.0 not supported) to build it's dependencies. See [conan doc](https://docs.conan.io/1/installation.html) to install conan.
+| Compiler    | Version |
+|-------------|---------|
+| GCC         | 11      |
+| Clang       | 13      |
+| Apple clang | 15      |
 
-#### Other dependencies
+## Build and run
 
-* C++20 compiler (gcc >=11, clang >=13)
-* [cmake](https://cmake.org) - at least 3.20
+1. Create a build directory and `cd` into it. 
 
+```bash
+mkdir .build && cd .build
+```
 
-### Build and run
+2. Configure Conan.
 
-1) Create a build directory. For example: build
-2) Change to that directory.
-3) Configure conan (once before very 1st build)
+Add Ripple's Artifactory as a Conan remote to source the `libxrpl` Conan package.
 
-``` bash
+```bash
+conan remote add --insert 0 conan-non-prod http://18.143.149.228:8081/artifactory/api/conan/conan-non-prod
+
+```
+<details>
+<summary> Optional local development of <code>xrpl</code> library</summary>
+
+The Conan `xrpl` recipe is also available by checking out the [`rippled` source](https://github.com/XRPLF/rippled.git) and exporting the recipe locally.
+
+```bash
+git clone https://github.com/XRPLF/rippled.git
+cd rippled 
+conan export .
+```
+</details>
+
+```bash
 conan profile update settings.cppstd=20 default
 conan profile update settings.compiler.libcxx=libstdc++11 default
-conan profile update settings.arch=x86_64 default
+```
+<br>
+<details>
+      <summary>Example Conan profiles</summary>
+  
+### Linux
+```ini
+  [settings]
+  arch=x86_64
+  arch_build=x86_64
+  os=Linux
+  os_build=Linux
+  build_type=Release
+  compiler=gcc
+  compiler.cppstd=20
+  compiler.libcxx=libstdc++11
+  compiler.version=11
+```
+### macOS
+
+On macOS [you may get an error from Boost](https://github.com/XRPLF/rippled/blob/develop/BUILD.md#call-to-async_teardown-is-ambiguous) 
+which requires adding some CMake flags to your Conan profile.
+```
+conan profile update 'env.CXXFLAGS="-DBOOST_ASIO_DISABLE_CONCEPTS"' default
+conan profile update 'conf.tools.build:cxxflags+=["-DBOOST_ASIO_DISABLE_CONCEPTS"]' default
 ```
 
-4) Run conan. The command is:
+```ini
+[settings]
+os=Macos
+os_build=Macos
+arch=armv8
+arch_build=armv8
+compiler=apple-clang
+compiler.version=15
+build_type=Release
+compiler.cppstd=20
+compiler.libcxx=libc++
+[options]
+[conf]
+tools.build:cxxflags=['-DBOOST_ASIO_DISABLE_CONCEPTS']
+[build_requires]
+[env]
+CXXFLAGS=-DBOOST_ASIO_DISABLE_CONCEPTS
+```
+</details>
+
+3. Run Conan to install and/or build dependencies.
 
 ``` bash
-conan install -b missing -s build_type=Release --output-folder . ..
+conan install .. \
+  --output-folder . \
+  --build missing \
+  --settings build_type=Release
 ```
-
-5) Create a build file (replace .. with the appropriate directory). 2 pckage system supported - deb and rpm:
-* 5.1 Default. If you have [rippled](https://github.com/XRPLF/rippled/tree/develop) installed by your packet manager - cmake will try to find it. If nothing found - this setup will download rippled and build it.
-``` bash
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/generators/conan_toolchain.cmake -DPKG=deb ..
-```
-* 5.2 If you have [rippled](https://github.com/XRPLF/rippled/tree/develop) build from source you can use it
-``` bash
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/generators/conan_toolchain.cmake -DRIPPLE_SRC_DIR=/home/user/repo/rippled -DRIPPLE_BIN_DIR=/home/user/repo/rippled/build-release -DPKG=deb ..
-```
-
-6) Build the project:
+4. Configure CMake.
 
 ``` bash
-make -j $(nproc)
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
 ```
 
-7) Run
+5. Build with CMake.
 
 ``` bash
-./xbridge_witnessd --conf /home/user/repo/config.json
+cmake --build --parallel $(nproc)
 ```
-Check for config examples in documenation
+
+6. Run the unit tests.
+
+``` bash
+./xbridge_witnessd --unittest
+```
+
+[Check the documentation for configuration examples.](https://xrpl.org/witness-servers.html#witness-server-configuration)
+
+## Additional help
+
+Additional help for Conan/CMake issues may be found in [`rippled`'s build instructions.](https://github.com/XRPLF/rippled/blob/develop/BUILD.md)
+
+Feel free to open an [issue](https://github.com/ripple/xbridge_witness/issues) if you have a feature request or something doesn't work as expected.
