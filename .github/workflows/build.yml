@@ -1,8 +1,7 @@
 name: "Package xbridge_witnessd"
 on:
   push:
-    branches: ['main', 'release', 'develop', '*-rc*', '*-b*']
-  pull_request:
+    branches: ['main', 'release', 'develop', '*-rc[0-9]+', '*-b[0-9]+']
   workflow_dispatch:
 
 jobs:
