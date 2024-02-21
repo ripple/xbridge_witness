@@ -359,8 +359,6 @@ class Federator : public std::enable_shared_from_this<Federator>
         batchMutex_) curClaimAtts_;
     ChainArray<std::vector<ripple::Attestations::AttestationCreateAccount>>
         GUARDED_BY(batchMutex_) curCreateAtts_;
-    ChainArray<std::atomic_uint32_t> ledgerIndexes_{0u, 0u};
-    ChainArray<std::atomic_uint32_t> ledgerFees_{0u, 0u};
     ChainArray<std::uint32_t> accountSqns_{0u, 0u};  // tx submit thread only
 
     struct InitSync
@@ -460,10 +458,8 @@ private:
     void
     init(
         boost::asio::io_service& ios,
-        beast::IP::Endpoint const& mainchainIp,
-        std::shared_ptr<ChainListener>&& mainchainListener,
-        beast::IP::Endpoint const& sidechainIp,
-        std::shared_ptr<ChainListener>&& sidechainListener);
+        config::Config const& config,
+        ripple::Logs& l);
 
     void
     mainLoop() EXCLUDES(mainLoopMutex_);

@@ -80,6 +80,8 @@ public:
     // 0 - no "window"
     std::uint32_t maxAttToSend = 0;
 
+    std::uint32_t txLimit = 500;
+
     std::string logFile;
     std::string logLevel;
     bool logSilent;
