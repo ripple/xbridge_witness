@@ -57,21 +57,24 @@ struct HistoryProcessor
 
     // Save last history request before requesting for ledgers
     Json::Value marker_;
-    unsigned accoutTxProcessed_ = 0;
+    std::uint32_t accoutTxProcessed_ = 0;
 
     // Ledger that divide transactions on historical and new
-    unsigned startupLedger_ = 0;
+    std::uint32_t startupLedger_ = 0;
 
     // Requesting ledgers in batch and check transactions after every batch
     // request
-    unsigned const requestLedgerBatch_ = 100;
-    unsigned toRequestLedger_ = 0;
+    std::uint32_t const requestLedgerBatch_ = 100;
+    std::uint32_t toRequestLedger_ = 0;
 
     // Minimal ledger validated by rippled. Retrieved from server_info
-    unsigned minValidatedLedger_ = 0;
+    std::uint32_t minValidatedLedger_ = 0;
 
     // History processed ledger
     std::atomic_uint ledgerProcessed_ = 0;
+
+    // last processed ledger from previous session
+    std::uint32_t lastLedgerProcessed_ = 0;
 
     void
     clear();
@@ -95,27 +98,31 @@ private:
     std::unordered_map<std::uint32_t, RpcCallback> GUARDED_BY(callbacksMtx_)
         callbacks_;
 
-    unsigned const minUserLedger_ = 3;
+    std::uint32_t const minUserLedger_ = 3;
     // Maximum transactions per one request for given account.
-    unsigned const txLimit_ = 10;
+    std::uint32_t const txLimit_ = 10;
     // accout_tx request can be divided into chunks (txLimit_ size) with
     // severeal requests. This flag do not allow other transactions request to
     // be started in the middle of current request.
     bool inRequest_ = false;
     // last ledger requested for new tx
-    unsigned ledgerReqMax_ = 0;
+    std::uint32_t ledgerReqMax_ = 0;
     // last ledger that was processed for Door account (in case of errors /
     // disconnects). Will be requested from the other thread.
-    std::atomic_uint ledgerProcessedDoor_ = 0;
+    std::atomic_uint32_t ledgerProcessedDoor_ = 0;
     // last ledger that was processed for Signing account (in case of errors /
     // disconnects)
-    std::atomic_uint ledgerProcessedSubmit_ = 0;
+    std::atomic_uint32_t ledgerProcessedSubmit_ = 0;
     // To determine ledger boundary acros consecutive requests for given
     // account.
     std::int32_t prevLedgerIndex_ = 0;
     // Artifical counter to emulate account_history_tx_index from
     // account_history_tx_stream subscription.
     std::int32_t txnHistoryIndex_ = 0;
+
+    // current ledger info
+    std::atomic_uint32_t ledgerIndex_ = 0;
+    std::atomic_uint32_t ledgerFee_ = 0;
 
     HistoryProcessor hp_;
 
@@ -126,6 +133,8 @@ public:
         std::optional<ripple::AccountID> submitAccount,
         std::weak_ptr<Federator>&& federator,
         std::optional<ripple::AccountID> signAccount,
+        std::uint32_t txLimit,
+        std::uint32_t lastLedgerProcessed,
         beast::Journal j);
 
     ~ChainListener() = default;
@@ -175,6 +184,12 @@ public:
     std::uint32_t
     getHistoryProcessedLedger() const;
 
+    std::uint32_t
+    getCurrentLedger() const;
+
+    std::uint32_t
+    getCurrentFee() const;
+
 private:
     void
     onMessage(Json::Value const& msg) EXCLUDES(callbacksMtx_);
@@ -217,7 +232,7 @@ private:
     processBridgeReq(Json::Value const& msg) const;
 
     void
-    processNewLedger(unsigned ledger);
+    processNewLedger(std::uint32_t ledger);
 
     template <class E>
     void
@@ -226,8 +241,8 @@ private:
     void
     accountTx(
         std::string const& account,
-        unsigned ledger_min = 0,
-        unsigned ledger_max = 0,
+        std::uint32_t ledger_min = 0,
+        std::uint32_t ledger_max = 0,
         Json::Value const& marker = Json::Value());
 
     void
@@ -237,7 +252,7 @@ private:
     requestLedgers();
 
     void
-    sendLedgerReq(unsigned cnt);
+    sendLedgerReq(std::uint32_t cnt);
 };
 
 }  // namespace xbwd

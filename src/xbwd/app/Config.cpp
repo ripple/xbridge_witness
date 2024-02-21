@@ -138,6 +138,7 @@ Config::Config(Json::Value const& jv)
     , adminConfig{jv.isMember("Admin") ? AdminConfig::make(jv["Admin"]) : std::nullopt}
     , maxAttToSend(
           jv.isMember("MaxAttToSend") ? jv["MaxAttToSend"].asUInt() : 200)
+    , txLimit(jv.isMember("TxLimit") ? jv["TxLimit"].asUInt() : 500)
     , logFile(jv.isMember("LogFile") ? jv["LogFile"].asString() : std::string())
     , logLevel(
           jv.isMember("LogLevel") ? jv["LogLevel"].asString() : std::string())
