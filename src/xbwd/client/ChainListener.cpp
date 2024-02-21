@@ -54,6 +54,8 @@ ChainListener::ChainListener(
     std::optional<ripple::AccountID> submitAccount,
     std::weak_ptr<Federator>&& federator,
     std::optional<ripple::AccountID> signAccount,
+    std::uint32_t txLimit,
+    std::uint32_t lastLedgerProcessed,
     beast::Journal j)
     : chainType_{chainType}
     , bridge_{sidechain}
@@ -61,8 +63,10 @@ ChainListener::ChainListener(
           submitAccount ? ripple::toBase58(*submitAccount) : std::string{})
     , federator_{std::move(federator)}
     , signAccount_(signAccount)
+    , txLimit_(txLimit)
     , j_{j}
 {
+    hp_.lastLedgerProcessed_ = lastLedgerProcessed;
 }
 
 void
@@ -129,7 +133,15 @@ ChainListener::onConnect()
         mainFlow();
     };
 
+    // Clear on re-connect
     inRequest_ = false;
+    ledgerReqMax_ = 0;
+    ledgerProcessedDoor_ = 0;
+    ledgerProcessedSubmit_ = 0;
+    prevLedgerIndex_ = 0;
+    txnHistoryIndex_ = 0;
+    hp_.clear();
+
     if (signAccount_)
     {
         Json::Value params;
@@ -350,6 +362,8 @@ ChainListener::processMessage(Json::Value const& msg)
     auto newLedgerEv = checkLedger(chainType_, msg);
     if (newLedgerEv)
     {
+        ledgerIndex_ = newLedgerEv->ledgerIndex_;
+        ledgerFee_ = newLedgerEv->fee_;
         pushEvent(std::move(*newLedgerEv));
         processNewLedger(newLedgerEv->ledgerIndex_);
         return;
@@ -671,7 +685,7 @@ processSignerListSetGeneral(
 
     if (msg.isMember("SignerQuorum"))
     {
-        unsigned const signerQuorum = msg["SignerQuorum"].asUInt();
+        std::uint32_t const signerQuorum = msg["SignerQuorum"].asUInt();
         if (!signerQuorum)
             return warn_ret("'SignerQuorum' is null");
     }
@@ -1113,8 +1127,9 @@ ChainListener::processAccountSet(Json::Value const& msg) const
             return warn_ret("'XXXFlag' missed");
 
         bool const setFlag = msg.isMember(ripple::jss::SetFlag);
-        unsigned const flag = setFlag ? msg[ripple::jss::SetFlag].asUInt()
-                                      : msg[ripple::jss::ClearFlag].asUInt();
+        std::uint32_t const flag = setFlag
+            ? msg[ripple::jss::SetFlag].asUInt()
+            : msg[ripple::jss::ClearFlag].asUInt();
         if (flag != ripple::asfDisableMaster)
             return warn_ret("not 'asfDisableMaster' flag");
 
@@ -1394,6 +1409,18 @@ ChainListener::getSubmitProcessedLedger() const
 }
 
 std::uint32_t
+ChainListener::getCurrentLedger() const
+{
+    return ledgerIndex_;
+}
+
+std::uint32_t
+ChainListener::getCurrentFee() const
+{
+    return ledgerFee_;
+}
+
+std::uint32_t
 ChainListener::getHistoryProcessedLedger() const
 {
     return hp_.ledgerProcessed_;
@@ -1475,8 +1502,10 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
     }
 
     // these should left the same during full account_tx + marker serie
-    unsigned const ledgerMax = result[ripple::jss::ledger_index_max].asUInt();
-    unsigned const ledgerMin = result[ripple::jss::ledger_index_min].asUInt();
+    std::uint32_t const ledgerMax =
+        result[ripple::jss::ledger_index_max].asUInt();
+    std::uint32_t const ledgerMin =
+        result[ripple::jss::ledger_index_min].asUInt();
 
     if ((hp_.state_ != HistoryProcessor::FINISHED) && ledgerMin &&
         (ledgerMin <= hp_.toRequestLedger_))
@@ -1508,7 +1537,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
 
     auto const& transactions = result[ripple::jss::transactions];
     bool const isMarker = result.isMember("marker");
-    unsigned cnt = 0;
+    std::uint32_t cnt = 0;
     for (auto it = transactions.begin(); it != transactions.end(); ++it, ++cnt)
     {
         if ((hp_.state_ != HistoryProcessor::FINISHED) && hp_.stopHistory_)
@@ -1618,6 +1647,22 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             ledgerProcessedSubmit_ = ledgerMax;
     }
 
+    // if history finished, check if we reach lastProcessedLedger
+    if (!isMarker && (hp_.state_ != HistoryProcessor::FINISHED) &&
+        !hp_.stopHistory_)
+    {
+        if (ledgerMin && (ledgerMin <= hp_.lastLedgerProcessed_))
+        {
+            JLOGV(
+                j_.info(),
+                "Reach last processed ledger",
+                jv("chainType", chainName),
+                jv("finish_ledger", hp_.toRequestLedger_ + 1));
+            hp_.stopHistory_ = true;
+            pushEvent(event::EndOfHistory{chainType_});
+        }
+    }
+
     if (isMarker &&
         ((hp_.state_ == HistoryProcessor::FINISHED) || !hp_.stopHistory_))
     {
@@ -1632,8 +1677,8 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
 void
 ChainListener::accountTx(
     std::string const& account,
-    unsigned ledger_min,
-    unsigned ledger_max,
+    std::uint32_t ledger_min,
+    std::uint32_t ledger_max,
     Json::Value const& marker)
 {
     inRequest_ = true;
@@ -1678,7 +1723,7 @@ ChainListener::requestLedgers()
 }
 
 void
-ChainListener::sendLedgerReq(unsigned cnt)
+ChainListener::sendLedgerReq(std::uint32_t cnt)
 {
     auto const chainName = to_string(chainType_);
 
@@ -1711,12 +1756,23 @@ ChainListener::sendLedgerReq(unsigned cnt)
 }
 
 void
-ChainListener::processNewLedger(unsigned ledgerIdx)
+ChainListener::processNewLedger(std::uint32_t ledgerIdx)
 {
     auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
 
     if (!hp_.startupLedger_)
     {
+        if (hp_.lastLedgerProcessed_ > ledgerIdx)
+        {
+            JLOGV(
+                j_.error(),
+                "New ledger less then processed ledger",
+                jv("chainType", to_string(chainType_)),
+                jv("newLedger", ledgerIdx),
+                jv("lastLedgerProcessed", hp_.lastLedgerProcessed_));
+            throw std::runtime_error("New ledger less then processed ledger");
+        }
+
         hp_.startupLedger_ = ledgerIdx;
         hp_.toRequestLedger_ = ledgerIdx - 1;
         JLOGV(
@@ -1773,11 +1829,15 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
                         "History mode off, no bridge",
                         jv("chainType", to_string(self->chainType_)));
                     self->hp_.state_ = HistoryProcessor::FINISHED;
+                    self->hp_.stopHistory_ = true;
                     self->pushEvent(event::EndOfHistory{self->chainType_});
                     return;
                 }
                 self->hp_.state_ = HistoryProcessor::RETR_HISTORY;
-                self->accountTx(doorAccStr, 0, self->hp_.startupLedger_);
+                self->accountTx(
+                    doorAccStr,
+                    self->hp_.lastLedgerProcessed_,
+                    self->hp_.startupLedger_);
             };
 
             hp_.state_ = HistoryProcessor::WAIT_CB;
@@ -1806,7 +1866,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
                 {
                     self->accountTx(
                         doorAccStr,
-                        0,
+                        self->hp_.lastLedgerProcessed_,
                         self->hp_.startupLedger_,
                         self->hp_.marker_);
                 }

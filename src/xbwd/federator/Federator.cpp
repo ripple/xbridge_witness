@@ -59,41 +59,7 @@ make_Federator(
 {
     auto r = std::make_shared<Federator>(
         Federator::PrivateTag{}, app, config, l.journal("Federator"));
-
-    auto getSubmitAccount =
-        [&](ChainType chainType) -> std::optional<ripple::AccountID> {
-        auto const& chainConfig = chainType == ChainType::locking
-            ? config.lockingChainConfig
-            : config.issuingChainConfig;
-        if (chainConfig.txnSubmit && chainConfig.txnSubmit->shouldSubmit)
-        {
-            return chainConfig.txnSubmit->submittingAccount;
-        }
-        return {};
-    };
-
-    std::shared_ptr<ChainListener> mainchainListener =
-        std::make_shared<ChainListener>(
-            ChainType::locking,
-            config.bridge,
-            getSubmitAccount(ChainType::locking),
-            r,
-            config.signingAccount,
-            l.journal("LListener"));
-    std::shared_ptr<ChainListener> sidechainListener =
-        std::make_shared<ChainListener>(
-            ChainType::issuing,
-            config.bridge,
-            getSubmitAccount(ChainType::issuing),
-            r,
-            config.signingAccount,
-            l.journal("IListener"));
-    r->init(
-        ios,
-        config.lockingChainConfig.chainIp,
-        std::move(mainchainListener),
-        config.issuingChainConfig.chainIp,
-        std::move(sidechainListener));
+    r->init(ios, config, l);
 
     return r;
 }
@@ -137,10 +103,8 @@ Federator::Federator(
 void
 Federator::init(
     boost::asio::io_service& ios,
-    beast::IP::Endpoint const& mainchainIp,
-    std::shared_ptr<ChainListener>&& mainchainListener,
-    beast::IP::Endpoint const& sidechainIp,
-    std::shared_ptr<ChainListener>&& sidechainListener)
+    config::Config const& config,
+    ripple::Logs& l)
 {
     auto fillLastTxHash = [&]() -> bool {
         try
@@ -259,10 +223,46 @@ Federator::init(
                    : std::string("not set")));
     }
 
+    auto getSubmitAccount =
+        [&](ChainType chainType) -> std::optional<ripple::AccountID> {
+        auto const& chainConfig = chainType == ChainType::locking
+            ? config.lockingChainConfig
+            : config.issuingChainConfig;
+        if (chainConfig.txnSubmit && chainConfig.txnSubmit->shouldSubmit)
+        {
+            return chainConfig.txnSubmit->submittingAccount;
+        }
+        return {};
+    };
+
+    std::shared_ptr<ChainListener> mainchainListener =
+        std::make_shared<ChainListener>(
+            ChainType::locking,
+            config.bridge,
+            getSubmitAccount(ChainType::locking),
+            shared_from_this(),
+            config.signingAccount,
+            config.txLimit,
+            initSync_[ChainType::locking].dbLedgerSqn_,
+            l.journal("LListener"));
+
+    std::shared_ptr<ChainListener> sidechainListener =
+        std::make_shared<ChainListener>(
+            ChainType::issuing,
+            config.bridge,
+            getSubmitAccount(ChainType::issuing),
+            shared_from_this(),
+            config.signingAccount,
+            config.txLimit,
+            initSync_[ChainType::issuing].dbLedgerSqn_,
+            l.journal("IListener"));
+
     chains_[ChainType::locking].listener_ = std::move(mainchainListener);
-    chains_[ChainType::locking].listener_->init(ios, mainchainIp);
+    chains_[ChainType::locking].listener_->init(
+        ios, config.lockingChainConfig.chainIp);
     chains_[ChainType::issuing].listener_ = std::move(sidechainListener);
-    chains_[ChainType::issuing].listener_->init(ios, sidechainIp);
+    chains_[ChainType::issuing].listener_->init(
+        ios, config.issuingChainConfig.chainIp);
 }
 
 void
@@ -692,7 +692,7 @@ Federator::tryFinishInitSync(ChainType const ct)
     {
         auto const ocht = otherChain(cht);
         auto& repl(replays_[cht]);
-        unsigned del_cnt = 0;
+        std::uint32_t del_cnt = 0;
         std::size_t const rel_size = repl.size();
         for (auto it = repl.begin(); it != repl.end();)
         {
@@ -1321,9 +1321,9 @@ void
 Federator::onEvent(event::NewLedger const& e)
 {
     auto const ct = e.chainType_;
-    unsigned const doorLedgerIndex =
+    std::uint32_t const doorLedgerIndex =
         chains_[ct].listener_->getDoorProcessedLedger();
-    unsigned const submitLedgerIndex =
+    std::uint32_t const submitLedgerIndex =
         chains_[ct].listener_->getSubmitProcessedLedger();
 
     JLOGV(
@@ -1333,18 +1333,16 @@ Federator::onEvent(event::NewLedger const& e)
         jv("processedSubmitLedger", submitLedgerIndex),
         jv("event", e.toJson()));
 
-    auto const prevIdx = ledgerIndexes_[ct].exchange(e.ledgerIndex_);
-    ledgerFees_[ct].store(e.fee_);
-
     // Fix TTL for tx from DB
-    if (!prevIdx)
-    {
+    [[maybe_unused]] static bool runOnce = [&]() {
         std::lock_guard l{txnsMutex_};
         auto& subs = submitted_[ct];
         for (auto& s : subs)
             if (!s->lastLedgerSeq_)
-                s->lastLedgerSeq_ = e.ledgerIndex_ + TxnTTLLedgers;
-    }
+                s->lastLedgerSeq_ =
+                    chains_[ct].listener_->getCurrentLedger() + TxnTTLLedgers;
+        return true;
+    }();
 
     // tryFinishInitSync
     checkProcessedLedger(ct);
@@ -1352,8 +1350,11 @@ Federator::onEvent(event::NewLedger const& e)
     if (!autoSubmit_[ct] || isSyncing())
         return;
 
-    saveProcessedLedger(ct, std::min(submitLedgerIndex, doorLedgerIndex));
-    checkExpired(ct, submitLedgerIndex);
+    auto const x =
+        std::min(std::min(submitLedgerIndex, doorLedgerIndex), e.ledgerIndex_);
+    auto const minLedger = x ? x - 1 : 0;
+    saveProcessedLedger(ct, minLedger);
+    checkExpired(ct, minLedger);
 }
 
 void
@@ -1383,7 +1384,7 @@ Federator::checkExpired(ChainType ct, std::uint32_t ledger)
                     "Ledger TTL expired, move to errored",
                     jv("chainType", to_string(ct)),
                     jv("retries",
-                       static_cast<unsigned>(front->retriesAllowed_)),
+                       static_cast<std::uint32_t>(front->retriesAllowed_)),
                     jv("accSqn", front->accountSqn_),
                     jv("lastLedger", front->lastLedgerSeq_),
                     jv("tx", front->getJson()));
@@ -1685,7 +1686,8 @@ Federator::submitTxn(SubmissionPtr&& submission, ChainType ct)
 
     // already verified txnSubmit before call submitTxn()
     config::TxnSubmit const& txnSubmit = *chains_[ct].txnSubmit_;
-    ripple::XRPAmount fee{ledgerFees_[ct].load() + FeeExtraDrops};
+    ripple::XRPAmount fee{
+        chains_[ct].listener_->getCurrentFee() + FeeExtraDrops};
     ripple::STTx const toSubmit = submission->getSignedTxn(txnSubmit, fee, j_);
 
     auto const attestedIDs = submission->forAttestIDs();
@@ -1849,7 +1851,8 @@ Federator::txnSubmitLoop()
     // (!requestStop_)' loop will never stop. The loop will stop just before
     // shutdown and connections will be closed too, so callback will not fire.
     auto getReady = [&](ChainType chain) -> bool {
-        if (ledgerIndexes_[chain] == 0 || ledgerFees_[chain] == 0)
+        if (!chains_[chain].listener_->getCurrentLedger() ||
+            !chains_[chain].listener_->getCurrentFee())
         {
             JLOG(j_.trace())
                 << "Not ready, waiting for validated ledgers from stream";
@@ -1902,6 +1905,7 @@ Federator::txnSubmitLoop()
         return false;
     };
 
+    std::uint32_t skipCtr = 0;
     while (!requestStop_)
     {
         bool waitForEvent = true;
@@ -1951,7 +1955,10 @@ Federator::txnSubmitLoop()
                            : 0)
                     : pLocal->size();
                 if (!numToSend)
+                {
+                    ++skipCtr;
                     continue;
+                }
 
                 if (pLocal->size() <= numToSend)
                     localTxns.swap(*pLocal);
@@ -1963,7 +1970,9 @@ Federator::txnSubmitLoop()
                         jv("chainType", to_string(ct)),
                         jv("waiting size", pLocal->size()),
                         jv("window size", maxAttToSend_),
-                        jv("send size", numToSend));
+                        jv("send size", numToSend),
+                        jv("skipped iterations", skipCtr));
+                    skipCtr = 0;
 
                     auto start = pLocal->begin();
                     auto finish = start + numToSend;
@@ -1979,7 +1988,7 @@ Federator::txnSubmitLoop()
             for (auto& txn : localTxns)
             {
                 auto const lastLedgerSeq =
-                    ledgerIndexes_[ct].load() + TxnTTLLedgers;
+                    chains_[ct].listener_->getCurrentLedger() + TxnTTLLedgers;
                 txn->lastLedgerSeq_ = lastLedgerSeq;
                 txn->accountSqn_ = accountSqns_[ct]++;
                 submitTxn(std::move(txn), ct);
@@ -2005,7 +2014,7 @@ Json::Value
 Federator::getInfo() const
 {
     // TODO
-    // Track transactons per secons
+    // Track transactions per seconds
     // Track when last transaction or event was submitted
     Json::Value ret{Json::objectValue};
     {
@@ -2030,8 +2039,8 @@ Federator::getInfo() const
     {
         Json::Value side{Json::objectValue};
         side["initiating"] = initSync_[ct].syncing_ ? "True" : "False";
-        side["ledger_index"] = ledgerIndexes_[ct].load();
-        side["fee"] = ledgerFees_[ct].load();
+        side["ledger_index"] = chains_[ct].listener_->getCurrentLedger();
+        side["fee"] = chains_[ct].listener_->getCurrentFee();
 
         int commitCount = 0;
         int createCount = 0;
