@@ -362,6 +362,8 @@ class Federator : public std::enable_shared_from_this<Federator>
         GUARDED_BY(batchMutex_) curCreateAtts_;
     ChainArray<std::uint32_t> accountSqns_{0u, 0u};  // tx submit thread only
 
+    bool const noDB_ = true;
+
     struct InitSync
     {
         // Indicate that chain still processing history

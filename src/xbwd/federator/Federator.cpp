@@ -88,6 +88,7 @@ Federator::Federator(
     , keyType_{config.keyType}
     , signingPK_{derivePublicKey(config.keyType, config.signingKey)}
     , signingSK_{config.signingKey}
+    , noDB_{config.noDB}
     , j_(j)
     , useBatch_(config.useBatch)
 {
@@ -748,6 +749,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     auto const& tblName = db_init::xChainTableName(ct);
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -807,6 +809,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     assert(!claimOpt || claimOpt->verify(e.bridge_));
 
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
 
@@ -866,6 +869,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             soci::use(signingAccountBlob), soci::use(publicKeyBlob),
             soci::use(signatureBlob);
     }
+
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -917,6 +922,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
     auto const& tblName = db_init::xChainCreateAccountTableName(ct);
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -973,6 +979,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
     assert(!createOpt || createOpt->verify(e.bridge_));
 
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
 
@@ -1034,6 +1041,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
             soci::use(otherChainDstBlob), soci::use(signingAccountBlob),
             soci::use(publicKeyBlob), soci::use(signatureBlob);
     }
+
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -2067,6 +2076,9 @@ Federator::getInfo() const
 void
 Federator::deleteFromDB(ChainType ct, std::uint64_t id, bool isCreateAccount)
 {
+    if (noDB_)
+        return;
+
     auto session = app_.getXChainTxnDB().checkoutDb();
     auto const& tblName = [&]() {
         if (isCreateAccount)

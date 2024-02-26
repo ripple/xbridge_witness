@@ -148,6 +148,7 @@ Config::Config(Json::Value const& jv)
                                            : 0)
     , logFilesToKeep(
           jv.isMember("LogFilesToKeep") ? jv["LogFilesToKeep"].asUInt() : 0)
+    , noDB(jv.isMember("NoDB") ? jv["NoDB"].asBool() : true)
     , useBatch(jv.isMember("UseBatch") ? jv["UseBatch"].asBool() : false)
 {
     if (jv.isMember("SigningAccount"))
