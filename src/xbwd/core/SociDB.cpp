@@ -114,105 +114,115 @@ getKBUsedDB(soci::session& s)
     return 0;  // Silence compiler warning.
 }
 
-void
-convert(soci::blob& from, std::vector<std::uint8_t>& to)
+convert_t::convert_t(soci::blob& b, ripple::SField const* f) : blob_(b), f_(f)
 {
-    to.resize(from.get_len());
-    if (to.empty())
-        return;
-    from.read(0, reinterpret_cast<char*>(&to[0]), from.get_len());
 }
 
-void
-convert(std::vector<std::uint8_t> const& from, soci::blob& to)
+convert_t::operator std::vector<std::uint8_t>() const
 {
+    std::vector<std::uint8_t> to;
+    to.resize(blob_.get_len());
+    if (to.empty())
+        return to;
+    blob_.read(0, reinterpret_cast<char*>(&to[0]), blob_.get_len());
+    return to;
+}
+
+soci::blob
+convert_t::convert(std::vector<std::uint8_t> const& from, soci::session& s)
+{
+    soci::blob to(s);
     if (!from.empty())
         to.write(0, reinterpret_cast<char const*>(&from[0]), from.size());
     else
         to.trim(0);
+    return to;
 }
 
-void
-convert(soci::blob& from, ripple::Buffer& to)
+convert_t::operator ripple::Buffer() const
 {
-    to.alloc(from.get_len());
+    ripple::Buffer to;
+    to.alloc(blob_.get_len());
     if (to.empty())
-        return;
-    from.read(0, reinterpret_cast<char*>(to.data()), from.get_len());
+        return to;
+    blob_.read(0, reinterpret_cast<char*>(to.data()), blob_.get_len());
+    return to;
 }
 
-void
-convert(ripple::Buffer const& from, soci::blob& to)
+soci::blob
+convert_t::convert(ripple::Buffer const& from, soci::session& s)
 {
+    soci::blob to(s);
     if (!from.empty())
         to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
     else
         to.trim(0);
+    return to;
 }
 
-void
-convert(soci::blob& from, std::string& to)
+convert_t::operator std::string() const
 {
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
-    to.assign(tmp.begin(), tmp.end());
+    std::vector<std::uint8_t> tmp(*this);
+    return std::string(tmp.begin(), tmp.end());
 }
 
-void
-convert(std::string const& from, soci::blob& to)
+soci::blob
+convert_t::convert(std::string const& from, soci::session& s)
 {
+    soci::blob to(s);
     if (!from.empty())
         to.write(0, from.data(), from.size());
     else
         to.trim(0);
+    return to;
 }
 
-void
-convert(ripple::PublicKey const& from, soci::blob& to)
+soci::blob
+convert_t::convert(ripple::PublicKey const& from, soci::session& s)
 {
+    soci::blob to(s);
     to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
+    return to;
 }
 
-void
-convert(soci::blob& from, ripple::PublicKey& to)
+convert_t::operator ripple::PublicKey() const
 {
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
-    to = ripple::PublicKey{ripple::makeSlice(tmp)};
+    std::vector<std::uint8_t> tmp(*this);
+    return ripple::PublicKey{ripple::makeSlice(tmp)};
 }
 
-void
-convert(ripple::STAmount const& from, soci::blob& to)
+soci::blob
+convert_t::convert(ripple::STAmount const& from, soci::session& s)
 {
-    ripple::Serializer s;
-    from.add(s);
-    to.write(0, reinterpret_cast<char const*>(s.data()), s.size());
+    soci::blob to(s);
+    ripple::Serializer r;
+    from.add(r);
+    to.write(0, reinterpret_cast<char const*>(r.data()), r.size());
+    return to;
 }
 
-void
-convert(soci::blob& from, ripple::STAmount& to, ripple::SField const& f)
+convert_t::operator ripple::STAmount() const
 {
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
+    std::vector<std::uint8_t> tmp(*this);
     ripple::SerialIter s(tmp.data(), tmp.size());
-    to = ripple::STAmount{s, f};
+    return ripple::STAmount{s, *f_};
 }
 
-void
-convert(ripple::STXChainBridge const& from, soci::blob& to)
+soci::blob
+convert_t::convert(ripple::STXChainBridge const& from, soci::session& s)
 {
-    ripple::Serializer s;
-    from.add(s);
-    to.write(0, reinterpret_cast<char const*>(s.data()), s.size());
+    soci::blob to(s);
+    ripple::Serializer r;
+    from.add(r);
+    to.write(0, reinterpret_cast<char const*>(r.data()), r.size());
+    return to;
 }
 
-void
-convert(soci::blob& from, ripple::STXChainBridge& to, ripple::SField const& f)
+convert_t::operator ripple::STXChainBridge() const
 {
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
+    std::vector<std::uint8_t> tmp(*this);
     ripple::SerialIter s(tmp.data(), tmp.size());
-    to = ripple::STXChainBridge{s, f};
+    return ripple::STXChainBridge{s, *f_};
 }
 
 }  // namespace xbwd

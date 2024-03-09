@@ -72,57 +72,51 @@ getKBUsedAll(soci::session& s);
 std::uint32_t
 getKBUsedDB(soci::session& s);
 
-void
-convert(soci::blob& from, std::vector<std::uint8_t>& to);
-
-void
-convert(std::vector<std::uint8_t> const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::Buffer& to);
-
-void
-convert(ripple::Buffer const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, std::string& to);
-
-void
-convert(std::string const& from, soci::blob& to);
-
-void
-convert(ripple::PublicKey const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::PublicKey& to);
-
-void
-convert(ripple::STAmount const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::STAmount& to, ripple::SField const& f);
-
-void
-convert(ripple::STXChainBridge const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::STXChainBridge& to, ripple::SField const& f);
-
-template <std::size_t Bits, class Tag = void>
-void
-convert(soci::blob& from, ripple::base_uint<Bits, Tag>& to)
+struct convert_t
 {
-    if (to.size() != from.get_len())
-        throw std::runtime_error("Soci blob size mismatch");
-    from.read(0, reinterpret_cast<char*>(to.data()), from.get_len());
-}
+    soci::blob& blob_;
+    ripple::SField const* f_ = nullptr;
 
-template <std::size_t Bits, class Tag = void>
-void
-convert(ripple::base_uint<Bits, Tag> const& from, soci::blob& to)
-{
-    to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
-}
+    convert_t(soci::blob&, ripple::SField const* f_ = nullptr);
+
+    operator std::vector<std::uint8_t>() const;
+    operator ripple::Buffer() const;
+    operator std::string() const;
+    operator ripple::PublicKey() const;
+    operator ripple::STAmount() const;
+    operator ripple::STXChainBridge() const;
+
+    template <std::size_t Bits, class Tag = void>
+    operator ripple::base_uint<Bits, Tag>()
+    {
+        ripple::base_uint<Bits, Tag> a;
+        if (a.size() != blob_.get_len())
+            throw std::runtime_error("Soci blob size mismatch");
+        blob_.read(0, reinterpret_cast<char*>(a.data()), blob_.get_len());
+        return a;
+    }
+
+    static soci::blob
+    convert(std::vector<std::uint8_t> const& from, soci::session& s);
+    static soci::blob
+    convert(ripple::Buffer const& from, soci::session& s);
+    static soci::blob
+    convert(std::string const& from, soci::session& s);
+    static soci::blob
+    convert(ripple::PublicKey const& from, soci::session& s);
+    static soci::blob
+    convert(ripple::STAmount const& from, soci::session& s);
+    static soci::blob
+    convert(ripple::STXChainBridge const& from, soci::session& s);
+    template <std::size_t Bits, class Tag = void>
+    static soci::blob
+    convert(ripple::base_uint<Bits, Tag> const& from, soci::session& s)
+    {
+        soci::blob to(s);
+        to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
+        return to;
+    }
+};
 
 }  // namespace xbwd
 
