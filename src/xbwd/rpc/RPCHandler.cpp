@@ -106,36 +106,25 @@ doSelectAll(
         st.execute();
 
         std::vector<ripple::Attestations::AttestationClaim> claims;
-        ripple::STXChainBridge bridge;
         std::optional<ripple::STXChainBridge> firstBridge;
         while (st.fetch())
         {
-            ripple::AccountID signingAccount;
-            convert(signingAccountBlob, signingAccount);
-
-            ripple::PublicKey signingPK;
-            convert(publicKeyBlob, signingPK);
-
-            ripple::Buffer sigBuf;
-            convert(signatureBlob, sigBuf);
-
-            ripple::STAmount sendingAmount;
-            convert(amtBlob, sendingAmount, ripple::sfAmount);
-
-            ripple::AccountID sendingAccount;
-            convert(sendingAccountBlob, sendingAccount);
-
-            ripple::AccountID rewardAccount;
-            convert(rewardAccountBlob, rewardAccount);
-
+            auto signingAccount =
+                convert<ripple::AccountID>(signingAccountBlob);
+            auto signingPK = convert<ripple::PublicKey>(publicKeyBlob);
+            auto sigBuf = convert<ripple::Buffer>(signatureBlob);
+            auto sendingAmount = convert<ripple::STAmount>(amtBlob);
+            auto sendingAccount =
+                convert<ripple::AccountID>(sendingAccountBlob);
+            auto rewardAccount = convert<ripple::AccountID>(rewardAccountBlob);
             std::optional<ripple::AccountID> optDst;
             if (otherChainDstInd == soci::i_ok)
             {
                 optDst.emplace();
-                convert(otherChainDstBlob, *optDst);
+                *optDst = convert<ripple::AccountID>(otherChainDstBlob);
             }
 
-            convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            auto bridge = convert<ripple::STXChainBridge>(bridgeBlob);
             if (!firstBridge)
             {
                 firstBridge = bridge;
@@ -162,7 +151,7 @@ doSelectAll(
         {
 #ifdef USE_BATCH_ATTESTATION
             ripple::STXChainAttestationBatch batch{
-                bridge, claims.begin(), claims.end()};
+                *firstBridge, claims.begin(), claims.end()};
             result[ripple::sfXChainAttestationBatch.getJsonName()] =
                 batch.getJson(ripple::JsonOptions::none);
 #else
@@ -176,7 +165,7 @@ doSelectAll(
             auto& jclaims = (result["claims"] = Json::arrayValue);
             for (auto const& claim : claims)
             {
-                SubmissionClaim sc(0, 0, 0, bridge, claim);
+                SubmissionClaim sc(0, 0, 0, *firstBridge, claim);
                 jclaims.append(sc.getJson(ripple::JsonOptions::none));
             }
         }
@@ -253,22 +242,19 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
 
     {
         auto session = app.getXChainTxnDB().checkoutDb();
-        soci::blob amtBlob(*session);
-        soci::blob bridgeBlob(*session);
-        soci::blob sendingAccountBlob(*session);
+        soci::blob amtBlob = convert(sendingAmount, *session);
+        soci::blob bridgeBlob = convert(bridge, *session);
+        soci::blob sendingAccountBlob = convert(sendingAccount, *session);
         soci::blob rewardAccountBlob(*session);
         soci::blob otherChainDstBlob(*session);
         soci::blob signingAccountBlob(*session);
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
-        convert(sendingAmount, amtBlob);
-        convert(bridge, bridgeBlob);
-        convert(sendingAccount, sendingAccountBlob);
         soci::indicator sigInd;
         if (optDst)
         {
-            convert(*optDst, otherChainDstBlob);
+            otherChainDstBlob = convert(*optDst, *session);
 
             auto sql = fmt::format(
                 R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount FROM {table_name}
@@ -310,7 +296,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
             if (otherChainDstInd == soci::i_ok)
             {
                 optDst.emplace();
-                convert(otherChainDstBlob, *optDst);
+                *optDst = convert<ripple::AccountID>(otherChainDstBlob);
             }
         }
 
@@ -318,14 +304,11 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         if (sigInd == soci::i_ok && publicKeyBlob.get_len() > 0 &&
             rewardAccountBlob.get_len() > 0)
         {
-            ripple::AccountID rewardAccount;
-            convert(rewardAccountBlob, rewardAccount);
-            ripple::AccountID signingAccount;
-            convert(signingAccountBlob, signingAccount);
-            ripple::PublicKey signingPK;
-            convert(publicKeyBlob, signingPK);
-            ripple::Buffer sigBuf;
-            convert(signatureBlob, sigBuf);
+            auto rewardAccount = convert<ripple::AccountID>(rewardAccountBlob);
+            auto signingAccount =
+                convert<ripple::AccountID>(signingAccountBlob);
+            auto signingPK = convert<ripple::PublicKey>(publicKeyBlob);
+            auto sigBuf = convert<ripple::Buffer>(signatureBlob);
 
             ripple::Attestations::AttestationClaim claim{
                 signingAccount,
@@ -451,20 +434,11 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
     {
         auto session = app.getXChainTxnDB().checkoutDb();
 
-        soci::blob amtBlob(*session);
-        convert(encodedAmt, amtBlob);
-
-        soci::blob rewardAmtBlob(*session);
-        convert(encodedRewardAmt, rewardAmtBlob);
-
-        soci::blob bridgeBlob(*session);
-        convert(encodedBridge, bridgeBlob);
-
-        soci::blob sendingAccountBlob(*session);
-        convert(sendingAccount, sendingAccountBlob);
-
-        soci::blob otherChainDstBlob(*session);
-        convert(dst, otherChainDstBlob);
+        soci::blob amtBlob = convert(encodedAmt, *session);
+        soci::blob rewardAmtBlob = convert(encodedRewardAmt, *session);
+        soci::blob bridgeBlob = convert(encodedBridge, *session);
+        soci::blob sendingAccountBlob = convert(sendingAccount, *session);
+        soci::blob otherChainDstBlob = convert(dst, *session);
 
         soci::blob rewardAccountBlob(*session);
         soci::blob signingAccountBlob(*session);
@@ -493,14 +467,11 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         if (signatureBlob.get_len() > 0 && publicKeyBlob.get_len() > 0 &&
             rewardAccountBlob.get_len() > 0)
         {
-            ripple::AccountID rewardAccount;
-            convert(rewardAccountBlob, rewardAccount);
-            ripple::AccountID signingAccount;
-            convert(signingAccountBlob, signingAccount);
-            ripple::PublicKey signingPK;
-            convert(publicKeyBlob, signingPK);
-            ripple::Buffer sigBuf;
-            convert(signatureBlob, sigBuf);
+            auto rewardAccount = convert<ripple::AccountID>(rewardAccountBlob);
+            auto signingAccount =
+                convert<ripple::AccountID>(signingAccountBlob);
+            auto signingPK = convert<ripple::PublicKey>(publicKeyBlob);
+            auto sigBuf = convert<ripple::Buffer>(signatureBlob);
 
             ripple::Attestations::AttestationCreateAccount createAccount{
                 signingAccount,

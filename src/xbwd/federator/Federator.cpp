@@ -321,31 +321,17 @@ Federator::readDBAttests(ChainType ct)
 
         while (st.fetch())
         {
-            ripple::AccountID signingAccount;
-            convert(signingAccountBlob, signingAccount);
-
-            ripple::PublicKey signingPK;
-            convert(publicKeyBlob, signingPK);
-
-            ripple::Buffer sigBuf;
-            convert(signatureBlob, sigBuf);
-
-            ripple::STAmount sendingAmount;
-            convert(amtBlob, sendingAmount, ripple::sfAmount);
-
-            ripple::STAmount rewardAmount;
-            convert(rewardAmtBlob, rewardAmount, ripple::sfAmount);
-
-            ripple::AccountID sendingAccount;
-            convert(sendingAccountBlob, sendingAccount);
-
-            ripple::AccountID rewardAccount;
-            convert(rewardAccountBlob, rewardAccount);
-
-            ripple::AccountID dstAccount;
-            convert(otherChainDstBlob, dstAccount);
-
-            convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            auto signingAccount =
+                convert<ripple::AccountID>(signingAccountBlob);
+            auto signingPK = convert<ripple::PublicKey>(publicKeyBlob);
+            auto sigBuf = convert<ripple::Buffer>(signatureBlob);
+            auto sendingAmount = convert<ripple::STAmount>(amtBlob);
+            auto rewardAmount = convert<ripple::STAmount>(rewardAmtBlob);
+            auto sendingAccount =
+                convert<ripple::AccountID>(sendingAccountBlob);
+            auto rewardAccount = convert<ripple::AccountID>(rewardAccountBlob);
+            auto dstAccount = convert<ripple::AccountID>(otherChainDstBlob);
+            auto bridge = convert<ripple::STXChainBridge>(bridgeBlob);
             if (bridge != bridge_)
             {
                 JLOGV(
@@ -434,36 +420,25 @@ Federator::readDBAttests(ChainType ct)
              soci::into(signatureBlob));
         st.execute();
 
-        ripple::STXChainBridge bridge;
-
         while (st.fetch())
         {
-            ripple::AccountID signingAccount;
-            convert(signingAccountBlob, signingAccount);
-
-            ripple::PublicKey signingPK;
-            convert(publicKeyBlob, signingPK);
-
-            ripple::Buffer sigBuf;
-            convert(signatureBlob, sigBuf);
-
-            ripple::STAmount sendingAmount;
-            convert(amtBlob, sendingAmount, ripple::sfAmount);
-
-            ripple::AccountID sendingAccount;
-            convert(sendingAccountBlob, sendingAccount);
-
-            ripple::AccountID rewardAccount;
-            convert(rewardAccountBlob, rewardAccount);
+            auto signingAccount =
+                convert<ripple::AccountID>(signingAccountBlob);
+            auto signingPK = convert<ripple::PublicKey>(publicKeyBlob);
+            auto sigBuf = convert<ripple::Buffer>(signatureBlob);
+            auto sendingAmount = convert<ripple::STAmount>(amtBlob);
+            auto sendingAccount =
+                convert<ripple::AccountID>(sendingAccountBlob);
+            auto rewardAccount = convert<ripple::AccountID>(rewardAccountBlob);
 
             std::optional<ripple::AccountID> optDst;
             if (otherChainDstInd == soci::i_ok)
             {
                 optDst.emplace();
-                convert(otherChainDstBlob, *optDst);
+                *optDst = convert<ripple::AccountID>(otherChainDstBlob);
             }
 
-            convert(bridgeBlob, bridge, ripple::sfXChainBridge);
+            auto bridge = convert<ripple::STXChainBridge>(bridgeBlob);
             if (bridge != bridge_)
             {
                 JLOGV(
@@ -822,64 +797,27 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     assert(!claimOpt || claimOpt->verify(e.bridge_));
 
-    auto const encodedAmtOpt =
-        [&]() -> std::optional<std::vector<std::uint8_t>> {
-        if (!e.deliveredAmt_)
-            return std::nullopt;
-        ripple::Serializer s;
-        e.deliveredAmt_->add(s);
-        return std::move(s.modData());
-    }();
-
-    std::vector<std::uint8_t> const encodedBridge = [&] {
-        ripple::Serializer s;
-        bridge_.add(s);
-        return std::move(s.modData());
-    }();
-
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
 
         // Soci blob does not play well with optional. Store an empty blob
         // when missing delivered amount
-        soci::blob amtBlob{*session};
-        if (encodedAmtOpt)
-        {
-            convert(*encodedAmtOpt, amtBlob);
-        }
-
-        soci::blob bridgeBlob(*session);
-        convert(encodedBridge, bridgeBlob);
-
-        soci::blob sendingAccountBlob(*session);
-        // Convert to an AccountID first, because if the type changes we
-        // want to catch it.
-        ripple::AccountID const& sendingAccount{e.src_};
-        convert(sendingAccount, sendingAccountBlob);
-
-        soci::blob rewardAccountBlob(*session);
-        convert(rewardAccount, rewardAccountBlob);
-
-        soci::blob signingAccountBlob(*session);
-        if (claimOpt)
-        {
-            convert(claimOpt->attestationSignerAccount, signingAccountBlob);
-        }
-
-        soci::blob publicKeyBlob(*session);
-        convert(signingPK_, publicKeyBlob);
-
-        soci::blob signatureBlob(*session);
-        if (claimOpt)
-        {
-            convert(claimOpt->signature, signatureBlob);
-        }
-
-        soci::blob otherChainDstBlob(*session);
-        if (optDst)
-        {
-            convert(*optDst, otherChainDstBlob);
-        }
+        soci::blob amtBlob = e.deliveredAmt_
+            ? convert(*e.deliveredAmt_, *session)
+            : soci::blob(*session);
+        soci::blob bridgeBlob = convert(bridge_, *session);
+        soci::blob sendingAccountBlob =
+            convert(ripple::AccountID(e.src_), *session);
+        soci::blob rewardAccountBlob = convert(rewardAccount, *session);
+        soci::blob signingAccountBlob = claimOpt
+            ? convert(claimOpt->attestationSignerAccount, *session)
+            : soci::blob(*session);
+        soci::blob publicKeyBlob = convert(signingPK_, *session);
+        soci::blob signatureBlob = claimOpt
+            ? convert(claimOpt->signature, *session)
+            : soci::blob(*session);
+        soci::blob otherChainDstBlob =
+            optDst ? convert(*optDst, *session) : soci::blob(*session);
 
         JLOGV(
             j_.trace(),
@@ -1030,44 +968,24 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
         // Soci blob does not play well with optional. Store an empty blob when
         // missing delivered amount
-        soci::blob amtBlob{*session};
-        if (e.deliveredAmt_)
-        {
-            convert(*e.deliveredAmt_, amtBlob);
-        }
-
-        soci::blob rewardAmtBlob{*session};
-        convert(e.rewardAmt_, rewardAmtBlob);
-
-        soci::blob bridgeBlob(*session);
-        convert(bridge_, bridgeBlob);
-
-        soci::blob sendingAccountBlob(*session);
+        soci::blob amtBlob = e.deliveredAmt_
+            ? convert(*e.deliveredAmt_, *session)
+            : soci::blob(*session);
+        soci::blob rewardAmtBlob = convert(*e.deliveredAmt_, *session);
+        soci::blob bridgeBlob = convert(bridge_, *session);
         // Convert to an AccountID first, because if the type changes we want to
         // catch it.
         ripple::AccountID const& sendingAccount{e.src_};
-        convert(sendingAccount, sendingAccountBlob);
-
-        soci::blob rewardAccountBlob(*session);
-        convert(rewardAccount, rewardAccountBlob);
-
-        soci::blob signingAccountBlob(*session);
-        if (createOpt)
-        {
-            convert(createOpt->attestationSignerAccount, signingAccountBlob);
-        }
-
-        soci::blob publicKeyBlob(*session);
-        convert(signingPK_, publicKeyBlob);
-
-        soci::blob signatureBlob(*session);
-        if (createOpt)
-        {
-            convert(createOpt->signature, signatureBlob);
-        }
-
-        soci::blob otherChainDstBlob(*session);
-        convert(dst, otherChainDstBlob);
+        soci::blob sendingAccountBlob = convert(sendingAccount, *session);
+        soci::blob rewardAccountBlob = convert(rewardAccount, *session);
+        soci::blob signingAccountBlob = createOpt
+            ? convert(createOpt->attestationSignerAccount, *session)
+            : soci::blob(*session);
+        soci::blob publicKeyBlob = convert(signingPK_, *session);
+        soci::blob signatureBlob = createOpt
+            ? convert(createOpt->signature, *session)
+            : soci::blob(*session);
+        soci::blob otherChainDstBlob = convert(dst, *session);
 
         JLOGV(
             j_.trace(),
