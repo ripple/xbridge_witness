@@ -72,57 +72,93 @@ getKBUsedAll(soci::session& s);
 std::uint32_t
 getKBUsedDB(soci::session& s);
 
-void
-convert(soci::blob& from, std::vector<std::uint8_t>& to);
+template <class T>
+T
+convert(soci::blob&);
 
-void
-convert(std::vector<std::uint8_t> const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::Buffer& to);
-
-void
-convert(ripple::Buffer const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, std::string& to);
-
-void
-convert(std::string const& from, soci::blob& to);
-
-void
-convert(ripple::PublicKey const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::PublicKey& to);
-
-void
-convert(ripple::STAmount const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::STAmount& to, ripple::SField const& f);
-
-void
-convert(ripple::STXChainBridge const& from, soci::blob& to);
-
-void
-convert(soci::blob& from, ripple::STXChainBridge& to, ripple::SField const& f);
-
-template <std::size_t Bits, class Tag = void>
-void
-convert(soci::blob& from, ripple::base_uint<Bits, Tag>& to)
+template <>
+inline std::vector<std::uint8_t>
+convert(soci::blob& from)
 {
-    if (to.size() != from.get_len())
-        throw std::runtime_error("Soci blob size mismatch");
+    std::vector<std::uint8_t> to;
+    to.resize(from.get_len());
+    if (to.empty())
+        return to;
+    from.read(0, reinterpret_cast<char*>(&to[0]), from.get_len());
+    return to;
+}
+
+template <>
+inline ripple::Buffer
+convert(soci::blob& from)
+{
+    ripple::Buffer to;
+    to.alloc(from.get_len());
+    if (to.empty())
+        return to;
     from.read(0, reinterpret_cast<char*>(to.data()), from.get_len());
+    return to;
 }
 
-template <std::size_t Bits, class Tag = void>
-void
-convert(ripple::base_uint<Bits, Tag> const& from, soci::blob& to)
+template <>
+inline std::string
+convert(soci::blob& from)
 {
-    to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
+    auto tmp(convert<std::vector<std::uint8_t>>(from));
+    return std::string(tmp.begin(), tmp.end());
 }
+
+template <>
+inline ripple::PublicKey
+convert(soci::blob& from)
+{
+    auto tmp(convert<std::vector<std::uint8_t>>(from));
+    return ripple::PublicKey{ripple::makeSlice(tmp)};
+}
+
+template <>
+inline ripple::STAmount
+convert(soci::blob& from)
+{
+    auto tmp(convert<std::vector<std::uint8_t>>(from));
+    ripple::SerialIter s(tmp.data(), tmp.size());
+    return ripple::STAmount{s, ripple::sfAmount};
+}
+
+template <>
+inline ripple::STXChainBridge
+convert(soci::blob& from)
+{
+    auto tmp(convert<std::vector<std::uint8_t>>(from));
+    ripple::SerialIter s(tmp.data(), tmp.size());
+    return ripple::STXChainBridge{s, ripple::sfXChainBridge};
+}
+
+template <>
+inline ripple::AccountID
+convert(soci::blob& from)
+{
+    ripple::AccountID a;
+    if (a.size() != from.get_len())
+        throw std::runtime_error("Soci blob size mismatch");
+    from.read(0, reinterpret_cast<char*>(a.data()), from.get_len());
+    return a;
+}
+
+soci::blob
+convert(std::vector<std::uint8_t> const& from, soci::session& s);
+soci::blob
+convert(ripple::Buffer const& from, soci::session& s);
+soci::blob
+convert(std::string const& from, soci::session& s);
+soci::blob
+convert(ripple::PublicKey const& from, soci::session& s);
+soci::blob
+convert(ripple::STAmount const& from, soci::session& s);
+soci::blob
+convert(ripple::STXChainBridge const& from, soci::session& s);
+soci::blob
+convert(ripple::AccountID const& from, soci::session& s);
 
 }  // namespace xbwd
 
