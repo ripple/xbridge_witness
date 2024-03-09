@@ -63,8 +63,8 @@ ChainListener::ChainListener(
           submitAccount ? ripple::toBase58(*submitAccount) : std::string{})
     , federator_{std::move(federator)}
     , signAccount_(signAccount)
-    , txLimit_(txLimit)
     , j_{j}
+    , txLimit_(txLimit)
 {
     hp_.lastLedgerProcessed_ = lastLedgerProcessed;
 }

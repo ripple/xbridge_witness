@@ -114,105 +114,73 @@ getKBUsedDB(soci::session& s)
     return 0;  // Silence compiler warning.
 }
 
-void
-convert(soci::blob& from, std::vector<std::uint8_t>& to)
+soci::blob
+convert(std::vector<std::uint8_t> const& from, soci::session& s)
 {
-    to.resize(from.get_len());
-    if (to.empty())
-        return;
-    from.read(0, reinterpret_cast<char*>(&to[0]), from.get_len());
-}
-
-void
-convert(std::vector<std::uint8_t> const& from, soci::blob& to)
-{
+    soci::blob to(s);
     if (!from.empty())
         to.write(0, reinterpret_cast<char const*>(&from[0]), from.size());
     else
         to.trim(0);
+    return to;
 }
 
-void
-convert(soci::blob& from, ripple::Buffer& to)
+soci::blob
+convert(ripple::Buffer const& from, soci::session& s)
 {
-    to.alloc(from.get_len());
-    if (to.empty())
-        return;
-    from.read(0, reinterpret_cast<char*>(to.data()), from.get_len());
-}
-
-void
-convert(ripple::Buffer const& from, soci::blob& to)
-{
+    soci::blob to(s);
     if (!from.empty())
         to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
     else
         to.trim(0);
+    return to;
 }
 
-void
-convert(soci::blob& from, std::string& to)
+soci::blob
+convert(std::string const& from, soci::session& s)
 {
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
-    to.assign(tmp.begin(), tmp.end());
-}
-
-void
-convert(std::string const& from, soci::blob& to)
-{
+    soci::blob to(s);
     if (!from.empty())
         to.write(0, from.data(), from.size());
     else
         to.trim(0);
+    return to;
 }
 
-void
-convert(ripple::PublicKey const& from, soci::blob& to)
+soci::blob
+convert(ripple::PublicKey const& from, soci::session& s)
 {
+    soci::blob to(s);
     to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
+    return to;
 }
 
-void
-convert(soci::blob& from, ripple::PublicKey& to)
+soci::blob
+convert(ripple::STAmount const& from, soci::session& s)
 {
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
-    to = ripple::PublicKey{ripple::makeSlice(tmp)};
+    soci::blob to(s);
+    ripple::Serializer r;
+    from.add(r);
+    to.write(0, reinterpret_cast<char const*>(r.data()), r.size());
+    return to;
 }
 
-void
-convert(ripple::STAmount const& from, soci::blob& to)
+soci::blob
+convert(ripple::STXChainBridge const& from, soci::session& s)
 {
-    ripple::Serializer s;
-    from.add(s);
-    to.write(0, reinterpret_cast<char const*>(s.data()), s.size());
+    soci::blob to(s);
+    ripple::Serializer r;
+    from.add(r);
+    to.write(0, reinterpret_cast<char const*>(r.data()), r.size());
+    return to;
 }
 
-void
-convert(soci::blob& from, ripple::STAmount& to, ripple::SField const& f)
+soci::blob
+convert(ripple::AccountID const& from, soci::session& s)
 {
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
-    ripple::SerialIter s(tmp.data(), tmp.size());
-    to = ripple::STAmount{s, f};
-}
-
-void
-convert(ripple::STXChainBridge const& from, soci::blob& to)
-{
-    ripple::Serializer s;
-    from.add(s);
-    to.write(0, reinterpret_cast<char const*>(s.data()), s.size());
-}
-
-void
-convert(soci::blob& from, ripple::STXChainBridge& to, ripple::SField const& f)
-{
-    std::vector<std::uint8_t> tmp;
-    convert(from, tmp);
-    ripple::SerialIter s(tmp.data(), tmp.size());
-    to = ripple::STXChainBridge{s, f};
+    soci::blob to(s);
+    to.write(0, reinterpret_cast<char const*>(from.data()), from.size());
+    return to;
 }
 
 }  // namespace xbwd

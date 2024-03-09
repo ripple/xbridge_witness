@@ -226,22 +226,15 @@ private:
 
                 auto session = db->checkoutDb();
 
-                soci::blob amtBlob{*session};
-                convert(amt, amtBlob);
-                soci::blob bridgeBlob(*session);
-                convert(bridge, bridgeBlob);
-                soci::blob sendingAccountBlob(*session);
-                convert(src, sendingAccountBlob);
-                soci::blob rewardAccountBlob(*session);
-                convert(rewAcc, rewardAccountBlob);
-                soci::blob signingAccountBlob(*session);
-                convert(claim.attestationSignerAccount, signingAccountBlob);
-                soci::blob publicKeyBlob(*session);
-                convert(signPub, publicKeyBlob);
-                soci::blob signatureBlob(*session);
-                convert(claim.signature, signatureBlob);
-                soci::blob otherChainDstBlob(*session);
-                convert(dst, otherChainDstBlob);
+                soci::blob amtBlob = convert(amt, *session);
+                soci::blob bridgeBlob = convert(bridge, *session);
+                soci::blob sendingAccountBlob = convert(src, *session);
+                soci::blob rewardAccountBlob = convert(rewAcc, *session);
+                soci::blob signingAccountBlob =
+                    convert(claim.attestationSignerAccount, *session);
+                soci::blob publicKeyBlob = convert(signPub, *session);
+                soci::blob signatureBlob = convert(claim.signature, *session);
+                soci::blob otherChainDstBlob = convert(dst, *session);
 
                 auto const sql = fmt::format(
                     "INSERT INTO {} (TransID, LedgerSeq, ClaimID, Success, "
@@ -306,23 +299,19 @@ private:
 
                 while (st.fetch())
                 {
-                    ripple::AccountID locSignAcc;
-                    convert(signingAccountBlob, locSignAcc);
-                    ripple::PublicKey locSignPub;
-                    convert(publicKeyBlob, locSignPub);
-                    ripple::Buffer sigBuf;
-                    convert(signatureBlob, sigBuf);
-                    ripple::STAmount locAmt;
-                    convert(amtBlob, locAmt, ripple::sfAmount);
-                    ripple::AccountID locSrc;
-                    convert(sendingAccountBlob, locSrc);
-                    ripple::AccountID locRewAcc;
-                    convert(rewardAccountBlob, locRewAcc);
-                    ripple::AccountID locDst;
+                    auto locSignAcc =
+                        convert<ripple::AccountID>(signingAccountBlob);
+                    auto locSignPub = convert<ripple::PublicKey>(publicKeyBlob);
+                    auto sigBuf = convert<ripple::Buffer>(signatureBlob);
+                    auto locAmt = convert<ripple::STAmount>(amtBlob);
+                    auto locSrc =
+                        convert<ripple::AccountID>(sendingAccountBlob);
+                    auto locRewAcc =
+                        convert<ripple::AccountID>(rewardAccountBlob);
+                    auto locDst = convert<ripple::AccountID>(otherChainDstBlob);
                     BEAST_EXPECT(otherChainDstInd == soci::i_ok);
-                    convert(otherChainDstBlob, locDst);
-                    ripple::STXChainBridge locBridge;
-                    convert(bridgeBlob, locBridge, ripple::sfXChainBridge);
+                    auto locBridge =
+                        convert<ripple::STXChainBridge>(bridgeBlob);
 
                     if (!BEAST_EXPECT(signAcc == locSignAcc))
                         return;
@@ -395,24 +384,16 @@ private:
 
                 auto session = db->checkoutDb();
 
-                soci::blob amtBlob{*session};
-                convert(amt, amtBlob);
-                soci::blob rewardAmtBlob{*session};
-                convert(rewAmt, rewardAmtBlob);
-                soci::blob bridgeBlob(*session);
-                convert(bridge, bridgeBlob);
-                soci::blob sendingAccountBlob(*session);
-                convert(src, sendingAccountBlob);
-                soci::blob rewardAccountBlob(*session);
-                convert(rewAcc, rewardAccountBlob);
-                soci::blob signingAccountBlob(*session);
-                convert(create.attestationSignerAccount, signingAccountBlob);
-                soci::blob publicKeyBlob(*session);
-                convert(signPub, publicKeyBlob);
-                soci::blob signatureBlob(*session);
-                convert(create.signature, signatureBlob);
-                soci::blob otherChainDstBlob(*session);
-                convert(dst, otherChainDstBlob);
+                soci::blob amtBlob = convert(amt, *session);
+                soci::blob rewardAmtBlob = convert(rewAmt, *session);
+                soci::blob bridgeBlob = convert(bridge, *session);
+                soci::blob sendingAccountBlob = convert(src, *session);
+                soci::blob rewardAccountBlob = convert(rewAcc, *session);
+                soci::blob signingAccountBlob =
+                    convert(create.attestationSignerAccount, *session);
+                soci::blob publicKeyBlob = convert(signPub, *session);
+                soci::blob signatureBlob = convert(create.signature, *session);
+                soci::blob otherChainDstBlob = convert(dst, *session);
 
                 auto const sql = fmt::format(
                     "INSERT INTO {} "
@@ -485,25 +466,20 @@ private:
 
                 while (st.fetch())
                 {
-                    ripple::AccountID locSignAcc;
-                    convert(signingAccountBlob, locSignAcc);
-                    ripple::PublicKey locSignPub;
-                    convert(publicKeyBlob, locSignPub);
-                    ripple::Buffer sigBuf;
-                    convert(signatureBlob, sigBuf);
-                    ripple::STAmount locAmt;
-                    convert(amtBlob, locAmt, ripple::sfAmount);
-                    ripple::STAmount locRewAmt;
-                    convert(rewardAmtBlob, locRewAmt, ripple::sfAmount);
-                    ripple::AccountID locSrc;
-                    convert(sendingAccountBlob, locSrc);
-                    ripple::AccountID locRewAcc;
-                    convert(rewardAccountBlob, locRewAcc);
-                    ripple::AccountID locDst;
+                    auto locSignAcc =
+                        convert<ripple::AccountID>(signingAccountBlob);
+                    auto locSignPub = convert<ripple::PublicKey>(publicKeyBlob);
+                    auto sigBuf = convert<ripple::Buffer>(signatureBlob);
+                    auto locAmt = convert<ripple::STAmount>(amtBlob);
+                    auto locRewAmt = convert<ripple::STAmount>(rewardAmtBlob);
+                    auto locSrc =
+                        convert<ripple::AccountID>(sendingAccountBlob);
+                    auto locRewAcc =
+                        convert<ripple::AccountID>(rewardAccountBlob);
+                    auto locDst = convert<ripple::AccountID>(otherChainDstBlob);
                     BEAST_EXPECT(otherChainDstInd == soci::i_ok);
-                    convert(otherChainDstBlob, locDst);
-                    ripple::STXChainBridge locBridge;
-                    convert(bridgeBlob, locBridge, ripple::sfXChainBridge);
+                    auto locBridge =
+                        convert<ripple::STXChainBridge>(bridgeBlob);
 
                     if (!BEAST_EXPECT(signAcc == locSignAcc))
                         return;
