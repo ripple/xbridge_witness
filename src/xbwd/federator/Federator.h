@@ -291,8 +291,9 @@ struct AttestedHistoryTx
 
 class Federator : public std::enable_shared_from_this<Federator>
 {
-    enum LoopTypes { lt_event, lt_txnSubmit, lt_last };
+    enum LoopTypes { lt_event_locking, lt_event_issuing, lt_txnSubmit, lt_last };
     std::array<std::thread, lt_last> threads_;
+
     bool running_ = false;
     std::atomic<bool> requestStop_ = false;
 
@@ -317,7 +318,7 @@ class Federator : public std::enable_shared_from_this<Federator>
     ChainArray<bool const> const autoSubmit_;  // event thread only
 
     mutable std::mutex eventsMutex_;
-    std::vector<FederatorEvent> GUARDED_BY(eventsMutex_) events_;
+    ChainArray<std::vector<FederatorEvent>> GUARDED_BY(eventsMutex_) events_;
 
     mutable std::mutex txnsMutex_;
     ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) txns_;
@@ -462,7 +463,7 @@ private:
         ripple::Logs& l);
 
     void
-    mainLoop() EXCLUDES(mainLoopMutex_);
+    mainLoop(ChainType ct) EXCLUDES(mainLoopMutex_);
 
     void
     txnSubmitLoop() EXCLUDES(txnSubmitLoopMutex_);
