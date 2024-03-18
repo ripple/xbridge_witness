@@ -84,10 +84,11 @@ Federator::Federator(
                   chains_[ChainType::issuing].txnSubmit_ &&
                   chains_[ChainType::issuing].txnSubmit_->shouldSubmit}
     , maxAttToSend_(config.maxAttToSend)
-    , keyType_{config.keyType}
     , signingAccount_(config.signingAccount)
+    , keyType_{config.keyType}
     , signingPK_{derivePublicKey(config.keyType, config.signingKey)}
     , signingSK_{config.signingKey}
+    , noDB_{config.noDB}
     , j_(j)
     , useBatch_(config.useBatch)
 {
@@ -97,7 +98,8 @@ Federator::Federator(
         config.issuingChainConfig.ignoreSignerList;
 
     std::fill(loopLocked_.begin(), loopLocked_.end(), true);
-    events_.reserve(16);
+    events_[ChainType::locking].reserve(16);
+    events_[ChainType::issuing].reserve(16);
 }
 
 void
@@ -500,9 +502,13 @@ Federator::start()
     requestStop_ = false;
     running_ = true;
 
-    threads_[lt_event] = std::thread([this]() {
-        beast::setCurrentThreadName("FederatorEvents");
-        this->mainLoop();
+    threads_[lt_event_locking] = std::thread([this]() {
+        beast::setCurrentThreadName("FederatorEvents L");
+        this->mainLoop(ChainType::locking);
+    });
+    threads_[lt_event_issuing] = std::thread([this]() {
+        beast::setCurrentThreadName("FederatorEvents I");
+        this->mainLoop(ChainType::issuing);
     });
 
     threads_[lt_txnSubmit] = std::thread([this]() {
@@ -523,7 +529,7 @@ Federator::stop()
         for (int i = 0; i < lt_last; ++i)
         {
             std::lock_guard l(cvMutexes_[i]);
-            cvs_[i].notify_one();
+            cvs_[i].notify_all();
         }
 
         for (int i = 0; i < lt_last; ++i)
@@ -536,16 +542,21 @@ Federator::stop()
 void
 Federator::push(FederatorEvent&& e)
 {
+    ChainType ct;
+    std::visit([&ct](auto const& e) { ct = e.chainType_; }, e);
+    LoopTypes const lt =
+        ct == ChainType::locking ? lt_event_locking : lt_event_issuing;
+
     bool notify = false;
     {
         std::lock_guard l{eventsMutex_};
-        notify = events_.empty();
-        events_.push_back(std::move(e));
+        notify = events_[ct].empty();
+        events_[ct].push_back(std::move(e));
     }
     if (notify)
     {
-        std::lock_guard l(cvMutexes_[lt_event]);
-        cvs_[lt_event].notify_one();
+        std::lock_guard l(cvMutexes_[lt]);
+        cvs_[lt].notify_all();
     }
 }
 
@@ -738,6 +749,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     auto const& tblName = db_init::xChainTableName(ct);
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -797,6 +809,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     assert(!claimOpt || claimOpt->verify(e.bridge_));
 
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
 
@@ -856,6 +869,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             soci::use(signingAccountBlob), soci::use(publicKeyBlob),
             soci::use(signatureBlob);
     }
+
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -907,6 +922,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
     auto const& tblName = db_init::xChainCreateAccountTableName(ct);
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -963,6 +979,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
     assert(!createOpt || createOpt->verify(e.bridge_));
 
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
 
@@ -1024,6 +1041,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
             soci::use(otherChainDstBlob), soci::use(signingAccountBlob),
             soci::use(publicKeyBlob), soci::use(signatureBlob);
     }
+
+    if (!noDB_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
         auto const sql = fmt::format(
@@ -1345,7 +1364,7 @@ Federator::checkExpired(ChainType ct, std::uint32_t ledger)
     if (notify)
     {
         std::lock_guard l(cvMutexes_[lt_txnSubmit]);
-        cvs_[lt_txnSubmit].notify_one();
+        cvs_[lt_txnSubmit].notify_all();
     }
     else
     {
@@ -1560,7 +1579,7 @@ Federator::pushAttOnSubmitTxn(
     if (notify)
     {
         std::lock_guard l(cvMutexes_[lt_txnSubmit]);
-        cvs_[lt_txnSubmit].notify_one();
+        cvs_[lt_txnSubmit].notify_all();
     }
 }
 
@@ -1692,19 +1711,21 @@ Federator::unlockMainLoop()
     {
         std::lock_guard l(loopMutexes_[i]);
         loopLocked_[i] = false;
-        loopCvs_[i].notify_one();
+        loopCvs_[i].notify_all();
     }
 }
 
 void
-Federator::mainLoop()
+Federator::mainLoop(ChainType ct)
 {
-    auto const lt = lt_event;
+    LoopTypes const lt =
+        ct == ChainType::locking ? lt_event_locking : lt_event_issuing;
     {
         std::unique_lock l{loopMutexes_[lt]};
         loopCvs_[lt].wait(l, [this, lt] { return !loopLocked_[lt]; });
     }
 
+    auto& events(events_[ct]);
     std::vector<FederatorEvent> localEvents;
     localEvents.reserve(16);
     while (!requestStop_)
@@ -1712,7 +1733,7 @@ Federator::mainLoop()
         {
             std::lock_guard l{eventsMutex_};
             assert(localEvents.empty());
-            localEvents.swap(events_);
+            localEvents.swap(events);
         }
         if (localEvents.empty())
         {
@@ -1830,17 +1851,20 @@ Federator::txnSubmitLoop()
 
         for (auto const ct : {ChainType::locking, ChainType::issuing})
         {
+            if (accountStrs[ct].empty())
+                continue;
+
             decltype(txns_)::type localTxns;
             decltype(txns_)::type* pLocal = nullptr;
             bool checkReady = false;
 
             {
                 std::lock_guard l{txnsMutex_};
-
-                if (accountStrs[ct].empty())
-                    continue;
                 if (maxAttToSend_ && (submitted_[ct].size() > maxAttToSend_))
+                {
+                    ++skipCtr;
                     continue;
+                }
 
                 if (errored_[ct].empty())
                 {
@@ -1939,11 +1963,19 @@ Federator::getInfo() const
         // Pending events
         // In most cases, events have been moved by event loop thread
         std::lock_guard l{eventsMutex_};
-        ret["pending_events_size"] = (int)events_.size();
-        if (events_.size() > 0)
+        auto const sz = events_[ChainType::locking].size() +
+            events_[ChainType::issuing].size();
+        ret["pending_events_size"] = (int)sz;
+        if (sz > 0)
         {
             Json::Value pendingEvents{Json::arrayValue};
-            for (auto const& event : events_)
+            for (auto const& event : events_[ChainType::locking])
+            {
+                std::visit(
+                    [&](auto const& e) { pendingEvents.append(e.toJson()); },
+                    event);
+            }
+            for (auto const& event : events_[ChainType::issuing])
             {
                 std::visit(
                     [&](auto const& e) { pendingEvents.append(e.toJson()); },
@@ -2044,6 +2076,9 @@ Federator::getInfo() const
 void
 Federator::deleteFromDB(ChainType ct, std::uint64_t id, bool isCreateAccount)
 {
+    if (noDB_)
+        return;
+
     auto session = app_.getXChainTxnDB().checkoutDb();
     auto const& tblName = [&]() {
         if (isCreateAccount)
