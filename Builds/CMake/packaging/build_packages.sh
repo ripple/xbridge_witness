@@ -7,7 +7,6 @@ bin_dir="${src_dir}/build"
 pkg_dir="${src_dir}/packages"
 build_config=Release
 conan_packages_to_build="missing"
-#conan_profile="default"
 nproc=$(($(nproc) - 2))
 
 if [ $nproc -lt 3 ]; then
@@ -21,10 +20,14 @@ if [ $ID = centos ]; then
     source /opt/rh/rh-python38/enable
     conan_packages_to_build="" # blank bc all dependencies need to be built for CentOS 7 currently
     #conan_profile="centos" # TODO: Make a "centos" profile and upload the bin pkgs
-    #conan remote add --insert 0 conan-non-prod http://18.143.149.228:8081/artifactory/api/conan/conan-non-prod || true
 fi
 
-conan profile new default --detect
+if ! (conan remote list | grep conan-non-prod); then
+    conan remote add --insert 0 conan-non-prod http://18.143.149.228:8081/artifactory/api/conan/conan-non-prod
+fi
+if ! (conan profile list | grep default); then
+    conan profile new default --detect;
+fi
 conan profile update settings.compiler.cppstd=20 default
 conan profile update settings.compiler.libcxx=libstdc++11 default
 
@@ -39,7 +42,7 @@ cmake \
     -B "${bin_dir}" \
     -DCMAKE_BUILD_TYPE=${build_config} \
     -DPKG=deb \
-    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=build/generators/conan_toolchain.cmake
+    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=conan_toolchain.cmake \
 
 cmake \
     --build "${bin_dir}" \
@@ -51,8 +54,8 @@ cmake \
     -S "${src_dir}" \
     -B "${bin_dir}" \
     -DCMAKE_BUILD_TYPE=${build_config} \
-    -DPKG=rpm \
-    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=build/generators/conan_toolchain.cmake
+    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=conan_toolchain.cmake \
+    -DPKG=rpm
 
 cmake \
     --build "${bin_dir}" \
