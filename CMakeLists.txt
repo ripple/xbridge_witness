@@ -36,6 +36,7 @@ find_package(fmt REQUIRED)
 find_package(date REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Threads)
+find_package(xxHash)
 
 include(XBridgeWitnessNIH)
 
@@ -234,7 +235,7 @@ if (is_linux)
 endif()
 target_include_directories (${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
 target_link_libraries (${PROJECT_NAME} PUBLIC Ripple::xrpl_core XBridgeWitness::opts
-  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL)
+  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL xxHash::xxhash)
 
 if (san)
   target_compile_options (${PROJECT_NAME}
