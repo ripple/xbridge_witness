@@ -37,7 +37,8 @@ class Xrpl(ConanFile):
         'soci/4.0.3',
         'sqlite3/3.42.0',
         'zlib/1.2.13',
-        'fmt/8.1.1'
+        'fmt/8.1.1',
+        'xxhash/0.8.2'
     ]
 
     default_options = {
