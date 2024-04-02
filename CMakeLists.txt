@@ -21,15 +21,13 @@ set(CMAKE_VERBOSE_MAKEFILE 1)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
 
-find_package(SOCI REQUIRED)
-find_package(fmt REQUIRED)
 find_package(date REQUIRED)
+find_package(fmt REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(SOCI REQUIRED)
 find_package(Threads)
-find_package(xxHash)
-
-include(XBridgeWitnessNIH)
-# find_package(xrpl REQUIRED)
+find_package(xrpl REQUIRED)
+find_package(xxHash REQUIRED)
 
 get_directory_property(has_parent PARENT_DIRECTORY)
 
@@ -144,19 +142,19 @@ target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector-strong")
 if(is_linux)
   target_link_options(${PROJECT_NAME} PUBLIC "LINKER:-z,relro,-z,now")
 endif()
-<<<<<<< HEAD
+
 target_include_directories (${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
-<<<<<<< HEAD
-target_link_libraries (${PROJECT_NAME} PUBLIC Ripple::xrpl_core XBridgeWitness::opts
-  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL xxHash::xxhash)
-=======
-target_link_libraries (${PROJECT_NAME} PUBLIC xrpl::libxrpl XBridgeWitness::opts
-=======
-target_include_directories(${PROJECT_NAME} PRIVATE src ${date_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} PUBLIC xrpl::libxrpl XBridgeWitness::opts
->>>>>>> a480329 (Build packages with libxrpl)
-  SOCI::soci_core_static SOCI::soci_sqlite3_static fmt::fmt OpenSSL::Crypto OpenSSL::SSL)
->>>>>>> 75c520c (Remove old rippled integration)
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+    xrpl::libxrpl
+    XBridgeWitness::opts
+    SOCI::soci_core_static
+    SOCI::soci_sqlite3_static
+    fmt::fmt
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    xxHash::xxhash
+  )
 
 if(san)
   target_compile_options(${PROJECT_NAME}
