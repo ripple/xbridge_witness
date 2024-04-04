@@ -27,7 +27,6 @@ find_package(OpenSSL REQUIRED)
 find_package(SOCI REQUIRED)
 find_package(Threads)
 find_package(xrpl REQUIRED)
-find_package(xxHash REQUIRED)
 
 get_directory_property(has_parent PARENT_DIRECTORY)
 
@@ -153,7 +152,6 @@ target_link_libraries(${PROJECT_NAME}
     fmt::fmt
     OpenSSL::Crypto
     OpenSSL::SSL
-    xxHash::xxhash
   )
 
 if(san)
