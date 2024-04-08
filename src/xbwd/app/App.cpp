@@ -70,6 +70,9 @@ App::App(
 {
     // TODO initialize the public and secret keys
 
+    JLOG(j_.info()) << "Application starting. Version is "
+                    << build_info::getVersionString();
+
     config_->rpcEndpoint = xbwd::rpc_call::addrToEndpoint(
         get_io_service(), config_->addrRpcEndpoint);
     config_->issuingChainConfig.chainIp = xbwd::rpc_call::addrToEndpoint(
@@ -144,8 +147,6 @@ App::setup()
 void
 App::start()
 {
-    JLOG(j_.info()) << "Application starting. Version is "
-                    << build_info::getVersionString();
     if (federator_)
         federator_->start();
     // TODO: unlockMainLoop should go away

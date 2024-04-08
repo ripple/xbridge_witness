@@ -159,7 +159,7 @@ WebsocketClient::connect()
             jv("what", e.what()),
             jv("ip", ep_.address()),
             jv("port", ep_.port()));
-        reconnect();
+        reconnect("exception in connection");
     }
 }
 
@@ -189,7 +189,7 @@ WebsocketClient::send(
     catch (...)
     {
         std::lock_guard<std::mutex> l(shutdownM_);
-        reconnect();
+        reconnect("exception at sending data");
     }
     return id;
 }
@@ -211,7 +211,7 @@ WebsocketClient::onReadMsg(error_code const& ec)
             peerClosed_ = true;
 
         std::lock_guard<std::mutex> l(shutdownM_);
-        reconnect();
+        reconnect("error reading data");
         return;
     }
 
@@ -228,10 +228,13 @@ WebsocketClient::onReadMsg(error_code const& ec)
 }
 
 void
-WebsocketClient::reconnect()
+WebsocketClient::reconnect(std::string_view reason)
 {
     if (isShutdown_)
         return;
+
+    JLOGV(j_.info(), "WebsocketClient::reconnect()", jv("reason", reason));
+
     boost::system::error_code ecc;
     stream_.close(ecc);
     std::weak_ptr<WebsocketClient> wptr = this->shared_from_this();

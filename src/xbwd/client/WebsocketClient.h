@@ -112,7 +112,7 @@ public:
     shutdown() EXCLUDES(shutdownM_);
 
     void
-    reconnect() REQUIRES(shutdownM_);
+    reconnect(std::string_view reason) REQUIRES(shutdownM_);
 
 private:
     void
