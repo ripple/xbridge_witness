@@ -63,7 +63,8 @@ struct HistoryProcessor
     std::uint32_t startupLedger_ = 0;
 
     // Requesting ledgers in batch and check transactions after every batch
-    // request
+    // request. Used only when history is not finished in 'normal' way. This
+    // means there are some gaps in the history.
     std::uint32_t const requestLedgerBatch_ = 100;
     std::uint32_t toRequestLedger_ = 0;
 
@@ -233,6 +234,9 @@ private:
 
     void
     processNewLedger(std::uint32_t ledger);
+
+    void
+    initStartupLedger(std::uint32_t ledger);
 
     template <class E>
     void
