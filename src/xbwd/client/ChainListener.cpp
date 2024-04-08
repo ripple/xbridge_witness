@@ -100,7 +100,7 @@ ChainListener::onConnect()
             // processed with transaction parsing.
             // account_tx present in the
             // Cycle, so there is no reconnect for it
-            self->wsClient_->reconnect();
+            self->wsClient_->reconnect("Can't process Account Info");
             return;
         }
         Json::Value params;
@@ -127,7 +127,7 @@ ChainListener::onConnect()
                           mainFlow](Json::Value const& msg) {
         if (!self->processSigningAccountInfo(msg))
         {
-            self->wsClient_->reconnect();
+            self->wsClient_->reconnect("Can't process Signing Account Info");
             return;
         }
         mainFlow();
@@ -802,7 +802,11 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
             }
             auto const& jslArray = jaccData[ripple::jss::signer_lists];
             if (!jslArray.isArray() || jslArray.size() != 1)
-                return warn_ret("'signer_lists'  isn't array of size 1");
+            {
+                warn_ret("'signer_lists'  isn't array of size 1");
+                // empty array mean no signer_list, that's ok.
+                return jslArray.isArray() && !jslArray;
+            }
 
             auto opEntries = processSignerListSetGeneral(
                 jslArray[0u], chainName, errTopic, j_);
@@ -865,7 +869,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
         std::uint32_t networkID = 0;
         auto checkNetworkID = [&jinfo, &networkID, this, warn_ret]() {
             if (!jinfo.isMember(ripple::jss::network_id))
-                return warn_ret("'network_id' missed");
+                return;
 
             auto const& jnetID = jinfo[ripple::jss::network_id];
             if (!jnetID.isIntegral())
@@ -1657,7 +1661,9 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
                 j_.info(),
                 "Reach last processed ledger",
                 jv("chainType", chainName),
-                jv("finish_ledger", hp_.toRequestLedger_ + 1));
+                jv("finish_ledger", hp_.toRequestLedger_ + 1),
+                jv("ledgerMin", ledgerMin),
+                jv("lastLedgerProcessed", hp_.lastLedgerProcessed_));
             hp_.stopHistory_ = true;
             pushEvent(event::EndOfHistory{chainType_});
         }
@@ -1756,41 +1762,48 @@ ChainListener::sendLedgerReq(std::uint32_t cnt)
 }
 
 void
-ChainListener::processNewLedger(std::uint32_t ledgerIdx)
+ChainListener::initStartupLedger(std::uint32_t ledger)
 {
-    auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
-
-    if (!hp_.startupLedger_)
+    if (hp_.startupLedger_ < ledger)
     {
-        if (hp_.lastLedgerProcessed_ > ledgerIdx)
+        if (hp_.lastLedgerProcessed_ > ledger)
         {
             JLOGV(
                 j_.error(),
                 "New ledger less then processed ledger",
                 jv("chainType", to_string(chainType_)),
-                jv("newLedger", ledgerIdx),
+                jv("newLedger", ledger),
                 jv("lastLedgerProcessed", hp_.lastLedgerProcessed_));
             throw std::runtime_error("New ledger less then processed ledger");
         }
 
-        hp_.startupLedger_ = ledgerIdx;
-        hp_.toRequestLedger_ = ledgerIdx - 1;
+        hp_.startupLedger_ = ledger;
+        hp_.toRequestLedger_ = ledger - 1;
         JLOGV(
             j_.info(),
             "Init startup ledger",
             jv("chainType", to_string(chainType_)),
             jv("startup_ledger", hp_.startupLedger_));
 
-        if (!ledgerIdx)
+        if (!ledger)
         {
             JLOGV(
                 j_.error(),
                 "New ledger invalid idx",
                 jv("chainType", to_string(chainType_)),
-                jv("ledgerIdx", ledgerIdx));
+                jv("ledgerIdx", ledger));
             throw std::runtime_error("New ledger invalid idx");
         }
     }
+}
+
+void
+ChainListener::processNewLedger(std::uint32_t ledgerIdx)
+{
+    auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
+
+    if (!hp_.startupLedger_)
+        initStartupLedger(ledgerIdx);
 
     if (hp_.state_ == HistoryProcessor::FINISHED)
     {
@@ -1833,11 +1846,9 @@ ChainListener::processNewLedger(std::uint32_t ledgerIdx)
                     self->pushEvent(event::EndOfHistory{self->chainType_});
                     return;
                 }
+                // request for accountTx on next "new ledger" event (in case
+                // bridge just created in the latest ledger)
                 self->hp_.state_ = HistoryProcessor::RETR_HISTORY;
-                self->accountTx(
-                    doorAccStr,
-                    self->hp_.lastLedgerProcessed_,
-                    self->hp_.startupLedger_);
             };
 
             hp_.state_ = HistoryProcessor::WAIT_CB;
@@ -1876,9 +1887,15 @@ ChainListener::processNewLedger(std::uint32_t ledgerIdx)
 
             break;
         }
+        case HistoryProcessor::RETR_HISTORY: {
+            // runs only once per initialization
+            hp_.state_ = HistoryProcessor::WAIT_CB;
+            // starts history from the latest ledger
+            initStartupLedger(ledgerIdx);
+            accountTx(doorAccStr, hp_.lastLedgerProcessed_, hp_.startupLedger_);
+            break;
+        }
         case HistoryProcessor::RETR_LEDGERS:
-            [[fallthrough]];
-        case HistoryProcessor::RETR_HISTORY:
             [[fallthrough]];
         case HistoryProcessor::WAIT_CB:
             [[fallthrough]];
