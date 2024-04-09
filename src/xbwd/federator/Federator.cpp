@@ -83,9 +83,9 @@ Federator::Federator(
                   chains_[ChainType::locking].txnSubmit_->shouldSubmit,
                   chains_[ChainType::issuing].txnSubmit_ &&
                   chains_[ChainType::issuing].txnSubmit_->shouldSubmit}
-    , maxAttToSend_(config.maxAttToSend)
-    , keyType_{config.keyType}
+    , maxAttToSend_(config.maxAttToSend)    
     , signingAccount_(config.signingAccount)
+    , keyType_{config.keyType}
     , signingPK_{derivePublicKey(config.keyType, config.signingKey)}
     , signingSK_{config.signingKey}
     , j_(j)
@@ -215,6 +215,7 @@ Federator::init(
             j_.info(),
             "Prepare init sync",
             jv("chainType", to_string(ct)),
+            jv("autoSubmit", autoSubmit_[ct]),
             jv("DB ledgerSqn", initSync_[ct].dbLedgerSqn_),
             jv("DB txHash", initSync_[ct].dbTxnHash_),
             jv("config txHash",
@@ -228,7 +229,7 @@ Federator::init(
         auto const& chainConfig = chainType == ChainType::locking
             ? config.lockingChainConfig
             : config.issuingChainConfig;
-        if (chainConfig.txnSubmit && chainConfig.txnSubmit->shouldSubmit)
+        if (autoSubmit_[chainType])
         {
             return chainConfig.txnSubmit->submittingAccount;
         }
@@ -971,7 +972,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
         soci::blob amtBlob = e.deliveredAmt_
             ? convert(*e.deliveredAmt_, *session)
             : soci::blob(*session);
-        soci::blob rewardAmtBlob = convert(*e.deliveredAmt_, *session);
+        soci::blob rewardAmtBlob = convert(e.rewardAmt_, *session);
         soci::blob bridgeBlob = convert(bridge_, *session);
         // Convert to an AccountID first, because if the type changes we want to
         // catch it.
@@ -1739,8 +1740,7 @@ Federator::txnSubmitLoop()
     ChainArray<std::string> accountStrs;
     for (ChainType ct : {ChainType::locking, ChainType::issuing})
     {
-        config::TxnSubmit const& txnSubmit = *chains_[ct].txnSubmit_;
-        if (chains_[ct].txnSubmit_ && chains_[ct].txnSubmit_->shouldSubmit)
+        if (autoSubmit_[ct])
             accountStrs[ct] =
                 ripple::toBase58(chains_[ct].txnSubmit_->submittingAccount);
         else

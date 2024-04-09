@@ -1435,6 +1435,9 @@ ChainListener::processAccountTx(Json::Value const& msg)
 {
     bool const requestContinue = processAccountTxHlp(msg);
 
+    if (hp_.state_ == HistoryProcessor::WAIT_CB)
+        hp_.state_ = HistoryProcessor::RETR_HISTORY;
+
     if (hp_.state_ != HistoryProcessor::FINISHED)
     {
         if (hp_.stopHistory_)
@@ -1812,16 +1815,18 @@ ChainListener::processNewLedger(std::uint32_t ledgerIdx)
 
         if (ledgerIdx > ledgerReqMax_)
         {
-            auto const ledgerReqMinDoor = ledgerProcessedDoor_
+            auto ledgerReqMinDoor = ledgerProcessedDoor_
                 ? ledgerProcessedDoor_ + 1
                 : hp_.startupLedger_ + 1;
+            ledgerReqMinDoor = std::min(ledgerReqMinDoor, ledgerIdx);
             ledgerReqMax_ = ledgerIdx;
             accountTx(doorAccStr, ledgerReqMinDoor, ledgerReqMax_);
             if (!submitAccountStr_.empty())
             {
-                auto const ledgerReqMinSub = ledgerProcessedSubmit_
+                auto ledgerReqMinSub = ledgerProcessedSubmit_
                     ? ledgerProcessedSubmit_ + 1
                     : hp_.startupLedger_ + 1;
+                ledgerReqMinSub = std::min(ledgerReqMinSub, ledgerIdx);
                 accountTx(submitAccountStr_, ledgerReqMinSub, ledgerReqMax_);
             }
         }
