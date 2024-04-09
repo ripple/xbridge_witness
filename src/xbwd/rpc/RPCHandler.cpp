@@ -415,28 +415,12 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
 
     auto const& tblName = db_init::xChainCreateAccountTableName(ct);
 
-    std::vector<std::uint8_t> const encodedBridge = [&] {
-        ripple::Serializer s;
-        bridge.add(s);
-        return std::move(s.modData());
-    }();
-
-    auto const encodedAmt = [&]() -> std::vector<std::uint8_t> {
-        ripple::Serializer s;
-        sendingAmount.add(s);
-        return std::move(s.modData());
-    }();
-    auto const encodedRewardAmt = [&]() -> std::vector<std::uint8_t> {
-        ripple::Serializer s;
-        rewardAmount.add(s);
-        return std::move(s.modData());
-    }();
     {
         auto session = app.getXChainTxnDB().checkoutDb();
 
-        soci::blob amtBlob = convert(encodedAmt, *session);
-        soci::blob rewardAmtBlob = convert(encodedRewardAmt, *session);
-        soci::blob bridgeBlob = convert(encodedBridge, *session);
+        soci::blob amtBlob = convert(sendingAmount, *session);
+        soci::blob rewardAmtBlob = convert(rewardAmount, *session);
+        soci::blob bridgeBlob = convert(bridge, *session);
         soci::blob sendingAccountBlob = convert(sendingAccount, *session);
         soci::blob otherChainDstBlob = convert(dst, *session);
 
