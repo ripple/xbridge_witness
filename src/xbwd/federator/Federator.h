@@ -364,7 +364,7 @@ class Federator : public std::enable_shared_from_this<Federator>
     struct InitSync
     {
         // Indicate that chain still processing history
-        std::atomic<bool> syncing_{true};
+        std::atomic_bool syncing_{true};
 
         // The hash of the latest event that require attestation from the
         // previous session. Saved at the event chain side.
@@ -386,6 +386,9 @@ class Federator : public std::enable_shared_from_this<Federator>
     };
 
     ChainArray<InitSync> initSync_;
+    // flag show that sync is finished AND all historical transactions are
+    // already replayed
+    std::atomic_bool syncFinished_{false};
     ChainArray<std::deque<FederatorEvent>> replays_;
     beast::Journal j_;
 

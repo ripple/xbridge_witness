@@ -700,6 +700,7 @@ Federator::tryFinishInitSync(ChainType const ct)
         repl.clear();
         initSync_[cht].attestedTx_.clear();
     }
+    syncFinished_ = true;
 }
 
 bool
@@ -1956,7 +1957,7 @@ Federator::getInfo() const
     for (ChainType ct : {ChainType::locking, ChainType::issuing})
     {
         Json::Value side{Json::objectValue};
-        side["initiating"] = initSync_[ct].syncing_ ? "True" : "False";
+        side["initiating"] = !syncFinished_ ? "True" : "False";
         side["ledger_index"] = chains_[ct].listener_->getCurrentLedger();
         side["fee"] = chains_[ct].listener_->getCurrentFee();
 
