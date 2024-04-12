@@ -1,0 +1,13 @@
+[requires]
+fmt/10.1.1
+openssl/1.1.1u
+xrpl/2.2.0-b2
+soci/4.0.3
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+xrpl:tests=False
+xrpl:rocksdb=False
