@@ -6,6 +6,11 @@
 
 This is the Witness Server for [XLS-38d Cross-Chain bridge project](https://github.com/XRPLF/XRPL-Standards/tree/master/XLS-0038d-cross-chain-bridge). "Witness Servers" validate transfers between "door accounts" that connect a locking chain to each issuing chain by listening for transactions on one or both of the chains and signing attestations to prove certain events happened on a chain.
 
+## Branches
+- `develop`: The latest set of unreleased features, and the most common starting point for contributions.
+- `release`: The latest beta release or release candidate.
+- `main`: The latest stable release.
+
 ## Additional documentation
 
 - [XRPL Sidechains concept](https://xrpl.org/xrpl-sidechains.html)
