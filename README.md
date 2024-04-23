@@ -11,6 +11,15 @@ This is the Witness Server for [XLS-38d Cross-Chain bridge project](https://gith
 - `release`: The latest beta release or release candidate.
 - `main`: The latest stable release.
 
+## Release process:
+- Bump version in `BuildInfo.cpp` and add -rcX suffix. (for example "1.0.0-rc1"). Name this commit "Version x.x.x-rcX".
+- Merge `develop` branch into `release`.
+- Create a git tag for release candidate. (for example "1.0.0-rc1")
+- From now only fixes can be commited/merged into the `release` branch
+- After a week of usage and tests, update the version by removing `-rcX` suffix.
+- Merge `release` into `main`.
+- Create tag for released version. (for example "1.0.0")
+
 ## Additional documentation
 
 - [XRPL Sidechains concept](https://xrpl.org/xrpl-sidechains.html)
