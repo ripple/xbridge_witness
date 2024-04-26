@@ -19,6 +19,7 @@ This is the Witness Server for [XLS-38d Cross-Chain bridge project](https://gith
 - After a week of usage and tests, update the version by removing `-rcX` suffix.
 - Merge `release` into `main`.
 - Create tag for released version. (for example "1.0.0")
+- Draft a new release. (See https://github.com/ripple/xbridge_witness/releases)
 
 ## Additional documentation
 
