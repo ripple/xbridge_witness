@@ -82,8 +82,7 @@ extern const char ledgerEntryIss[];
 extern const char accTxLoc[];
 extern const char accTxIss[];
 
-extern const char ledgerLoc1[];
-extern const char ledgerIss1[];
+extern const char ledgerAdvance[];
 extern const char accTxLoc1[];
 extern const char accTxLoc2[];
 extern const char accInfoIss1[];
@@ -142,6 +141,7 @@ class engineLoc
 {
     std::atomic_bool clientInit_ = false;
     unsigned accTxCtr = 0;
+    unsigned closed_ledger = 5;
 
 public:
     Json::Value
@@ -181,6 +181,7 @@ public:
 
             if (!clientInit_)
             {
+                DBG(std::cout << side() << " clientInit" << std::endl;)
                 std::unique_lock l(gMcv);
                 clientInit_ = true;
                 gCv.notify_all();
@@ -192,19 +193,24 @@ public:
         Json::Value jv;
         Json::Reader().parse(s, jv);
         return jv;
-    };
+    }
 
     bool
     clientInit() const
     {
         return clientInit_;
-    };
+    }
 
     Json::Value
-    getNewLedger() const
+    getNewLedger()
     {
+        ++closed_ledger;
         Json::Value jv;
-        Json::Reader().parse(ledgerLoc1, jv);
+        Json::Reader().parse(
+            fmt::format(
+                fmt::runtime(prepForFmt(ledgerAdvance)),
+                "closed_ledger"_a = closed_ledger),
+            jv);
         return jv;
     }
 
@@ -212,13 +218,19 @@ public:
     attSubmitted() const
     {
         return false;
-    };
+    }
 
     bool
     blobOk() const
     {
         return false;
-    };
+    }
+
+    std::string
+    side() const
+    {
+        return "locking";
+    }
 };
 
 class engineIss
@@ -228,6 +240,7 @@ class engineIss
     std::atomic_bool blobOk_ = false;
     unsigned accInfoCtr = 0;
     unsigned accTxCtr = 0;
+    unsigned closed_ledger = 4;
 
 public:
     Json::Value
@@ -274,6 +287,7 @@ public:
 
             if (!clientInit_)
             {
+                DBG(std::cout << side() << " clientInit" << std::endl;)
                 std::unique_lock l(gMcv);
                 clientInit_ = true;
                 gCv.notify_all();
@@ -292,19 +306,24 @@ public:
         Json::Value jv;
         Json::Reader().parse(s, jv);
         return jv;
-    };
+    }
 
     bool
     clientInit() const
     {
         return clientInit_;
-    };
+    }
 
     Json::Value
-    getNewLedger() const
+    getNewLedger()
     {
+        ++closed_ledger;
         Json::Value jv;
-        Json::Reader().parse(ledgerIss1, jv);
+        Json::Reader().parse(
+            fmt::format(
+                fmt::runtime(prepForFmt(ledgerAdvance)),
+                "closed_ledger"_a = closed_ledger),
+            jv);
         return jv;
     }
 
@@ -312,13 +331,19 @@ public:
     attSubmitted() const
     {
         return attSubmitted_;
-    };
+    }
 
     bool
     blobOk() const
     {
         return blobOk_;
-    };
+    }
+
+    std::string
+    side() const
+    {
+        return "issuing";
+    }
 };
 
 //------------------------------------------------------------------------------
@@ -398,13 +423,24 @@ public:
 
         Json::Value jv;
         Json::Reader().parse(
-            static_cast<const char*>(buffer_.data().data()), jv);
+            static_cast<char const*>(buffer_.data().data()), jv);
         auto const jr = e_.process(jv);
+
+        auto const method = jv[ripple::jss::method].asString();
+        if (method == "ledger_entry")
+        {
+            t_.expires_after(1s);
+            t_.async_wait([this](const boost::system::error_code&) {
+                return this->sendNewLedger();
+            });
+        }
+
         if (!clientInit_)
         {
             if (e_.clientInit())
             {
                 clientInit_ = true;
+                t_.expires_after(1s);
                 t_.async_wait([this](const boost::system::error_code&) {
                     return this->sendNewLedger();
                 });
@@ -465,7 +501,7 @@ public:
     void
     sendNewLedger()
     {
-        DBG(std::cout << "session::sendNewLedger()" << std::endl;)
+        DBG(std::cout << e_.side() << " session::sendNewLedger()" << std::endl;)
         auto const jv = e_.getNewLedger();
         auto const s = to_string(jv);
 
@@ -481,7 +517,7 @@ public:
     void
     onWriteNewLedger(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
-        DBG(std::cout << "session::onWriteNewLedger(), ec:" << ec
+        DBG(std::cout << e_.side()  << " session::onWriteNewLedger(), ec:" << ec
                       << " bytes: " << bytes_transferred << std::endl;)
         boost::ignore_unused(bytes_transferred);
         if (ec == websocket::error::closed)
@@ -494,13 +530,13 @@ public:
     attSubmitted() const
     {
         return e_.attSubmitted();
-    };
+    }
 
     bool
     blobOk() const
     {
         return e_.blobOk();
-    };
+    }
 };
 
 //------------------------------------------------------------------------------
@@ -567,13 +603,13 @@ public:
     bool
     attSubmitted() const
     {
-        return session_ ? session_->attSubmitted(): false;
+        return session_ ? session_->attSubmitted() : false;
     };
 
     bool
     blobOk() const
     {
-        return session_ ? session_->blobOk(): false;
+        return session_ ? session_->blobOk() : false;
     };
 
 private:
@@ -677,7 +713,8 @@ struct Connection
             (serverIss_ ? serverIss_->clientInit() : false);
     }
 
-    bool checkAtt() const
+    bool
+    checkAtt() const
     {
         return (serverIss_ ? serverIss_->attSubmitted() : false) &&
             (serverIss_ ? serverIss_->blobOk() : false);
@@ -720,7 +757,7 @@ private:
         gApp->start();
 
         // wait till server send all the messages
-        wait_for(5s, [&c]() {
+        wait_for(7s, [&c]() {
             return c.clientInit();
         } DBG_ARGS("Wait for App init"));
         BEAST_EXPECT(c.clientInit());
@@ -1357,7 +1394,7 @@ const char accTxLoc[] = R"str(
   "jsonrpc": "2.0",
   "result": {
     "account": "rL9vUaa9eBas32C5bgv4fEmHDfJr3oNd4D",
-    "ledger_index_max": 5,
+    "ledger_index_max": 6,
     "ledger_index_min": 2,
     "limit": 10,
     "transactions": [
@@ -1698,7 +1735,7 @@ const char accTxIss[] = R"str(
   "jsonrpc": "2.0",
   "result": {
     "account": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
-    "ledger_index_max": 4,
+    "ledger_index_max": 5,
     "ledger_index_min": 2,
     "limit": 10,
     "transactions": [
@@ -1969,33 +2006,18 @@ const char accTxIss[] = R"str(
 }
 )str";
 
-const char ledgerLoc1[] = R"str(
+const char ledgerAdvance[] = R"str(
 {
    "fee_base" : 10,
    "fee_ref" : 10,
-   "ledger_hash" : "614D49AAB66C02D6D190D101BA0BFBEB157A60D52ABF6547FBF4DA4B3324034D",
-   "ledger_index" : 7,
-   "ledger_time" : 752637130,
+   "ledger_hash" : "B66BEC6A8C3A3585880B37B600A88B0B280104DCC2F4CCB2DED9C605113FE13E",
+   "ledger_index" : `closed_ledger`,
+   "ledger_time" : 766541670,
    "reserve_base" : 10000000,
    "reserve_inc" : 2000000,
    "txn_count" : 1,
    "type" : "ledgerClosed",
-   "validated_ledgers" : "2-7"
-}
-)str";
-
-const char ledgerIss1[] = R"str(
-{
-   "fee_base" : 10,
-   "fee_ref" : 10,
-   "ledger_hash" : "1BDC7FEDA9F41E30939D76D6BBD12ACE20CE36025CE879A303F0C434B17536DB",
-   "ledger_index" : 5,
-   "ledger_time" : 752637130,
-   "reserve_base" : 10000000,
-   "reserve_inc" : 2000000,
-   "txn_count" : 0,
-   "type" : "ledgerClosed",
-   "validated_ledgers" : "2-5"
+   "validated_ledgers" : "2-`closed_ledger`"
 }
 )str";
 
@@ -2184,8 +2206,8 @@ const char accTxIss1[] = R"str(
    "jsonrpc" : "2.0",
    "result" : {
       "account" : "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
-      "ledger_index_max" : 5,
-      "ledger_index_min" : 5,
+      "ledger_index_max" : 6,
+      "ledger_index_min" : 6,
       "limit" : 10,
       "transactions" : [],
       "validated" : true
@@ -2202,8 +2224,8 @@ const char accTxIss2[] = R"str(
    "jsonrpc" : "2.0",
    "result" : {
       "account" : "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg",
-      "ledger_index_max" : 5,
-      "ledger_index_min" : 5,
+      "ledger_index_max" : 6,
+      "ledger_index_min" : 6,
       "limit" : 10,
       "transactions" : [],
       "validated" : true
