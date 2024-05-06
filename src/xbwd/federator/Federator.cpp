@@ -50,14 +50,14 @@
 
 namespace xbwd {
 
-std::shared_ptr<Federator>
+std::unique_ptr<Federator>
 make_Federator(
     App& app,
     boost::asio::io_service& ios,
     config::Config const& config,
     ripple::Logs& l)
 {
-    auto r = std::make_shared<Federator>(
+    auto r = std::make_unique<Federator>(
         Federator::PrivateTag{}, app, config, l.journal("Federator"));
     r->init(ios, config, l);
 
@@ -236,23 +236,23 @@ Federator::init(
         return {};
     };
 
-    std::shared_ptr<ChainListener> mainchainListener =
-        std::make_shared<ChainListener>(
+    std::unique_ptr<ChainListener> mainchainListener =
+        std::make_unique<ChainListener>(
             ChainType::locking,
             config.bridge,
             getSubmitAccount(ChainType::locking),
-            shared_from_this(),
+            *this,
             config.signingAccount,
             config.txLimit,
             initSync_[ChainType::locking].dbLedgerSqn_,
             l.journal("LListener"));
 
-    std::shared_ptr<ChainListener> sidechainListener =
-        std::make_shared<ChainListener>(
+    std::unique_ptr<ChainListener> sidechainListener =
+        std::make_unique<ChainListener>(
             ChainType::issuing,
             config.bridge,
             getSubmitAccount(ChainType::issuing),
-            shared_from_this(),
+            *this,
             config.signingAccount,
             config.txLimit,
             initSync_[ChainType::issuing].dbLedgerSqn_,

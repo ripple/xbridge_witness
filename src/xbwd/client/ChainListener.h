@@ -20,6 +20,7 @@
 
 #include <xbwd/basics/ChainTypes.h>
 #include <xbwd/basics/ThreadSaftyAnalysis.h>
+#include <xbwd/client/WebsocketClient.h>
 
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/beast/utility/Journal.h>
@@ -37,7 +38,6 @@
 namespace xbwd {
 
 class Federator;
-class WebsocketClient;
 
 struct HistoryProcessor
 {
@@ -81,18 +81,18 @@ struct HistoryProcessor
     clear();
 };
 
-class ChainListener : public std::enable_shared_from_this<ChainListener>
+class ChainListener
 {
 private:
     ChainType const chainType_;
 
     ripple::STXChainBridge const bridge_;
     std::string const submitAccountStr_;
-    std::weak_ptr<Federator> const federator_;
+    Federator& federator_;
     std::optional<ripple::AccountID> const signAccount_;
     beast::Journal j_;
 
-    std::shared_ptr<WebsocketClient> wsClient_;
+    std::unique_ptr<WebsocketClient> wsClient_;
     mutable std::mutex callbacksMtx_;
 
     using RpcCallback = std::function<void(Json::Value const&)>;
@@ -132,7 +132,7 @@ public:
         ChainType chainType,
         ripple::STXChainBridge const sidechain,
         std::optional<ripple::AccountID> submitAccount,
-        std::weak_ptr<Federator>&& federator,
+        Federator& federator,
         std::optional<ripple::AccountID> signAccount,
         std::uint32_t txLimit,
         std::uint32_t lastLedgerProcessed,

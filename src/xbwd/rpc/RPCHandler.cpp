@@ -39,14 +39,8 @@ void
 doServerInfo(App& app, Json::Value const& in, Json::Value& result)
 {
     result[ripple::jss::request] = in;
-    auto const f = app.federator();
-    if (!f)
-    {
-        result[ripple::jss::error] = "internalError";
-        result[ripple::jss::error_message] = "internal federator error";
-        return;
-    }
-    result["info"] = f->getInfo();
+    auto const& f = app.federator();
+    result["info"] = f.getInfo();
 }
 
 void
@@ -506,13 +500,7 @@ void
 doAttestTx(App& app, Json::Value const& in, Json::Value& result)
 {
     result[ripple::jss::request] = in;
-    auto const f = app.federator();
-    if (!f)
-    {
-        result[ripple::jss::error] = "internalError";
-        result[ripple::jss::error_message] = "internal federator error";
-        return;
-    }
+    auto& f = app.federator();
 
     auto optBridge = optFromJson<ripple::STXChainBridge>(in, "bridge");
     auto optChainType = optFromJson<ChainType>(in, "chain_type");
@@ -536,7 +524,7 @@ doAttestTx(App& app, Json::Value const& in, Json::Value& result)
         }
     }
 
-    f->pullAndAttestTx(*optBridge, *optChainType, *optTxHash, result);
+    f.pullAndAttestTx(*optBridge, *optChainType, *optTxHash, result);
 }
 
 enum class Role { USER, ADMIN };
