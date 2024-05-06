@@ -289,7 +289,7 @@ struct AttestedHistoryTx
     fromEvent(FederatorEvent const& e);
 };
 
-class Federator : public std::enable_shared_from_this<Federator>
+class Federator
 {
     enum LoopTypes { lt_event, lt_txnSubmit, lt_last };
     std::array<std::thread, lt_last> threads_;
@@ -301,7 +301,7 @@ class Federator : public std::enable_shared_from_this<Federator>
 
     struct Chain
     {
-        std::shared_ptr<ChainListener> listener_;
+        std::unique_ptr<ChainListener> listener_;
         ripple::AccountID rewardAccount_;
         std::optional<config::TxnSubmit> txnSubmit_;
 
@@ -409,6 +409,10 @@ public:
         App& app,
         config::Config const& config,
         beast::Journal j);
+
+    Federator(Federator const&) = delete;
+    Federator const&
+    operator=(Federator const&) = delete;
 
     ~Federator();
 
@@ -550,7 +554,7 @@ private:
     void
     readDBAttests(ChainType ct);
 
-    friend std::shared_ptr<Federator>
+    friend std::unique_ptr<Federator>
     make_Federator(
         App& app,
         boost::asio::io_service& ios,
@@ -570,7 +574,7 @@ private:
     saveProcessedLedger(ChainType ct, std::uint32_t ledger);
 };
 
-std::shared_ptr<Federator>
+std::unique_ptr<Federator>
 make_Federator(
     App& app,
     boost::asio::io_service& ios,

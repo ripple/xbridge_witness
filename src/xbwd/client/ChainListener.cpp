@@ -52,7 +52,7 @@ ChainListener::ChainListener(
     ChainType chainType,
     ripple::STXChainBridge const sidechain,
     std::optional<ripple::AccountID> submitAccount,
-    std::weak_ptr<Federator>&& federator,
+    Federator& federator,
     std::optional<ripple::AccountID> signAccount,
     std::uint32_t txLimit,
     std::uint32_t lastLedgerProcessed,
@@ -61,7 +61,7 @@ ChainListener::ChainListener(
     , bridge_{sidechain}
     , submitAccountStr_(
           submitAccount ? ripple::toBase58(*submitAccount) : std::string{})
-    , federator_{std::move(federator)}
+    , federator_(federator)
     , signAccount_(signAccount)
     , j_{j}
     , txLimit_(txLimit)
@@ -72,11 +72,9 @@ ChainListener::ChainListener(
 void
 ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
 {
-    wsClient_ = std::make_shared<WebsocketClient>(
-        [self = shared_from_this()](Json::Value const& msg) {
-            self->onMessage(msg);
-        },
-        [self = shared_from_this()]() { self->onConnect(); },
+    wsClient_ = std::make_unique<WebsocketClient>(
+        [this](Json::Value const& msg) { onMessage(msg); },
+        [this]() { onConnect(); },
         ios,
         ip,
         /*headers*/ std::unordered_map<std::string, std::string>{},
@@ -90,9 +88,8 @@ ChainListener::onConnect()
 {
     auto const doorAccStr = ripple::toBase58(bridge_.door(chainType_));
 
-    auto doorAccInfoCb = [self = shared_from_this(),
-                          doorAccStr](Json::Value const& msg) {
-        if (!self->processAccountInfo(msg))
+    auto doorAccInfoCb = [this, doorAccStr](Json::Value const& msg) {
+        if (!processAccountInfo(msg))
         {
             // Reconnect here cause AccountInfo not in the Cycle, so it won't be
             // requested once more.
@@ -100,34 +97,33 @@ ChainListener::onConnect()
             // processed with transaction parsing.
             // account_tx present in the
             // Cycle, so there is no reconnect for it
-            self->wsClient_->reconnect("Can't process Account Info");
+            wsClient_->reconnect("Can't process Account Info");
             return;
         }
         Json::Value params;
         params[ripple::jss::streams] = Json::arrayValue;
         params[ripple::jss::streams].append("ledger");
-        self->send("subscribe", params);
+        this->send("subscribe", params);
     };
 
-    auto serverInfoCb = [self = shared_from_this(), doorAccStr, doorAccInfoCb](
-                            Json::Value const& msg) {
-        self->processServerInfo(msg);
+    auto serverInfoCb =
+        [this, doorAccStr, doorAccInfoCb](Json::Value const& msg) {
+            processServerInfo(msg);
+            Json::Value params;
+            params[ripple::jss::account] = doorAccStr;
+            params[ripple::jss::signer_lists] = true;
+            this->send("account_info", params, doorAccInfoCb);
+        };
+
+    auto mainFlow = [this, doorAccStr, serverInfoCb]() {
         Json::Value params;
-        params[ripple::jss::account] = doorAccStr;
-        params[ripple::jss::signer_lists] = true;
-        self->send("account_info", params, doorAccInfoCb);
+        this->send("server_info", params, serverInfoCb);
     };
 
-    auto mainFlow = [self = shared_from_this(), doorAccStr, serverInfoCb]() {
-        Json::Value params;
-        self->send("server_info", params, serverInfoCb);
-    };
-
-    auto signAccInfoCb = [self = shared_from_this(),
-                          mainFlow](Json::Value const& msg) {
-        if (!self->processSigningAccountInfo(msg))
+    auto signAccInfoCb = [this, mainFlow](Json::Value const& msg) {
+        if (!processSigningAccountInfo(msg))
         {
-            self->wsClient_->reconnect("Can't process Signing Account Info");
+            wsClient_->reconnect("Can't process Signing Account Info");
             return;
         }
         mainFlow();
@@ -157,12 +153,7 @@ ChainListener::onConnect()
 void
 ChainListener::shutdown()
 {
-    if (wsClient_)
-    {
-        wsClient_->shutdown();
-        // wsClient has shared_ptr to ChainListener
-        wsClient_.reset();
-    }
+    wsClient_.reset();
 }
 
 std::uint32_t
@@ -204,11 +195,7 @@ void
 ChainListener::pushEvent(E&& e) const
 {
     static_assert(std::is_rvalue_reference_v<decltype(e)>, "");
-
-    if (auto f = federator_.lock())
-    {
-        f->push(std::move(e));
-    }
+    federator_.push(std::move(e));
 }
 
 void
@@ -876,9 +863,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
                 return warn_ret("'network_id' invalid type");
 
             networkID = jnetID.asUInt();
-            auto fed = federator_.lock();
-            if (fed)
-                fed->setNetworkID(networkID, chainType_);
+            federator_.setNetworkID(networkID, chainType_);
         };
         checkNetworkID();
 
@@ -986,11 +971,7 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const
             regularAcc = ripple::parseBase58<ripple::AccountID>(regularKeyStr);
         }
 
-        auto f = federator_.lock();
-        if (!f)
-            return warn_ret("federator not available");
-
-        f->checkSigningKey(chainType_, fDisableMaster, regularAcc);
+        federator_.checkSigningKey(chainType_, fDisableMaster, regularAcc);
 
         return true;
     }
@@ -1712,12 +1693,9 @@ ChainListener::accountTx(
     txParams[ripple::jss::forward] = hp_.state_ == HistoryProcessor::FINISHED;
     if (!marker.isNull())
         txParams[ripple::jss::marker] = marker;
-    send(
-        "account_tx",
-        txParams,
-        [self = shared_from_this()](Json::Value const& msg) {
-            self->processAccountTx(msg);
-        });
+    send("account_tx", txParams, [this](Json::Value const& msg) {
+        processAccountTx(msg);
+    });
 }
 
 void
@@ -1756,8 +1734,8 @@ ChainListener::sendLedgerReq(std::uint32_t cnt)
             jv("start_ledger", hp_.toRequestLedger_));
     }
 
-    auto ledgerReqCb = [self = shared_from_this(), cnt](Json::Value const&) {
-        self->sendLedgerReq(cnt - 1);
+    auto ledgerReqCb = [this, cnt](Json::Value const&) {
+        sendLedgerReq(cnt - 1);
     };
     Json::Value params;
     params[ripple::jss::ledger_index] = hp_.toRequestLedger_--;
@@ -1838,22 +1816,21 @@ ChainListener::processNewLedger(std::uint32_t ledgerIdx)
     switch (hp_.state_)
     {
         case HistoryProcessor::CHECK_BRIDGE: {
-            auto checkBridgeCb = [self = shared_from_this(),
-                                  doorAccStr](Json::Value const& msg) {
-                if (!self->processBridgeReq(msg))
+            auto checkBridgeCb = [this, doorAccStr](Json::Value const& msg) {
+                if (!processBridgeReq(msg))
                 {
                     JLOGV(
-                        self->j_.info(),
+                        j_.info(),
                         "History mode off, no bridge",
-                        jv("chainType", to_string(self->chainType_)));
-                    self->hp_.state_ = HistoryProcessor::FINISHED;
-                    self->hp_.stopHistory_ = true;
-                    self->pushEvent(event::EndOfHistory{self->chainType_});
+                        jv("chainType", to_string(chainType_)));
+                    hp_.state_ = HistoryProcessor::FINISHED;
+                    hp_.stopHistory_ = true;
+                    pushEvent(event::EndOfHistory{chainType_});
                     return;
                 }
                 // request for accountTx on next "new ledger" event (in case
                 // bridge just created in the latest ledger)
-                self->hp_.state_ = HistoryProcessor::RETR_HISTORY;
+                hp_.state_ = HistoryProcessor::RETR_HISTORY;
             };
 
             hp_.state_ = HistoryProcessor::WAIT_CB;
@@ -1871,20 +1848,19 @@ ChainListener::processNewLedger(std::uint32_t ledgerIdx)
                 "Witness NOT initialized, waiting for ledgers",
                 jv("chainType", to_string(chainType_)));
 
-            auto serverInfoCb = [self = shared_from_this(),
-                                 doorAccStr](Json::Value const& msg) {
-                auto const currentMinLedger = self->hp_.minValidatedLedger_;
-                self->processServerInfo(msg);
+            auto serverInfoCb = [this, doorAccStr](Json::Value const& msg) {
+                auto const currentMinLedger = hp_.minValidatedLedger_;
+                processServerInfo(msg);
                 // check if ledgers were retrieved
                 if (!currentMinLedger ||
-                    (self->hp_.minValidatedLedger_ < currentMinLedger) ||
-                    (self->hp_.minValidatedLedger_ <= self->minUserLedger_))
+                    (hp_.minValidatedLedger_ < currentMinLedger) ||
+                    (hp_.minValidatedLedger_ <= minUserLedger_))
                 {
-                    self->accountTx(
+                    accountTx(
                         doorAccStr,
-                        self->hp_.lastLedgerProcessed_,
-                        self->hp_.startupLedger_,
-                        self->hp_.marker_);
+                        hp_.lastLedgerProcessed_,
+                        hp_.startupLedger_,
+                        hp_.marker_);
                 }
             };
             Json::Value params;

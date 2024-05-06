@@ -196,10 +196,10 @@ App::config()
     return *config_;
 }
 
-std::shared_ptr<Federator>
+Federator&
 App::federator()
 {
-    return federator_;
+    return *federator_;
 }
 
 void

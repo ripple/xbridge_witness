@@ -2,6 +2,7 @@
 
 #include <xbwd/app/Config.h>
 #include <xbwd/core/DatabaseCon.h>
+#include <xbwd/federator/Federator.h>
 #include <xbwd/rpc/ServerHandler.h>
 
 #include <ripple/beast/utility/Journal.h>
@@ -57,7 +58,7 @@ class App : public BasicApp
 
     boost::asio::signal_set signals_;
 
-    std::shared_ptr<Federator> federator_;
+    std::unique_ptr<Federator> federator_;
     std::unique_ptr<rpc::ServerHandler> serverHandler_;
 
     std::condition_variable stoppingCondition_;
@@ -91,7 +92,7 @@ public:
     config::Config&
     config();
 
-    std::shared_ptr<Federator>
+    Federator&
     federator();
 
 protected:

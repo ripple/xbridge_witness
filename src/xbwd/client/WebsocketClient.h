@@ -36,14 +36,13 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
-#include <memory>
 #include <string>
 #include <thread>
 
 namespace xbwd {
 
 // TODO: Replace this class with `ServerHandler`
-class WebsocketClient : public std::enable_shared_from_this<WebsocketClient>
+class WebsocketClient
 {
     using error_code = boost::system::error_code;
 
@@ -69,7 +68,7 @@ class WebsocketClient : public std::enable_shared_from_this<WebsocketClient>
     std::atomic_bool peerClosed_{true};
 
     std::function<void(Json::Value const&)> onMessageCallback_;
-    std::atomic<std::uint32_t> nextId_{0};
+    std::atomic_uint32_t nextId_{0};
 
     boost::asio::basic_waitable_timer<std::chrono::steady_clock> timer_;
     boost::asio::ip::tcp::endpoint const ep_;
