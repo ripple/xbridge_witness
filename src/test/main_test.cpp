@@ -66,9 +66,9 @@ static std::mutex gMcv;
 
 static unsigned const NUM_THREADS = 4;
 static std::string const LHOST = "127.0.0.1";
-static std::uint16_t const PORT_LOC = 55555;
-static std::uint16_t const PORT_ISS = 55556;
-static std::uint16_t const PORT_RPC = 55557;
+static std::uint16_t const PORT_LOC = 56555;
+static std::uint16_t const PORT_ISS = 56556;
+static std::uint16_t const PORT_RPC = 56557;
 
 extern const char witnessLocal[];
 extern const char serverInfoLoc[];
@@ -94,6 +94,7 @@ static void
 fail(boost::beast::error_code ec, char const* what)
 {
     auto s = fmt::format("{}: {}", what, ec.message());
+    std::cerr << "Error, throw: " << s << std::endl;
     throw std::runtime_error(s);
 }
 
@@ -517,7 +518,7 @@ public:
     void
     onWriteNewLedger(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
-        DBG(std::cout << e_.side()  << " session::onWriteNewLedger(), ec:" << ec
+        DBG(std::cout << e_.side() << " session::onWriteNewLedger(), ec:" << ec
                       << " bytes: " << bytes_transferred << std::endl;)
         boost::ignore_unused(bytes_transferred);
         if (ec == websocket::error::closed)
@@ -583,7 +584,9 @@ public:
     shutdown()
     {
         DBG(std::cout << "listener::shutdown()" << std::endl);
-        acceptor_.cancel();
+        boost::system::error_code ec;
+        acceptor_.cancel(ec);
+        DBG(if (ec) std::cout << "cancel error: " << ec << std::endl);
         if (session_)
             session_->shutdown();
     }

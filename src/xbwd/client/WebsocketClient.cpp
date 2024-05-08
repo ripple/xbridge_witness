@@ -65,6 +65,7 @@ WebsocketClient::cleanup()
                     stream_.cancel(ec);
 
                     std::lock_guard l(shutdownM_);
+                    timer_.cancel();
                     isShutdown_ = true;
                     shutdownCv_.notify_one();
                 }));

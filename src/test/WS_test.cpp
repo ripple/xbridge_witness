@@ -60,12 +60,13 @@ static std::mutex gMcv;
 
 static unsigned const NUM_THREADS = 2;
 static std::string const LHOST = "127.0.0.1";
-static std::uint16_t const LPORT = 55555;
+static std::uint16_t const LPORT = 56558;
 
 static void
 fail(boost::beast::error_code ec, char const* what)
 {
     auto s = fmt::format("{}: {}", what, ec.message());
+    std::cerr << "Error, throw: " << s << std::endl;
     throw std::runtime_error(s);
 }
 
