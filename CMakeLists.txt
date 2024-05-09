@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+
 project(xbridge_witnessd)
 
 if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11))
@@ -135,7 +136,7 @@ add_executable(${PROJECT_NAME}
   ${UNIT_TESTS}
 )
 
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} RUNTIME)
 
 target_compile_options(${PROJECT_NAME} PUBLIC "-fstack-protector-strong")
 if(is_linux)
@@ -175,9 +176,8 @@ if(has_parent)
   set_target_properties(${PROJECT_NAME} PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
 endif()
 
-#fix for MAC
-get_target_property(FMT_INC_DIRS fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
-list(GET FMT_INC_DIRS 0 FMT_INC_DIR)
-target_include_directories(${PROJECT_NAME} BEFORE PRIVATE ${FMT_INC_DIR})
-
-include(packaging/package)
+if(is_macos) # REVIEW: This doesn't seem necessary?
+  get_target_property(FMT_INC_DIRS fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
+  list(GET FMT_INC_DIRS 0 FMT_INC_DIR)
+  target_include_directories(${PROJECT_NAME} BEFORE PRIVATE ${FMT_INC_DIR})
+endif()

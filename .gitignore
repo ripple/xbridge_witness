@@ -25,8 +25,7 @@
 *.app
 
 # Ignore build files
-build
-.nih_c
+/build
 .vs
 __pycache__
 packages
