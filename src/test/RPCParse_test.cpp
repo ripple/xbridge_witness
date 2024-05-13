@@ -153,18 +153,23 @@ private:
 
         auto src = parseSrcAccount(txCreate);
         BEAST_EXPECT(
+            src &&
             ripple::toBase58(*src) == "rHLrQ3SjzxmkoYgrZ5d4kgHRPF6MdMWpAV");
         src = parseSrcAccount(txCommit);
         BEAST_EXPECT(
+            src &&
             ripple::toBase58(*src) == "rHLrQ3SjzxmkoYgrZ5d4kgHRPF6MdMWpAV");
         src = parseSrcAccount(txCreateAtt);
         BEAST_EXPECT(
+            src &&
             ripple::toBase58(*src) == "rGrQ8QEAtiKvjXwFxZxv6pxmzWfDcqWeUV");
         src = parseSrcAccount(txCommitAtt);
         BEAST_EXPECT(
+            src &&
             ripple::toBase58(*src) == "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg");
         src = parseSrcAccount(txCreateBridge);
         BEAST_EXPECT(
+            src &&
             ripple::toBase58(*src) == "rL9vUaa9eBas32C5bgv4fEmHDfJr3oNd4D");
         src = parseSrcAccount(jvEmpty);
         BEAST_EXPECT(!src);
@@ -172,18 +177,18 @@ private:
         auto dst =
             parseDstAccount(txCreate, XChainTxnType::xChainAccountCreateCommit);
         BEAST_EXPECT(
+            dst &&
             ripple::toBase58(*dst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
         dst = parseDstAccount(txCommit, XChainTxnType::xChainCommit);
         BEAST_EXPECT(
+            dst &&
             ripple::toBase58(*dst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
         dst = parseDstAccount(
             txCreateAtt, XChainTxnType::xChainAddAccountCreateAttestation);
-        BEAST_EXPECT(
-            ripple::toBase58(*dst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
+        BEAST_EXPECT(!dst);
         dst = parseDstAccount(
             txCommitAtt, XChainTxnType::xChainAddClaimAttestation);
-        BEAST_EXPECT(
-            ripple::toBase58(*dst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
+        BEAST_EXPECT(!dst);
         dst =
             parseDstAccount(txCreateBridge, XChainTxnType::xChainCreateBridge);
         BEAST_EXPECT(!dst);
@@ -194,17 +199,21 @@ private:
         auto osrc = parseOtherSrcAccount(
             txCreate, XChainTxnType::xChainAccountCreateCommit);
         BEAST_EXPECT(
+            osrc &&
             ripple::toBase58(*osrc) == "rHLrQ3SjzxmkoYgrZ5d4kgHRPF6MdMWpAV");
         osrc = parseOtherSrcAccount(txCommit, XChainTxnType::xChainCommit);
         BEAST_EXPECT(
+            osrc &&
             ripple::toBase58(*osrc) == "rHLrQ3SjzxmkoYgrZ5d4kgHRPF6MdMWpAV");
         osrc = parseOtherSrcAccount(
             txCreateAtt, XChainTxnType::xChainAddAccountCreateAttestation);
         BEAST_EXPECT(
+            osrc &&
             ripple::toBase58(*osrc) == "rHLrQ3SjzxmkoYgrZ5d4kgHRPF6MdMWpAV");
         osrc = parseOtherSrcAccount(
             txCommitAtt, XChainTxnType::xChainAddClaimAttestation);
         BEAST_EXPECT(
+            osrc &&
             ripple::toBase58(*osrc) == "rHLrQ3SjzxmkoYgrZ5d4kgHRPF6MdMWpAV");
         osrc = parseOtherSrcAccount(
             txCreateBridge, XChainTxnType::xChainCreateBridge);
@@ -216,17 +225,21 @@ private:
         auto odst = parseOtherDstAccount(
             txCreate, XChainTxnType::xChainAccountCreateCommit);
         BEAST_EXPECT(
+            odst &&
             ripple::toBase58(*odst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
         odst = parseOtherDstAccount(txCommit, XChainTxnType::xChainCommit);
         BEAST_EXPECT(
+            odst &&
             ripple::toBase58(*odst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
         odst = parseOtherDstAccount(
             txCreateAtt, XChainTxnType::xChainAddAccountCreateAttestation);
         BEAST_EXPECT(
+            odst &&
             ripple::toBase58(*odst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
         odst = parseOtherDstAccount(
             txCommitAtt, XChainTxnType::xChainAddClaimAttestation);
         BEAST_EXPECT(
+            odst &&
             ripple::toBase58(*odst) == "ra8nske62jqNUehr9MEhyEZwMwZgdmCkf7");
         odst = parseOtherDstAccount(
             txCreateBridge, XChainTxnType::xChainCreateBridge);
@@ -243,85 +256,101 @@ private:
                 "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"),
             ripple::xrpIssue());
         auto bridge = parseBridge(txCreate);
-        BEAST_EXPECT(bridge == testBridge);
+        BEAST_EXPECT(bridge && bridge == testBridge);
         bridge = parseBridge(txCommit);
-        BEAST_EXPECT(bridge == testBridge);
+        BEAST_EXPECT(bridge && bridge == testBridge);
         bridge = parseBridge(txCreateAtt);
-        BEAST_EXPECT(bridge == testBridge);
+        BEAST_EXPECT(bridge && bridge == testBridge);
         bridge = parseBridge(txCommitAtt);
-        BEAST_EXPECT(bridge == testBridge);
+        BEAST_EXPECT(bridge && bridge == testBridge);
         bridge = parseBridge(txCreateBridge);
-        BEAST_EXPECT(bridge == testBridge);
+        BEAST_EXPECT(bridge && bridge == testBridge);
         bridge = parseBridge(jvEmpty);
         BEAST_EXPECT(!bridge);
 
         auto hash = parseTxHash(txCreate);
         BEAST_EXPECT(
+            hash &&
             to_string(*hash) ==
-            "A6F65C3C92BD077249C2320FEFC2214B39FDA8DAEF92715EBCF7CA4EC5364EE2");
+                "A6F65C3C92BD077249C2320FEFC2214B39FDA8DAEF92715EBCF7CA4EC5364E"
+                "E2");
         hash = parseTxHash(txCommit);
         BEAST_EXPECT(
+            hash &&
             to_string(*hash) ==
-            "926D50565D691C072C4A25440E1A58DC6F1D79A7DC7D05949081164761482824");
+                "926D50565D691C072C4A25440E1A58DC6F1D79A7DC7D059490811647614828"
+                "24");
         hash = parseTxHash(txCreateAtt);
         BEAST_EXPECT(
+            hash &&
             to_string(*hash) ==
-            "3623DCB1C5D7F6FB31B5A089614B3C21EC98FC4E009E90E56FF0AFFB58AD3B69");
+                "3623DCB1C5D7F6FB31B5A089614B3C21EC98FC4E009E90E56FF0AFFB58AD3B"
+                "69");
         hash = parseTxHash(txCommitAtt);
         BEAST_EXPECT(
+            hash &&
             to_string(*hash) ==
-            "5F6D4D62A20686EE6FA2AE9D3CE70924D0EB03B80143B8671F30049B99EC1C69");
+                "5F6D4D62A20686EE6FA2AE9D3CE70924D0EB03B80143B8671F30049B99EC1C"
+                "69");
         hash = parseTxHash(txCreateBridge);
         BEAST_EXPECT(
+            hash &&
             to_string(*hash) ==
-            "C7C94CB45DEE44AF0DA90825EE3552C3B50E51109C4E42921E4F5893ECE12318");
+                "C7C94CB45DEE44AF0DA90825EE3552C3B50E51109C4E42921E4F5893ECE123"
+                "18");
         hash = parseTxHash(jvEmpty);
         BEAST_EXPECT(!hash);
 
         auto seq = parseTxSeq(txCreate);
-        BEAST_EXPECT(seq == 6);
+        BEAST_EXPECT(seq && seq == 6);
         seq = parseTxSeq(txCommit);
-        BEAST_EXPECT(seq == 8);
+        BEAST_EXPECT(seq && seq == 8);
         seq = parseTxSeq(txCreateAtt);
-        BEAST_EXPECT(seq == 3);
+        BEAST_EXPECT(seq && seq == 3);
         seq = parseTxSeq(txCommitAtt);
-        BEAST_EXPECT(seq == 4);
+        BEAST_EXPECT(seq && seq == 4);
         seq = parseTxSeq(txCreateBridge);
-        BEAST_EXPECT(seq == 3);
+        BEAST_EXPECT(seq && seq == 3);
         seq = parseTxSeq(jvEmpty);
         BEAST_EXPECT(!seq);
 
         auto ledgSeq = parseLedgerSeq(txCreate);
-        BEAST_EXPECT(ledgSeq == 7);
+        BEAST_EXPECT(ledgSeq && ledgSeq == 7);
         ledgSeq = parseLedgerSeq(txCommit);
-        BEAST_EXPECT(ledgSeq == 9);
+        BEAST_EXPECT(ledgSeq && ledgSeq == 9);
         ledgSeq = parseLedgerSeq(txCreateAtt);
-        BEAST_EXPECT(ledgSeq == 6);
+        BEAST_EXPECT(ledgSeq && ledgSeq == 6);
         ledgSeq = parseLedgerSeq(txCommitAtt);
-        BEAST_EXPECT(ledgSeq == 8);
+        BEAST_EXPECT(ledgSeq && ledgSeq == 8);
         ledgSeq = parseLedgerSeq(txCreateBridge);
-        BEAST_EXPECT(ledgSeq == 4);
+        BEAST_EXPECT(ledgSeq && ledgSeq == 4);
         ledgSeq = parseLedgerSeq(jvEmpty);
         BEAST_EXPECT(!ledgSeq);
 
         auto deliveryAmt = parseDeliveredAmt(txCreate, metaCreate);
         BEAST_EXPECT(
+            deliveryAmt &&
             deliveryAmt ==
-            ripple::STAmount(
-                ripple::sfGeneric, static_cast<int64_t>(400000000)));
+                ripple::STAmount(
+                    ripple::sfGeneric, static_cast<int64_t>(400000000)));
         deliveryAmt = parseDeliveredAmt(txCommit, metaCommit);
         BEAST_EXPECT(
+            deliveryAmt &&
             deliveryAmt ==
-            ripple::STAmount(ripple::sfGeneric, static_cast<int64_t>(1000000)));
+                ripple::STAmount(
+                    ripple::sfGeneric, static_cast<int64_t>(1000000)));
         deliveryAmt = parseDeliveredAmt(txCreateAtt, metaCreateAtt);
         BEAST_EXPECT(
+            deliveryAmt &&
             deliveryAmt ==
-            ripple::STAmount(
-                ripple::sfGeneric, static_cast<int64_t>(400000000)));
+                ripple::STAmount(
+                    ripple::sfGeneric, static_cast<int64_t>(400000000)));
         deliveryAmt = parseDeliveredAmt(txCommitAtt, metaCommitAtt);
         BEAST_EXPECT(
+            deliveryAmt &&
             deliveryAmt ==
-            ripple::STAmount(ripple::sfGeneric, static_cast<int64_t>(1000000)));
+                ripple::STAmount(
+                    ripple::sfGeneric, static_cast<int64_t>(1000000)));
         deliveryAmt = parseDeliveredAmt(txCreateBridge, metaCreateBridge);
         BEAST_EXPECT(!deliveryAmt);
         deliveryAmt = parseDeliveredAmt(jvEmpty, jvEmpty);
