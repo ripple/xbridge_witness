@@ -25,7 +25,8 @@ jobs:
           - Ninja
         configuration:
           - Release
-    runs-on: [self-hosted, macOS]
+    # runs-on: [self-hosted, macOS] # runs-on: [self-hosted, macOS] # TODO: Use self-host when https://ripplelabs.atlassian.net/browse/RXIT-210 resolved
+    runs-on: macos-latest
     env:
       # The `build` action requires these variables.
       build_dir: .build

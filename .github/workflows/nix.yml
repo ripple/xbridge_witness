@@ -59,7 +59,8 @@ jobs:
               cc: /usr/bin/clang-14
               cxx: /usr/bin/clang++-14
     name: ${{ matrix.compiler }}-${{ matrix.profile.version }} - ${{ matrix.configuration }}
-    runs-on: [self-hosted, x-heavy]
+    # runs-on: [self-hosted, x-heavy] # TODO: Use self-host when https://ripplelabs.atlassian.net/browse/RXIT-210 resolved
+    runs-on: ubuntu-latest
     container: rippleci/rippled-build-ubuntu:aaf5e3e
     env:
       build_dir: .build
@@ -116,7 +117,8 @@ jobs:
           - ""
     name: Test ${{ matrix.compiler }}-${{ matrix.configuration }}
     needs: dependencies
-    runs-on: [self-hosted, x-heavy]
+    # runs-on: [self-hosted, x-heavy] # TODO: Use self-host when https://ripplelabs.atlassian.net/browse/RXIT-210 resolved
+    runs-on: ubuntu-20.04
     container: rippleci/rippled-build-ubuntu:aaf5e3e
     env:
       build_dir: .build
