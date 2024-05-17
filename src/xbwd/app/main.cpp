@@ -127,7 +127,7 @@ main(int argc, char** argv)
 
     try
     {
-        std::unique_ptr<xbwd::config::Config> config = [&]() -> auto {
+        std::unique_ptr<xbwd::config::Config> config = [&]() {
             auto const configFile = [&]() -> std::string {
                 if (vm.count("conf"))
                     return vm["conf"].as<std::string>();

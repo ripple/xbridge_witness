@@ -61,7 +61,10 @@ fromCommandLine(
     return r;
 }
 
-RPCClient::RPCClient(boost::asio::io_service &ioc, rpc::AddrEndpoint const& ae, beast::Journal j)
+RPCClient::RPCClient(
+    boost::asio::io_service& ioc,
+    rpc::AddrEndpoint const& ae,
+    beast::Journal j)
     : io_(ioc), host_(ae.host), s_(io_), j_(j)
 {
     try

@@ -16,7 +16,7 @@ namespace rpc_call {
 
 class RPCClient
 {
-    boost::asio::io_service &io_;
+    boost::asio::io_service& io_;
 
     std::string const host_;
     boost::asio::ip::tcp::endpoint ep_;
@@ -25,7 +25,10 @@ class RPCClient
     beast::Journal j_;
 
 public:
-    RPCClient(boost::asio::io_service &ioc, rpc::AddrEndpoint const& ae, beast::Journal j);
+    RPCClient(
+        boost::asio::io_service& ioc,
+        rpc::AddrEndpoint const& ae,
+        beast::Journal j);
     ~RPCClient();
 
     std::pair<int, Json::Value>
