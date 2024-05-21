@@ -8,7 +8,7 @@
 #include <ripple/beast/core/CurrentThreadName.h>
 #include <ripple/beast/core/SemanticVersion.h>
 #include <ripple/beast/unit_test.h>
-#include <ripple/beast/unit_test/dstream.hpp>
+#include <ripple/beast/unit_test/dstream.h>
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/json/json_reader.h>
 #include <ripple/json/json_value.h>
