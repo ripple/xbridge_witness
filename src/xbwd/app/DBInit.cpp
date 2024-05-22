@@ -1,6 +1,6 @@
 #include <xbwd/app/DBInit.h>
 
-#include <fmt/core.h>
+#include <format>
 
 namespace xbwd {
 namespace db_init {
@@ -61,7 +61,7 @@ xChainDBInit()
         // Success is a bool (but soci complains about using bools)
 
         auto constexpr tblFmtStr = R"sql(
-            CREATE TABLE IF NOT EXISTS {table_name} (
+            CREATE TABLE IF NOT EXISTS {} (
                 TransID           CHARACTER(64) PRIMARY KEY,
                 LedgerSeq         BIGINT UNSIGNED,
                 ClaimID           BIGINT UNSIGNED,
@@ -76,11 +76,11 @@ xChainDBInit()
                 Signature         BLOB);
         )sql";
         auto constexpr idxFmtStr = R"sql(
-            CREATE INDEX IF NOT EXISTS {table_name}ClaimIDIdx ON {table_name}(ClaimID);",
+            CREATE INDEX IF NOT EXISTS {}ClaimIDIdx ON {}(ClaimID);",
         )sql";
 
         auto constexpr createAccTblFmtStr = R"sql(
-            CREATE TABLE IF NOT EXISTS {table_name} (
+            CREATE TABLE IF NOT EXISTS {} (
                 TransID           CHARACTER(64) PRIMARY KEY,
                 LedgerSeq         BIGINT UNSIGNED,
                 CreateCount       BIGINT UNSIGNED,
@@ -96,11 +96,11 @@ xChainDBInit()
                 Signature         BLOB);
         )sql";
         auto constexpr createAccIdxFmtStr = R"sql(
-            CREATE INDEX IF NOT EXISTS {table_name}CreateCountIdx ON {table_name}(CreateCount);",
+            CREATE INDEX IF NOT EXISTS {}CreateCountIdx ON {}(CreateCount);",
         )sql";
 
         auto constexpr syncTblFmtStr = R"sql(
-            CREATE TABLE IF NOT EXISTS {table_name} (
+            CREATE TABLE IF NOT EXISTS {} (
                 ChainType         UNSIGNED PRIMARY KEY,
                 TransID           CHARACTER(64),
                 LedgerSeq         BIGINT UNSIGNED);
@@ -108,21 +108,17 @@ xChainDBInit()
 
         for (auto cd : {ChainType::locking, ChainType::issuing})
         {
-            r.push_back(fmt::format(
-                tblFmtStr, fmt::arg("table_name", xChainTableName(cd))));
-            r.push_back(fmt::format(
-                idxFmtStr, fmt::arg("table_name", xChainTableName(cd))));
+            auto const& xChainTabName = xChainTableName(cd);
+            r.push_back(std::format(tblFmtStr, xChainTabName));
+            r.push_back(std::format(idxFmtStr, xChainTabName, xChainTabName));
 
-            r.push_back(fmt::format(
-                createAccTblFmtStr,
-                fmt::arg("table_name", xChainCreateAccountTableName(cd))));
-            r.push_back(fmt::format(
-                createAccIdxFmtStr,
-                fmt::arg("table_name", xChainCreateAccountTableName(cd))));
+            auto const& xChainCATabName = xChainCreateAccountTableName(cd);
+            r.push_back(std::format(createAccTblFmtStr, xChainCATabName));
+            r.push_back(std::format(
+                createAccIdxFmtStr, xChainCATabName, xChainCATabName));
         }
 
-        r.push_back(fmt::format(
-            syncTblFmtStr, fmt::arg("table_name", xChainSyncTable)));
+        r.push_back(std::format(syncTblFmtStr, xChainSyncTable));
 
         r.push_back("END TRANSACTION;");
         return r;

@@ -31,11 +31,11 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/websocket.hpp>
-#include <fmt/format.h>
 
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <format>
 #include <mutex>
 
 namespace xbwd {
@@ -65,7 +65,7 @@ static std::uint16_t const LPORT = 56558;
 static void
 fail(boost::beast::error_code ec, char const* what)
 {
-    auto s = fmt::format("{}: {}", what, ec.message());
+    auto s = std::format("{}: {}", what, ec.message());
     std::cerr << "Error, throw: " << s << std::endl;
     throw std::runtime_error(s);
 }

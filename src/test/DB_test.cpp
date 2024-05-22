@@ -26,9 +26,8 @@
 #include <ripple/protocol/SecretKey.h>
 #include <ripple/protocol/XChainAttestations.h>
 
-#include <fmt/format.h>
-
 #include <filesystem>
+#include <format>
 
 namespace xbwd {
 namespace tests {
@@ -124,7 +123,7 @@ private:
             for (auto const ct : {ChainType::locking, ChainType::issuing})
             {
                 auto session = db->checkoutDb();
-                auto const sql = fmt::format(
+                auto const sql = std::format(
                     "INSERT INTO {} (ChainType, TransID, LedgerSeq) VALUES "
                     "(:ct, :txnId, :lgrSeq);",
                     db_init::xChainSyncTable);
@@ -135,7 +134,7 @@ private:
 
         auto readSyncTable = [&]() -> bool {
             auto session = db->checkoutDb();
-            auto const sql = fmt::format(
+            auto const sql = std::format(
                 "SELECT ChainType, TransID, LedgerSeq FROM {};",
                 db_init::xChainSyncTable);
 
@@ -236,7 +235,7 @@ private:
                 soci::blob signatureBlob = convert(claim.signature, *session);
                 soci::blob otherChainDstBlob = convert(dst, *session);
 
-                auto const sql = fmt::format(
+                auto const sql = std::format(
                     "INSERT INTO {} (TransID, LedgerSeq, ClaimID, Success, "
                     "DeliveredAmt, Bridge, SendingAccount, RewardAccount, "
                     "OtherChainDst, SigningAccount, PublicKey, Signature) "
@@ -272,7 +271,7 @@ private:
 
                 int rows = 0;
 
-                auto const sql = fmt::format(
+                auto const sql = std::format(
                     "SELECT TransID, LedgerSeq, ClaimID, Success, "
                     "DeliveredAmt, Bridge, SendingAccount, RewardAccount, "
                     "OtherChainDst, SigningAccount, PublicKey, Signature "
@@ -395,7 +394,7 @@ private:
                 soci::blob signatureBlob = convert(create.signature, *session);
                 soci::blob otherChainDstBlob = convert(dst, *session);
 
-                auto const sql = fmt::format(
+                auto const sql = std::format(
                     "INSERT INTO {} "
                     "(TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, "
                     "RewardAmt, Bridge, "
@@ -437,7 +436,7 @@ private:
 
                 int rows = 0;
 
-                auto const sql = fmt::format(
+                auto const sql = std::format(
                     "SELECT TransID, LedgerSeq, CreateCount, Success, "
                     "DeliveredAmt, RewardAmt, "
                     "Bridge, SendingAccount, RewardAccount, OtherChainDst, "

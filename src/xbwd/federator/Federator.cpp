@@ -38,12 +38,11 @@
 #include <ripple/protocol/Seed.h>
 #include <ripple/protocol/jss.h>
 
-#include <fmt/core.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <exception>
+#include <format>
 #include <future>
 #include <sstream>
 #include <stdexcept>
@@ -110,10 +109,9 @@ Federator::init(
         try
         {
             auto session = app_.getXChainTxnDB().checkoutDb();
-            auto const sql = fmt::format(
-                R"sql(SELECT ChainType, TransID, LedgerSeq FROM {table_name};
-            )sql",
-                fmt::arg("table_name", db_init::xChainSyncTable));
+            auto const sql = std::format(
+                R"sql(SELECT ChainType, TransID, LedgerSeq FROM {};)sql",
+                db_init::xChainSyncTable);
 
             std::uint32_t chainType = 0;
             std::string transID;
@@ -167,10 +165,8 @@ Federator::init(
         {
             {
                 auto session = app_.getXChainTxnDB().checkoutDb();
-                auto const sql = fmt::format(
-                    R"sql(DELETE FROM {table_name};
-            )sql",
-                    fmt::arg("table_name", db_init::xChainSyncTable));
+                auto const sql = std::format(
+                    R"sql(DELETE FROM {};)sql", db_init::xChainSyncTable);
                 *session << sql;
             }
             for (auto const ct : {ChainType::locking, ChainType::issuing})
@@ -181,13 +177,12 @@ Federator::init(
                     initSync_[ct].dbTxnHash_.begin(),
                     initSync_[ct].dbTxnHash_.end());
                 auto session = app_.getXChainTxnDB().checkoutDb();
-                auto const sql = fmt::format(
-                    R"sql(INSERT INTO {table_name}
+                auto const sql = std::format(
+                    R"sql(INSERT INTO {}
                       (ChainType, TransID, LedgerSeq)
                       VALUES
-                      (:ct, :txnId, :lgrSeq);
-                )sql",
-                    fmt::arg("table_name", db_init::xChainSyncTable));
+                      (:ct, :txnId, :lgrSeq);)sql",
+                    db_init::xChainSyncTable);
                 *session << sql, soci::use(static_cast<std::uint32_t>(ct)),
                     soci::use(txnIdHex), soci::use(initSync_[ct].dbLedgerSqn_);
             }
@@ -292,13 +287,12 @@ Federator::readDBAttests(ChainType ct)
         int createCount;
         int success;
 
-        auto const sql = fmt::format(
+        auto const sql = std::format(
             R"sql(SELECT TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, RewardAmt,
                      Bridge, SendingAccount, RewardAccount, OtherChainDst,
                      SigningAccount, PublicKey, Signature
-                  FROM {table_name} ORDER BY CreateCount;
-        )sql",
-            fmt::arg("table_name", tblName));
+                  FROM {} ORDER BY CreateCount;)sql",
+            tblName);
 
         soci::indicator otherChainDstInd;
         soci::statement st =
@@ -396,13 +390,12 @@ Federator::readDBAttests(ChainType ct)
         int claimID;
         int success;
 
-        auto const sql = fmt::format(
+        auto const sql = std::format(
             R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
                      Bridge, SendingAccount, RewardAccount, OtherChainDst,
                      SigningAccount, PublicKey, Signature
-                  FROM {table_name} ORDER BY ClaimID;
-        )sql",
-            fmt::arg("table_name", tblName));
+                  FROM {} ORDER BY ClaimID;)sql",
+            tblName);
 
         soci::indicator otherChainDstInd;
         soci::statement st =
@@ -742,10 +735,10 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto const sql = fmt::format(
-            R"sql(SELECT count(*) FROM {table_name} WHERE TransID = "{tx_hex}";)sql",
-            fmt::arg("table_name", tblName),
-            fmt::arg("tx_hex", txnIdHex));
+        auto const sql = std::format(
+            R"sql(SELECT count(*) FROM {} WHERE TransID = "{}";)sql",
+            tblName,
+            txnIdHex);
 
         int count = 0;
         *session << sql, soci::into(count);
@@ -828,7 +821,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             jv("tableName", tblName),
             jv("success", success),
             jv("ledgerSeq", e.ledgerSeq_),
-            jv("claimID", fmt::format("{:x}", e.claimID_)),
+            jv("claimID", std::format("{:x}", e.claimID_)),
             jv("amt",
                e.deliveredAmt_ ? e.deliveredAmt_->getFullText()
                                : std::string("no delivered amt")),
@@ -841,15 +834,14 @@ Federator::onEvent(event::XChainCommitDetected const& e)
                    ? std::string()
                    : ripple::toBase58(claimOpt->attestationSignerAccount)));
 
-        auto const sql = fmt::format(
-            R"sql(INSERT INTO {table_name}
+        auto const sql = std::format(
+            R"sql(INSERT INTO {}
                   (TransID, LedgerSeq, ClaimID, Success, DeliveredAmt, Bridge,
                    SendingAccount, RewardAccount, OtherChainDst, SigningAccount, PublicKey, Signature)
                   VALUES
                   (:txnId, :lgrSeq, :claimID, :success, :amt, :bridge,
-                   :sendingAccount, :rewardAccount, :otherChainDst, :signingAccount, :pk, :sig);
-            )sql",
-            fmt::arg("table_name", tblName));
+                   :sendingAccount, :rewardAccount, :otherChainDst, :signingAccount, :pk, :sig);)sql",
+            tblName);
 
         *session << sql, soci::use(txnIdHex), soci::use(e.ledgerSeq_),
             soci::use(e.claimID_), soci::use(success), soci::use(amtBlob),
@@ -860,10 +852,9 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     }
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto const sql = fmt::format(
-            R"sql(UPDATE {table_name} SET TransID = :tx_hash WHERE ChainType = :chain_type;
-            )sql",
-            fmt::arg("table_name", db_init::xChainSyncTable));
+        auto const sql = std::format(
+            R"sql(UPDATE {} SET TransID = :tx_hash WHERE ChainType = :chain_type;)sql",
+            db_init::xChainSyncTable);
         auto const chainType = static_cast<std::uint32_t>(ct);
         *session << sql, soci::use(txnIdHex), soci::use(chainType);
     }
@@ -911,10 +902,10 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto const sql = fmt::format(
-            R"sql(SELECT count(*) FROM {table_name} WHERE TransID = "{tx_hex}";)sql",
-            fmt::arg("table_name", tblName),
-            fmt::arg("tx_hex", txnIdHex));
+        auto const sql = std::format(
+            R"sql(SELECT count(*) FROM {} WHERE TransID = "{}";)sql",
+            tblName,
+            txnIdHex);
 
         int count = 0;
         *session << sql, soci::into(count);
@@ -996,7 +987,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
             jv("tableName", tblName),
             jv("success", success),
             jv("ledgerSeq", e.ledgerSeq_),
-            jv("createCount", fmt::format("{:x}", e.createCount_)),
+            jv("createCount", std::format("{:x}", e.createCount_)),
             jv("amt",
                e.deliveredAmt_ ? e.deliveredAmt_->getFullText()
                                : std::string("no delivered amt")),
@@ -1009,15 +1000,14 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
                    ? std::string()
                    : ripple::toBase58(createOpt->attestationSignerAccount)));
 
-        auto const sql = fmt::format(
-            R"sql(INSERT INTO {table_name}
+        auto const sql = std::format(
+            R"sql(INSERT INTO {}
                   (TransID, LedgerSeq, CreateCount, Success, DeliveredAmt, RewardAmt, Bridge,
                    SendingAccount, RewardAccount, otherChainDst, SigningAccount, PublicKey, Signature)
                   VALUES
                   (:txnId, :lgrSeq, :createCount, :success, :amt, :rewardAmt, :bridge,
-                   :sendingAccount, :rewardAccount, :otherChainDst, :signingAccount, :pk, :sig);
-            )sql",
-            fmt::arg("table_name", tblName));
+                   :sendingAccount, :rewardAccount, :otherChainDst, :signingAccount, :pk, :sig);)sql",
+            tblName);
 
         *session << sql, soci::use(txnIdHex), soci::use(e.ledgerSeq_),
             soci::use(e.createCount_), soci::use(success), soci::use(amtBlob),
@@ -1028,10 +1018,9 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     }
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto const sql = fmt::format(
-            R"sql(UPDATE {table_name} SET TransID = :tx_hash WHERE ChainType = :chain_type;
-            )sql",
-            fmt::arg("table_name", db_init::xChainSyncTable));
+        auto const sql = std::format(
+            R"sql(UPDATE {} SET TransID = :tx_hash WHERE ChainType = :chain_type;)sql",
+            db_init::xChainSyncTable);
         auto const chainType = static_cast<std::uint32_t>(ct);
         *session << sql, soci::use(txnIdHex), soci::use(chainType);
     }
@@ -1223,10 +1212,10 @@ Federator::onEvent(event::XChainAttestsResult const& e)
             jv("src", e.src_),
             jv("dst", e.dst_),
             jv("createCount",
-               e.createCount_ ? fmt::format("{:x}", *e.createCount_)
+               e.createCount_ ? std::format("{:x}", *e.createCount_)
                               : std::string("0")),
             jv("claimID",
-               e.claimID_ ? fmt::format("{:x}", *e.claimID_)
+               e.claimID_ ? std::format("{:x}", *e.claimID_)
                           : std::string("0")));
 
         // tryFinishInitSync
@@ -1385,7 +1374,7 @@ Federator::saveProcessedLedger(ChainType ct, std::uint32_t ledger)
     if (ledger > initSync_[ct].dbLedgerSqn_)
     {
         auto session = app_.getXChainTxnDB().checkoutDb();
-        auto const sql = fmt::format(
+        auto const sql = std::format(
             "UPDATE {} SET LedgerSeq = :ledger_sqn WHERE ChainType = "
             ":chain_type;",
             db_init::xChainSyncTable);
@@ -2055,15 +2044,11 @@ Federator::deleteFromDB(ChainType ct, std::uint64_t id, bool isCreateAccount)
 
     auto const sql = [&]() {
         if (isCreateAccount)
-            return fmt::format(
-                R"sql(DELETE FROM {table_name} WHERE CreateCount = :cid;
-                )sql",
-                fmt::arg("table_name", tblName));
+            return std::format(
+                R"sql(DELETE FROM {} WHERE CreateCount = :cid;)sql", tblName);
         else
-            return fmt::format(
-                R"sql(DELETE FROM {table_name} WHERE ClaimID = :cid;
-                )sql",
-                fmt::arg("table_name", tblName));
+            return std::format(
+                R"sql(DELETE FROM {} WHERE ClaimID = :cid;)sql", tblName);
     }();
     *session << sql, soci::use(id);
 };

@@ -14,10 +14,10 @@
 #include <ripple/protocol/XChainAttestations.h>
 #include <ripple/protocol/jss.h>
 
-#include <fmt/core.h>
 #include <openssl/crypto.h>
 #include <soci/soci-backend.h>
 
+#include <format>
 #include <functional>
 #include <unordered_map>
 
@@ -74,13 +74,13 @@ doSelectAll(
         int claimID;
         int success;
 
-        auto sql = fmt::format(
+        auto sql = std::format(
             R"sql(SELECT TransID, LedgerSeq, ClaimID, Success, DeliveredAmt,
                          Bridge, SendingAccount, RewardAccount, OtherChainDst,
                          SigningAccount, PublicKey, Signature
-                  FROM {table_name};
+                  FROM {};
             )sql",
-            fmt::arg("table_name", tblName));
+            tblName);
 
         soci::indicator otherChainDstInd;
         soci::statement st =
@@ -206,7 +206,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         if (!missingOrInvalidField.empty())
         {
             result[ripple::jss::error] = "invalidRequest";
-            result[ripple::jss::error_message] = fmt::format(
+            result[ripple::jss::error_message] = std::format(
                 "Missing or invalid field: {}", missingOrInvalidField);
             return;
         }
@@ -226,9 +226,10 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         // TODO: Write log message
         // put expected value in the error message?
         result[ripple::jss::error] = "invalidRequest";
-        result[ripple::jss::error_message] = fmt::format(
-            "Specified door account does not match any sidechain door "
-            "account.");
+        result[ripple::jss::error_message] = std::format(
+            "Specified door account ({}) does not match any sidechain door "
+            "account.",
+            ripple::toBase58(*optDoor));
         return;
     }
 
@@ -250,16 +251,15 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         {
             otherChainDstBlob = convert(*optDst, *session);
 
-            auto sql = fmt::format(
-                R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount FROM {table_name}
+            auto sql = std::format(
+                R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount FROM {}
                   WHERE ClaimID = :claimID and
                         Success = 1 and
                         DeliveredAmt = :amt and
                         Bridge = :bridge and
                         SendingAccount = :sendingAccount and
-                        OtherChainDst = :otherChainDst;
-            )sql",
-                fmt::arg("table_name", tblName));
+                        OtherChainDst = :otherChainDst;)sql",
+                tblName);
 
             *session << sql, soci::into(signingAccountBlob),
                 soci::into(signatureBlob, sigInd), soci::into(publicKeyBlob),
@@ -269,15 +269,14 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         }
         else
         {
-            auto sql = fmt::format(
-                R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount, OtherChainDst FROM {table_name}
+            auto sql = std::format(
+                R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount, OtherChainDst FROM {}
                   WHERE ClaimID = :claimID and
                         Success = 1 and
                         DeliveredAmt = :amt and
                         Bridge = :bridge and
-                        SendingAccount = :sendingAccount;
-            )sql",
-                fmt::arg("table_name", tblName));
+                        SendingAccount = :sendingAccount;)sql",
+                tblName);
 
             soci::indicator otherChainDstInd;
             *session << sql, soci::into(signingAccountBlob),
@@ -380,7 +379,7 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         if (!missingOrInvalidField.empty())
         {
             result[ripple::jss::error] = "invalidRequest";
-            result[ripple::jss::error_message] = fmt::format(
+            result[ripple::jss::error_message] = std::format(
                 "Missing or invalid field: {}", missingOrInvalidField);
             return;
         }
@@ -401,9 +400,10 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         // TODO: Write log message
         // put expected value in the error message?
         result[ripple::jss::error] = "invalidRequest";
-        result[ripple::jss::error] = fmt::format(
-            "Specified door account does not match any sidechain door "
-            "account.");
+        result[ripple::jss::error] = std::format(
+            "Specified door account ({}) does not match any sidechain door "
+            "account.",
+            ripple::toBase58(*optDoor));
         return;
     }
 
@@ -423,17 +423,16 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         soci::blob publicKeyBlob(*session);
         soci::blob signatureBlob(*session);
 
-        auto sql = fmt::format(
-            R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount FROM {table_name}
+        auto sql = std::format(
+            R"sql(SELECT SigningAccount, Signature, PublicKey, RewardAccount FROM {}
                   WHERE CreateCount = :createCount and
                         Success = 1 and
                         DeliveredAmt = :amt and
                         RewardAmt = :rewardAmt and
                         Bridge = :bridge and
                         SendingAccount = :sendingAccount and
-                        OtherChainDst = :otherChainDst;
-            )sql",
-            fmt::arg("table_name", tblName));
+                        OtherChainDst = :otherChainDst;)sql",
+            tblName);
 
         *session << sql, soci::into(signingAccountBlob),
             soci::into(signatureBlob), soci::into(publicKeyBlob),
@@ -518,7 +517,7 @@ doAttestTx(App& app, Json::Value const& in, Json::Value& result)
         if (!missingOrInvalidField.empty())
         {
             result[ripple::jss::error] = "invalidRequest";
-            result[ripple::jss::error_message] = fmt::format(
+            result[ripple::jss::error_message] = std::format(
                 "Missing or invalid field: {}", missingOrInvalidField);
             return;
         }
@@ -655,7 +654,7 @@ doCommand(
         // TODO: regularize error handling
         result[ripple::jss::error] = "invalidRequest";
         result[ripple::jss::error_message] =
-            fmt::format("No such method: {}", cmd);
+            std::format("No such method: {}", cmd);
         return;
     }
 
@@ -667,7 +666,7 @@ doCommand(
             remoteIPAddress.address()))
     {
         result[ripple::jss::error] = "notAuthorized";
-        result[ripple::jss::error_message] = fmt::format(
+        result[ripple::jss::error_message] = std::format(
             "{} method requires ADMIN privilege. Request authentication "
             "failed.",
             cmd);

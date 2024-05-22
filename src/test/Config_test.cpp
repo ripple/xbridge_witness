@@ -22,7 +22,7 @@
 #include <ripple/beast/unit_test.h>
 #include <ripple/json/json_reader.h>
 
-#include <fmt/format.h>
+#include <format>
 
 namespace xbwd {
 namespace tests {

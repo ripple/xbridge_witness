@@ -21,8 +21,7 @@
 
 #include <ripple/protocol/jss.h>
 
-#include <fmt/core.h>
-
+#include <format>
 #include <string_view>
 #include <type_traits>
 
@@ -34,7 +33,7 @@ namespace {
 std::string
 to_hex(std::uint64_t i)
 {
-    return fmt::format("{:x}", i);
+    return std::format("{:x}", i);
 }
 
 }  // namespace

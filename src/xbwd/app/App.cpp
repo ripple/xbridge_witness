@@ -13,9 +13,8 @@
 #include <ripple/protocol/SecretKey.h>
 #include <ripple/protocol/TER.h>
 
-#include <fmt/format.h>
-
 #include <filesystem>
+#include <format>
 
 namespace xbwd {
 
@@ -224,7 +223,7 @@ App::logRotation()
         auto fn = orig.stem();
         auto const ext = orig.extension();
 
-        fn += fmt::format("_{}", num);
+        fn += std::format("_{}", num);
         std::filesystem::path newPath(p);
         newPath /= fn;
         newPath.replace_extension(ext);

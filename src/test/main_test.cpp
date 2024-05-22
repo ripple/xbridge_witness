@@ -33,11 +33,11 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/websocket.hpp>
-#include <fmt/format.h>
 
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <mutex>
 
@@ -58,7 +58,7 @@ namespace all {
 namespace websocket = boost::beast::websocket;
 using tcp = boost::asio::ip::tcp;
 using namespace std::chrono_literals;
-using namespace fmt::literals;
+using namespace std::literals;
 
 static std::unique_ptr<App> gApp;
 static std::condition_variable gCv;
@@ -90,10 +90,17 @@ extern const char accTxIss1[];
 extern const char accTxIss2[];
 extern const char submIss[];
 
+template <typename... Args>
+inline std::string
+xformat(const std::string_view fmt, Args&&... args)
+{
+    return std::vformat(fmt, std::make_format_args(args...));
+}
+
 static void
 fail(boost::beast::error_code ec, char const* what)
 {
-    auto s = fmt::format("{}: {}", what, ec.message());
+    auto s = std::format("{}: {}", what, ec.message());
     std::cerr << "Error, throw: " << s << std::endl;
     throw std::runtime_error(s);
 }
@@ -156,28 +163,21 @@ public:
         unsigned const id = msg["id"].asUInt();
 
         if (method == "server_info")
-            s = fmt::format(
-                fmt::runtime(prepForFmt(serverInfoLoc)), "id"_a = id);
+            s = xformat(prepForFmt(serverInfoLoc), id);
         else if (method == "account_info")
-            s = fmt::format(
-                fmt::runtime(prepForFmt(bridgeAccInfoLoc)), "id"_a = id);
+            s = xformat(prepForFmt(bridgeAccInfoLoc), id);
         else if (method == "subscribe")
-            s = fmt::format(
-                fmt::runtime(prepForFmt(ledgerSubsLoc)), "id"_a = id);
+            s = xformat(prepForFmt(ledgerSubsLoc), id);
         else if (method == "ledger_entry")
-            s = fmt::format(
-                fmt::runtime(prepForFmt(ledgerEntryLoc)), "id"_a = id);
+            s = xformat(prepForFmt(ledgerEntryLoc), id);
         else if (method == "account_tx")
         {
             if (!accTxCtr)
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(accTxLoc)), "id"_a = id);
+                s = xformat(prepForFmt(accTxLoc), id);
             else if (accTxCtr == 1)
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(accTxLoc1)), "id"_a = id);
+                s = xformat(prepForFmt(accTxLoc1), id);
             else
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(accTxLoc2)), "id"_a = id);
+                s = xformat(prepForFmt(accTxLoc2), id);
             ++accTxCtr;
 
             if (!clientInit_)
@@ -189,7 +189,7 @@ public:
             }
         }
         else
-            throw std::runtime_error(fmt::format("Unknown method: {}", method));
+            throw std::runtime_error(std::format("Unknown method: {}", method));
 
         Json::Value jv;
         Json::Reader().parse(s, jv);
@@ -208,9 +208,7 @@ public:
         ++closed_ledger;
         Json::Value jv;
         Json::Reader().parse(
-            fmt::format(
-                fmt::runtime(prepForFmt(ledgerAdvance)),
-                "closed_ledger"_a = closed_ledger),
+            xformat(prepForFmt(ledgerAdvance), closed_ledger, closed_ledger),
             jv);
         return jv;
     }
@@ -255,35 +253,27 @@ public:
         unsigned const id = msg["id"].asUInt();
 
         if (method == "server_info")
-            s = fmt::format(
-                fmt::runtime(prepForFmt(serverInfoIss)), "id"_a = id);
+            s = xformat(prepForFmt(serverInfoIss), id);
         else if (method == "account_info")
         {
             if (!accInfoCtr)
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(bridgeAccInfoIss)), "id"_a = id);
+                s = xformat(prepForFmt(bridgeAccInfoIss), id);
             else
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(accInfoIss1)), "id"_a = id);
+                s = xformat(prepForFmt(accInfoIss1), id);
             ++accInfoCtr;
         }
         else if (method == "subscribe")
-            s = fmt::format(
-                fmt::runtime(prepForFmt(ledgerSubsIss)), "id"_a = id);
+            s = xformat(prepForFmt(ledgerSubsIss), id);
         else if (method == "ledger_entry")
-            s = fmt::format(
-                fmt::runtime(prepForFmt(ledgerEntryIss)), "id"_a = id);
+            s = xformat(prepForFmt(ledgerEntryIss), id);
         else if (method == "account_tx")
         {
             if (!accTxCtr)
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(accTxIss)), "id"_a = id);
+                s = xformat(prepForFmt(accTxIss), id);
             else if (accTxCtr == 1)
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(accTxIss1)), "id"_a = id);
+                s = xformat(prepForFmt(accTxIss1), id);
             else
-                s = fmt::format(
-                    fmt::runtime(prepForFmt(accTxIss2)), "id"_a = id);
+                s = xformat(prepForFmt(accTxIss2), id);
             ++accTxCtr;
 
             if (!clientInit_)
@@ -298,11 +288,11 @@ public:
         {
             auto const blob = msg["tx_blob"].asString();
             blobOk_ = blob.starts_with("12002E2100003D8C24");
-            s = fmt::format(fmt::runtime(prepForFmt(submIss)), "id"_a = id);
+            s = xformat(prepForFmt(submIss), id);
             attSubmitted_ = true;
         }
         else
-            throw std::runtime_error(fmt::format("Unknown method: {}", method));
+            throw std::runtime_error(std::format("Unknown method: {}", method));
 
         Json::Value jv;
         Json::Reader().parse(s, jv);
@@ -321,9 +311,7 @@ public:
         ++closed_ledger;
         Json::Value jv;
         Json::Reader().parse(
-            fmt::format(
-                fmt::runtime(prepForFmt(ledgerAdvance)),
-                "closed_ledger"_a = closed_ledger),
+            xformat(prepForFmt(ledgerAdvance), closed_ledger, closed_ledger),
             jv);
         return jv;
     }
@@ -741,12 +729,14 @@ private:
         c.startServers();
         c.startIOThreads();
 
-        auto const sconf = fmt::format(
-            fmt::runtime(prepForFmt(witnessLocal)),
-            "Host"_a = LHOST,
-            "PortLock"_a = PORT_LOC,
-            "PortIss"_a = PORT_ISS,
-            "PortRPC"_a = PORT_RPC);
+        auto const sconf = xformat(
+            prepForFmt(witnessLocal),
+            LHOST,
+            PORT_LOC,
+            LHOST,
+            PORT_ISS,
+            LHOST,
+            PORT_RPC);
         Json::Value jconf;
         Json::Reader().parse(sconf, jconf);
         std::unique_ptr<xbwd::config::Config> config =
@@ -853,8 +843,8 @@ const char witnessLocal[] = R"str(
 {
   "LockingChain": {
     "Endpoint": {
-      "Host": "`Host`",
-      "Port": `PortLock`
+      "Host": "``",
+      "Port": ``
     },
     "TxnSubmit": {
       "ShouldSubmit": true,
@@ -866,8 +856,8 @@ const char witnessLocal[] = R"str(
   },
   "IssuingChain": {
     "Endpoint": {
-      "Host": "`Host`",
-      "Port": `PortIss`
+      "Host": "``",
+      "Port": ``
     },
     "TxnSubmit": {
       "ShouldSubmit": true,
@@ -878,8 +868,8 @@ const char witnessLocal[] = R"str(
     "RewardAccount": "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg"
   },
   "RPCEndpoint": {
-    "Host": "`Host`",
-    "Port": `PortRPC`
+    "Host": "``",
+    "Port": ``
   },
   "LogFile": "witness.log",
   "LogLevel": "Trace",
@@ -897,7 +887,7 @@ const char witnessLocal[] = R"str(
 
 const char serverInfoLoc[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "info" : {
@@ -1006,7 +996,7 @@ const char serverInfoLoc[] = R"str(
 
 const char serverInfoIss[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "info" : {
@@ -1115,7 +1105,7 @@ const char serverInfoIss[] = R"str(
 
 const char bridgeAccInfoLoc[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "account_data" : {
@@ -1195,7 +1185,7 @@ const char bridgeAccInfoLoc[] = R"str(
 
 const char bridgeAccInfoIss[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "account_data" : {
@@ -1275,7 +1265,7 @@ const char bridgeAccInfoIss[] = R"str(
 
 const char ledgerSubsLoc[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "fee_base" : 10,
@@ -1295,7 +1285,7 @@ const char ledgerSubsLoc[] = R"str(
 
 const char ledgerSubsIss[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "fee_base" : 10,
@@ -1315,7 +1305,7 @@ const char ledgerSubsIss[] = R"str(
 
 const char ledgerEntryLoc[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "index" : "DF794CFEDA27E06DAE87A6EFB489614C1D3FF857F3980661F84FC01933B4AF6F",
@@ -1354,7 +1344,7 @@ const char ledgerEntryLoc[] = R"str(
 
 const char ledgerEntryIss[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "index" : "20C736B81A2632BE6A0FCE130FC3649334A041B79C6017896709F39B6059DB92",
@@ -1393,7 +1383,7 @@ const char ledgerEntryIss[] = R"str(
 
 const char accTxLoc[] = R"str(
 {
-  "id": `id`,
+  "id": ``,
   "jsonrpc": "2.0",
   "result": {
     "account": "rL9vUaa9eBas32C5bgv4fEmHDfJr3oNd4D",
@@ -1734,7 +1724,7 @@ const char accTxLoc[] = R"str(
 
 const char accTxIss[] = R"str(
 {
-  "id": `id`,
+  "id": ``,
   "jsonrpc": "2.0",
   "result": {
     "account": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
@@ -2014,19 +2004,19 @@ const char ledgerAdvance[] = R"str(
    "fee_base" : 10,
    "fee_ref" : 10,
    "ledger_hash" : "B66BEC6A8C3A3585880B37B600A88B0B280104DCC2F4CCB2DED9C605113FE13E",
-   "ledger_index" : `closed_ledger`,
+   "ledger_index" : ``,
    "ledger_time" : 766541670,
    "reserve_base" : 10000000,
    "reserve_inc" : 2000000,
    "txn_count" : 1,
    "type" : "ledgerClosed",
-   "validated_ledgers" : "2-`closed_ledger`"
+   "validated_ledgers" : "2-``"
 }
 )str";
 
 const char accTxLoc1[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "account" : "rL9vUaa9eBas32C5bgv4fEmHDfJr3oNd4D",
@@ -2150,7 +2140,7 @@ const char accTxLoc1[] = R"str(
 
 const char accTxLoc2[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "account" : "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg",
@@ -2168,7 +2158,7 @@ const char accTxLoc2[] = R"str(
 
 const char accInfoIss1[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "account_data" : {
@@ -2205,7 +2195,7 @@ const char accInfoIss1[] = R"str(
 
 const char accTxIss1[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "account" : "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
@@ -2223,7 +2213,7 @@ const char accTxIss1[] = R"str(
 
 const char accTxIss2[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "account" : "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg",
@@ -2241,7 +2231,7 @@ const char accTxIss2[] = R"str(
 
 const char submIss[] = R"str(
 {
-   "id" : `id`,
+   "id" : ``,
    "jsonrpc" : "2.0",
    "result" : {
       "accepted" : true,
