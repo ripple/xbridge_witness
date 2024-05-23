@@ -58,7 +58,7 @@ jobs:
               version: 14
               cc: /usr/bin/clang-14
               cxx: /usr/bin/clang++-14
-    name: ${{ matrix.compiler }}-${{ matrix.profile.version }} - ${{ matrix.configuration }}
+    name: Dependencies ${{ matrix.compiler }}-${{ matrix.profile.version }} - ${{ matrix.configuration }}
     # runs-on: [self-hosted, x-heavy] # TODO: Use self-host when https://ripplelabs.atlassian.net/browse/RXIT-210 resolved
     runs-on: ubuntu-latest
     container: rippleci/rippled-build-ubuntu:aaf5e3e
@@ -115,7 +115,7 @@ jobs:
           - Release
         cmake-args:
           - ""
-    name: Test ${{ matrix.compiler }}-${{ matrix.configuration }}
+    name: Build & Test ${{ matrix.compiler }}-${{ matrix.configuration }}
     needs: dependencies
     # runs-on: [self-hosted, x-heavy] # TODO: Use self-host when https://ripplelabs.atlassian.net/browse/RXIT-210 resolved
     runs-on: ubuntu-20.04
