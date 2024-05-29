@@ -198,6 +198,28 @@ XChainAccountSet::toJson() const
     return result;
 }
 
+Json::Value
+DBDelete::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
+    result["eventType"] = "DBDelete";
+    result[isCreateAccount ? "create" : "claim"] = fmt::format("{:x}", id_);
+
+    return result;
+}
+
+Json::Value
+DBUpdateLedger::toJson() const
+{
+    Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
+    result["eventType"] = "DBUpdateLedger";
+    result["ledger"] = ledger_;
+
+    return result;
+}
+
 }  // namespace event
 
 Json::Value

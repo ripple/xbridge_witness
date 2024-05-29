@@ -169,6 +169,25 @@ struct XChainAccountSet
     toJson() const;
 };
 
+struct DBDelete
+{
+    ChainType chainType_ = ChainType::locking;
+    bool isCreateAccount = false;
+    std::uint64_t id_ = 0;
+
+    Json::Value
+    toJson() const;
+};
+
+struct DBUpdateLedger
+{
+    ChainType chainType_ = ChainType::locking;
+    std::uint32_t ledger_ = 0;
+
+    Json::Value
+    toJson() const;
+};
+
 }  // namespace event
 
 using FederatorEvent = std::variant<
@@ -185,5 +204,11 @@ using FederatorEvent = std::variant<
 
 Json::Value
 toJson(FederatorEvent const& event);
+
+using FederatorDBEvent = std::variant<
+    event::XChainCommitDetected,
+    event::XChainAccountCreateCommitDetected,
+    event::DBDelete,
+    event::DBUpdateLedger>;
 
 }  // namespace xbwd
