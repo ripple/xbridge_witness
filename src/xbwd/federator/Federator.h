@@ -295,6 +295,7 @@ class Federator
         lt_event_locking,
         lt_event_issuing,
         lt_txnSubmit,
+        lt_db,
         lt_last
     };
     std::array<std::thread, lt_last> threads_;
@@ -325,10 +326,18 @@ class Federator
     mutable std::mutex eventsMutex_;
     ChainArray<std::vector<FederatorEvent>> GUARDED_BY(eventsMutex_) events_;
 
+    // Not divided by sidechains because attestation events need to be
+    // processed after commit events(to delete them in the DB).
+    std::vector<FederatorDBEvent> GUARDED_BY(eventsMutex_) dbEvents_;
+
     mutable std::mutex txnsMutex_;
     ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) txns_;
     ChainArray<std::list<SubmissionPtr>> GUARDED_BY(txnsMutex_) submitted_;
     ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) errored_;
+
+    // Cache of the events added to processing. It is added so as not to read
+    // the DB. No need for mutex as event processing is synchronized.
+    ChainArray<std::unordered_set<std::string>> txnsInProcessing_;
 
     // "Window" size for sending attestations
     // 0 - no "window"
@@ -377,7 +386,7 @@ class Federator
         ripple::uint256 dbTxnHash_;
 
         // The latest ledger that was fully processed in the previous session.
-        std::uint32_t dbLedgerSqn_{0u};
+        std::atomic_uint32_t dbLedgerSqn_{0u};
 
         // Request to stop processing history
         bool historyDone_{false};
@@ -475,16 +484,25 @@ private:
         ripple::Logs& l);
 
     void
-    mainLoop(ChainType ct) EXCLUDES(mainLoopMutex_);
+    mainLoop(ChainType ct);
 
     void
-    txnSubmitLoop() EXCLUDES(txnSubmitLoopMutex_);
+    txnSubmitLoop();
+
+    void
+    dbLoop();
 
     void
     onEvent(event::XChainCommitDetected const& e);
 
     void
+    onDBEvent(event::XChainCommitDetected const& e);
+
+    void
     onEvent(event::XChainAccountCreateCommitDetected const& e);
+
+    void
+    onDBEvent(event::XChainAccountCreateCommitDetected const& e);
 
     void
     onEvent(event::XChainTransferResult const& e);
@@ -512,6 +530,12 @@ private:
 
     void
     onEvent(event::EndOfHistory const& e);
+
+    void
+    onDBEvent(event::DBDelete const& e);
+
+    void
+    onDBEvent(event::DBUpdateLedger const& e);
 
     void
     initSync(
@@ -551,6 +575,9 @@ private:
     submitTxn(SubmissionPtr&& submission, ChainType dstChain);
 
     void
+    pushDB(FederatorDBEvent&& e) EXCLUDES(eventsMutex_);
+
+    void
     deleteFromDB(
         ChainType ct,
         std::uint64_t claimID,
@@ -575,9 +602,6 @@ private:
 
     void
     checkProcessedLedger(ChainType ct);
-
-    void
-    saveProcessedLedger(ChainType ct, std::uint32_t ledger);
 };
 
 std::unique_ptr<Federator>

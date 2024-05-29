@@ -90,7 +90,7 @@ set(HEADERS
   src/xbwd/core/DatabaseCon.h
   src/xbwd/core/SociDB.h
   src/xbwd/federator/Federator.h
-  src/xbwd/federator/FederatorEvents.cpp
+  src/xbwd/federator/FederatorEvents.h
   src/xbwd/federator/TxnSupport.h
   src/xbwd/rpc/fromJSON.h
   src/xbwd/rpc/RPCCall.h
