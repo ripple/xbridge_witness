@@ -55,7 +55,8 @@ class WebsocketClient
 
     // mutex for shutdown
     std::mutex shutdownM_;
-    std::atomic_bool isShutdown_ = false;
+    enum estate : std::int32_t { ST_INIT, ST_CONNECTED, ST_SHUTDOWN };
+    std::atomic_int32_t state_ = ST_INIT;
     std::condition_variable shutdownCv_;
 
     boost::asio::io_service& ios_;
@@ -64,8 +65,6 @@ class WebsocketClient
     boost::beast::websocket::stream<boost::asio::ip::tcp::socket&> GUARDED_BY(
         m_) ws_;
     boost::beast::multi_buffer rb_;
-
-    std::atomic_bool peerClosed_{true};
 
     std::function<void(Json::Value const&)> onMessageCallback_;
     std::atomic_uint32_t nextId_{0};
@@ -111,7 +110,7 @@ public:
     shutdown() EXCLUDES(shutdownM_);
 
     void
-    reconnect(std::string_view reason) REQUIRES(shutdownM_);
+    reconnect(std::string_view reason) EXCLUDES(shutdownM_);
 
 private:
     void

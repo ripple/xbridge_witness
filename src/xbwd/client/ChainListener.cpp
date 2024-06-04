@@ -131,12 +131,17 @@ ChainListener::onConnect()
 
     // Clear on re-connect
     inRequest_ = false;
-    ledgerReqMax_ = 0;
-    ledgerProcessedDoor_ = 0;
-    ledgerProcessedSubmit_ = 0;
-    prevLedgerIndex_ = 0;
-    txnHistoryIndex_ = 0;
-    hp_.clear();
+
+    // Resume only if history finished
+    if (hp_.state_ != HistoryProcessor::FINISHED)
+    {
+        ledgerReqMax_ = 0;
+        ledgerProcessedDoor_ = 0;
+        ledgerProcessedSubmit_ = 0;
+        prevLedgerIndex_ = 0;
+        txnHistoryIndex_ = 0;
+        hp_.clear();
+    }
 
     if (signAccount_)
     {
