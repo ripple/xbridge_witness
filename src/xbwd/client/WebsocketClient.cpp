@@ -57,7 +57,7 @@ WebsocketClient::cleanup()
 {
     ios_.post(strand_.wrap([this] {
         timer_.cancel();
-        if (!peerClosed_)
+        if (state_ == ST_CONNECTED)
         {
             {
                 std::lock_guard l{m_};
@@ -66,7 +66,7 @@ WebsocketClient::cleanup()
 
                     std::lock_guard l(shutdownM_);
                     timer_.cancel();
-                    isShutdown_ = true;
+                    state_ = ST_SHUTDOWN;
                     shutdownCv_.notify_one();
                 }));
             }
@@ -74,7 +74,7 @@ WebsocketClient::cleanup()
         else
         {
             std::lock_guard<std::mutex> l(shutdownM_);
-            isShutdown_ = true;
+            state_ = ST_SHUTDOWN;
             shutdownCv_.notify_one();
         }
     }));
@@ -83,12 +83,12 @@ WebsocketClient::cleanup()
 void
 WebsocketClient::shutdown()
 {
-    if (isShutdown_)
+    if (state_ == ST_SHUTDOWN)
         return;
     cleanup();
     std::unique_lock l{shutdownM_};
-    if (!isShutdown_)
-        shutdownCv_.wait(l, [this] { return isShutdown_.load(); });
+    if (state_ != ST_SHUTDOWN)
+        shutdownCv_.wait(l, [this] { return state_ == ST_SHUTDOWN; });
 }
 
 WebsocketClient::WebsocketClient(
@@ -122,34 +122,40 @@ WebsocketClient::~WebsocketClient()
 void
 WebsocketClient::connect()
 {
-    std::lock_guard<std::mutex> l(shutdownM_);
-    if (isShutdown_)
-        return;
-
     try
     {
-        rb_.clear();
-        // TODO: Change all the beast::IP:Endpoints to boost endpoints
-        stream_.connect(ep_);
-        peerClosed_ = false;
-        ws_.set_option(boost::beast::websocket::stream_base::decorator(
-            [&](boost::beast::websocket::request_type& req) {
-                for (auto const& h : headers_)
-                    req.set(h.first, h.second);
-            }));
-        ws_.handshake(
-            ep_.address().to_string() + ":" + std::to_string(ep_.port()), "/");
+        {
+            std::lock_guard<std::mutex> ls(shutdownM_);
+            if (state_ == ST_SHUTDOWN)
+                return;
 
-        JLOGV(
-            j_.info(),
-            "WebsocketClient connected to",
-            jv("ip", ep_.address()),
-            jv("port", ep_.port()));
+            std::lock_guard lw{m_};
 
-        ws_.async_read(
-            rb_,
-            std::bind(
-                &WebsocketClient::onReadMsg, this, std::placeholders::_1));
+            rb_.clear();
+            // TODO: Change all the beast::IP:Endpoints to boost endpoints
+            stream_.connect(ep_);
+            ws_.set_option(boost::beast::websocket::stream_base::decorator(
+                [&](boost::beast::websocket::request_type& req) {
+                    for (auto const& h : headers_)
+                        req.set(h.first, h.second);
+                }));
+            ws_.handshake(
+                ep_.address().to_string() + ":" + std::to_string(ep_.port()),
+                "/");
+            state_ = ST_CONNECTED;
+
+            JLOGV(
+                j_.info(),
+                "WebsocketClient connected to",
+                jv("ip", ep_.address()),
+                jv("port", ep_.port()));
+
+            ws_.async_read(
+                rb_,
+                std::bind(
+                    &WebsocketClient::onReadMsg, this, std::placeholders::_1));
+        }
+
         onConnectCallback_();
     }
     catch (std::exception& e)
@@ -170,6 +176,21 @@ WebsocketClient::send(
     Json::Value params,
     std::string const& chain)
 {
+    {
+        std::lock_guard<std::mutex> l(shutdownM_);
+        if (state_ != ST_CONNECTED)
+        {
+            // Attestations will be re-send after TTL, everything else - after
+            // reconnect
+            JLOGV(
+                j_.trace(),
+                "WebsocketClient::send",
+                jv("chainType", chain),
+                jv("error", "not connected"));
+            return 0;
+        }
+    }
+
     params[ripple::jss::method] = cmd;
     params[ripple::jss::jsonrpc] = "2.0";
     params[ripple::jss::ripplerpc] = "2.0";
@@ -189,7 +210,6 @@ WebsocketClient::send(
     }
     catch (...)
     {
-        std::lock_guard<std::mutex> l(shutdownM_);
         reconnect("exception at sending data");
     }
     return id;
@@ -200,7 +220,11 @@ WebsocketClient::onReadMsg(error_code const& ec)
 {
     if (ec)
     {
-        auto const& reason = ws_.reason();
+        boost::beast::websocket::close_reason reason;
+        {
+            std::lock_guard l{m_};
+            reason = ws_.reason();
+        }
 
         JLOGV(
             j_.error(),
@@ -208,10 +232,7 @@ WebsocketClient::onReadMsg(error_code const& ec)
             jv("ec", ec),
             jv("code", reason.code),
             jv("msg", reason.reason));
-        if (ec == boost::beast::websocket::error::closed)
-            peerClosed_ = true;
 
-        std::lock_guard<std::mutex> l(shutdownM_);
         reconnect("error reading data");
         return;
     }
@@ -222,17 +243,26 @@ WebsocketClient::onReadMsg(error_code const& ec)
         messageCv_.notify_one();
     }
 
-    rb_.clear();
-    ws_.async_read(
-        rb_,
-        std::bind(&WebsocketClient::onReadMsg, this, std::placeholders::_1));
+    {
+        std::lock_guard l{m_};
+        if (state_ != ST_CONNECTED)
+            return;
+        rb_.clear();
+        ws_.async_read(
+            rb_,
+            std::bind(
+                &WebsocketClient::onReadMsg, this, std::placeholders::_1));
+    }
 }
 
 void
 WebsocketClient::reconnect(std::string_view reason)
 {
-    if (isShutdown_)
+    std::lock_guard<std::mutex> l(shutdownM_);
+
+    if (state_ == ST_SHUTDOWN)
         return;
+    state_ = ST_INIT;
 
     JLOGV(j_.info(), "WebsocketClient::reconnect()", jv("reason", reason));
 
@@ -257,7 +287,7 @@ WebsocketClient::runCallbacks()
 {
     std::uint64_t maxSize = 0;
 
-    for (; !isShutdown_;)
+    for (; state_ != ST_SHUTDOWN;)
     {
         processingQueue_.clear();
         {
@@ -280,7 +310,7 @@ WebsocketClient::runCallbacks()
 
         for (auto const& rb : processingQueue_)
         {
-            if (isShutdown_)
+            if (state_ == ST_SHUTDOWN)
                 break;
 
             auto const s = buffer_string(rb.data());
