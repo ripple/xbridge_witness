@@ -36,6 +36,10 @@
 #include <ripple/protocol/XChainAttestations.h>
 
 #include <boost/asio.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/identity.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index_container.hpp>
 
 #include <atomic>
 #include <condition_variable>
@@ -289,6 +293,23 @@ struct AttestedHistoryTx
     fromEvent(FederatorEvent const& e);
 };
 
+struct TransactionCache
+{
+    std::string id_;  // ClaimID or CreateID
+    std::string tx_;  // tx hash of XChainCommit /  XChainAccountCreateCommit
+                      // transaction
+};
+
+namespace mi = boost::multi_index;
+typedef mi::multi_index_container<
+    TransactionCache,
+    mi::indexed_by<
+        mi::hashed_unique<
+            mi::member<TransactionCache, std::string, &TransactionCache::tx_>>,
+        mi::hashed_non_unique<
+            mi::member<TransactionCache, std::string, &TransactionCache::id_>>>>
+    TransactionCacheContainer;
+
 class Federator
 {
     enum LoopTypes {
@@ -336,8 +357,10 @@ class Federator
     ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) errored_;
 
     // Cache of the events added to processing. It is added so as not to read
-    // the DB. No need for mutex as event processing is synchronized.
-    ChainArray<std::unordered_set<std::string>> txnsInProcessing_;
+    // the DB. No need for mutex as event processing is synchronized. Insertion
+    // check transaction id for uniqueness. Deletion remove all the entry with
+    // the same claimID
+    ChainArray<TransactionCacheContainer> txnsInProcessing_;
 
     // "Window" size for sending attestations
     // 0 - no "window"
