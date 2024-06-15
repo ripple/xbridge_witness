@@ -347,7 +347,7 @@ Federator::readDBAttests(ChainType ct)
             }
 
             txnsInProcessing_[ct].insert(
-                fmt::format("create: {:x}", createCount));
+                {fmt::format("create: {:x}", createCount), transID});
             if (!autoSubmit_[ct])
                 continue;
 
@@ -458,7 +458,8 @@ Federator::readDBAttests(ChainType ct)
                 continue;
             }
 
-            txnsInProcessing_[ct].insert(fmt::format("claim: {:x}", claimID));
+            txnsInProcessing_[ct].insert(
+                {fmt::format("claim: {:x}", claimID), transID});
             if (!autoSubmit_[ct])
                 continue;
 
@@ -781,17 +782,15 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     }
 
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
-    auto const res =
-        txnsInProcessing_[ct].insert(fmt::format("claim: {:x}", e.claimID_));
+    auto const res = txnsInProcessing_[ct].insert(
+        {fmt::format("claim: {:x}", e.claimID_), txnIdHex});
     if (!res.second)
     {
         // Already have this transaction
         // TODO: Sanity check the claim id and deliveredAmt match
         // TODO: Stop historical transaction collection
         JLOGV(
-            j_.error(),
-            "XChainCommit already present",
-            jv("event", e.toJson()));
+            j_.warn(), "XChainCommit already present", jv("event", e.toJson()));
         return;  // Don't store it again
     }
 
@@ -991,7 +990,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
     auto const txnIdHex = ripple::strHex(e.txnHash_.begin(), e.txnHash_.end());
     auto const res = txnsInProcessing_[ct].insert(
-        fmt::format("create: {:x}", e.createCount_));
+        {fmt::format("create: {:x}", e.createCount_), txnIdHex});
     if (!res.second)
     {
         // Already have this transaction
@@ -1331,7 +1330,7 @@ Federator::onEvent(event::XChainAttestsResult const& e)
         if ((e.type_ == xbwd::XChainTxnType::xChainAddClaimAttestation) &&
             e.claimID_)
         {
-            cnt = txnsInProcessing_[oct].erase(
+            cnt = txnsInProcessing_[oct].get<1>().erase(
                 fmt::format("claim: {:x}", *e.claimID_));
         }
         else if (
@@ -1339,7 +1338,7 @@ Federator::onEvent(event::XChainAttestsResult const& e)
              xbwd::XChainTxnType::xChainAddAccountCreateAttestation) &&
             e.createCount_)
         {
-            cnt = txnsInProcessing_[oct].erase(
+            cnt = txnsInProcessing_[oct].get<1>().erase(
                 fmt::format("create: {:x}", *e.createCount_));
         }
         else
