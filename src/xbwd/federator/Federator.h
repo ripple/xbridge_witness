@@ -300,14 +300,15 @@ struct TransactionCache
                       // transaction
 };
 
-namespace mi = boost::multi_index;
-typedef mi::multi_index_container<
+typedef boost::multi_index::multi_index_container<
     TransactionCache,
-    mi::indexed_by<
-        mi::hashed_unique<
-            mi::member<TransactionCache, std::string, &TransactionCache::tx_>>,
-        mi::hashed_non_unique<
-            mi::member<TransactionCache, std::string, &TransactionCache::id_>>>>
+    boost::multi_index::indexed_by<
+        boost::multi_index::hashed_unique<
+            boost::multi_index::
+                member<TransactionCache, std::string, &TransactionCache::tx_>>,
+        boost::multi_index::hashed_non_unique<
+            boost::multi_index::
+                member<TransactionCache, std::string, &TransactionCache::id_>>>>
     TransactionCacheContainer;
 
 class Federator
