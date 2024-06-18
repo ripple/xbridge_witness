@@ -399,7 +399,8 @@ private:
 
         Json::Value params;
         params[ripple::jss::account] = "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg";
-        auto id = wsClient->send("account_info", params, "locking");
+        auto id = wsClient->send(
+            "account_info", params, "locking", [](std::uint32_t) {});
 
         params[ripple::jss::id] = id;
         params[ripple::jss::method] = "account_info";
@@ -440,7 +441,8 @@ private:
 
         Json::Value params;
         params[ripple::jss::account] = "rnscFKLtPLn9MnUZh8EHi2KEnJR6qcZXWg";
-        auto id = wsClient->send("account_info", params, "locking");
+        auto id = wsClient->send(
+            "account_info", params, "locking", [](std::uint32_t) {});
         // Waiting for reply
         wait_for(
             1s, [&c]() { return !c.repl_.isNull(); } DBG_ARGS("onMessage()"));

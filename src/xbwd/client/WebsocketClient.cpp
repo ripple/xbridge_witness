@@ -174,7 +174,8 @@ std::uint32_t
 WebsocketClient::send(
     std::string const& cmd,
     Json::Value params,
-    std::string const& chain)
+    std::string const& chain,
+    std::function<void(std::uint32_t)> onID)
 {
     {
         std::lock_guard<std::mutex> l(shutdownM_);
@@ -196,6 +197,7 @@ WebsocketClient::send(
     params[ripple::jss::ripplerpc] = "2.0";
 
     auto const id = nextId_++;
+    onID(id);
     params[ripple::jss::id] = id;
     auto const s = to_string(params);
     JLOGV(

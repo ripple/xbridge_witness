@@ -165,7 +165,7 @@ std::uint32_t
 ChainListener::send(std::string const& cmd, Json::Value const& params) const
 {
     auto const chainName = to_string(chainType_);
-    return wsClient_->send(cmd, params, chainName);
+    return wsClient_->send(cmd, params, chainName, [](std::uint32_t) {});
 }
 
 void
@@ -188,11 +188,12 @@ ChainListener::send(
     //     jv("command", cmd),
     //     jv("params", params));
 
-    auto id = wsClient_->send(cmd, params, chainName);
+    auto id = wsClient_->send(
+        cmd, params, chainName, [this, onResponse](std::uint32_t id) {
+            std::lock_guard lock(callbacksMtx_);
+            callbacks_.emplace(id, onResponse);
+        });
     // JLOGV(j_.trace(), "ChainListener send id", jv("id", id));
-
-    std::lock_guard lock(callbacksMtx_);
-    callbacks_.emplace(id, onResponse);
 }
 
 template <class E>

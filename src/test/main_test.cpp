@@ -90,10 +90,13 @@ extern const char accTxIss1[];
 extern const char accTxIss2[];
 extern const char submIss[];
 
+std::mutex gMCons;
+
 static void
 fail(boost::beast::error_code ec, char const* what)
 {
     auto s = fmt::format("{}: {}", what, ec.message());
+    std::lock_guard cl(gMCons);
     std::cerr << "Error, throw: " << s << std::endl;
     throw std::runtime_error(s);
 }
@@ -109,8 +112,11 @@ wait_for(
         return true;
 
     auto const b = gCv.wait_for(l, to, stop);
-    DBG(std::cout << msg << ", wait finished: " << (b ? "condition" : "timeout")
-                  << std::endl;)
+    DBG({
+        std::lock_guard cl(gMCons);
+        std::cout << msg << ", wait finished: " << (b ? "condition" : "timeout")
+                  << std::endl;
+    })
     return b;
 }
 
@@ -152,6 +158,12 @@ public:
             throw std::runtime_error("No 'method' parameter");
         auto const method = msg[ripple::jss::method].asString();
 
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "process(), method:" << method << ", side: " << side()
+                      << std::endl;
+        })
+
         std::string s;
         unsigned const id = msg["id"].asUInt();
 
@@ -182,7 +194,10 @@ public:
 
             if (!clientInit_)
             {
-                DBG(std::cout << side() << " clientInit" << std::endl;)
+                DBG({
+                    std::lock_guard cl(gMCons);
+                    std::cout << side() << " clientInit" << std::endl;
+                })
                 std::unique_lock l(gMcv);
                 clientInit_ = true;
                 gCv.notify_all();
@@ -251,6 +266,12 @@ public:
             throw std::runtime_error("No 'method' parameter");
         auto const method = msg[ripple::jss::method].asString();
 
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "process(), method:" << method << ", side: " << side()
+                      << std::endl;
+        })
+
         std::string s;
         unsigned const id = msg["id"].asUInt();
 
@@ -288,7 +309,10 @@ public:
 
             if (!clientInit_)
             {
-                DBG(std::cout << side() << " clientInit" << std::endl;)
+                DBG({
+                    std::lock_guard cl(gMCons);
+                    std::cout << side() << " clientInit" << std::endl;
+                })
                 std::unique_lock l(gMcv);
                 clientInit_ = true;
                 gCv.notify_all();
@@ -371,7 +395,11 @@ public:
     void
     run()
     {
-        DBG(std::cout << "session::run()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "session::run()"
+                      << ", side: " << e_.side() << std::endl;
+        })
         ws_.set_option(websocket::stream_base::timeout::suggested(
             boost::beast::role_type::server));
         ws_.set_option(websocket::stream_base::decorator(
@@ -390,7 +418,11 @@ public:
     void
     onAccept(boost::beast::error_code ec)
     {
-        DBG(std::cout << "session::onAccept(), ec:" << ec << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "session::onAccept(), ec:" << ec
+                      << ", side: " << e_.side() << std::endl;
+        })
         if (ec == websocket::error::closed)
             return;
         if (ec)
@@ -401,7 +433,11 @@ public:
     void
     doRead()
     {
-        DBG(std::cout << "session::doRead()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "session::doRead()"
+                      << ", side: " << e_.side() << std::endl;
+        })
         ws_.async_read(
             buffer_,
             boost::beast::bind_front_handler(
@@ -413,8 +449,12 @@ public:
     void
     onRead(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
-        DBG(std::cout << "session::onRead(), ec:" << ec
-                      << " bytes: " << bytes_transferred << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "session::onRead(), ec:" << ec
+                      << " bytes: " << bytes_transferred
+                      << ", side: " << e_.side() << std::endl;
+        })
         boost::ignore_unused(bytes_transferred);
         if (ec == websocket::error::closed)
             return;
@@ -461,8 +501,12 @@ public:
     void
     onWrite(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
-        DBG(std::cout << "session::onWrite(), ec:" << ec
-                      << " bytes: " << bytes_transferred << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "session::onWrite(), ec:" << ec
+                      << " bytes: " << bytes_transferred
+                      << ", side: " << e_.side() << std::endl;
+        })
         boost::ignore_unused(bytes_transferred);
         if (ec == websocket::error::closed)
             return;
@@ -475,11 +519,18 @@ public:
     void
     shutdown()
     {
-        DBG(std::cout << "session::shutdown()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "session::shutdown()"
+                      << ", side: " << e_.side() << std::endl;
+        })
         ios_.post([this] {
             ws_.async_close({}, [this](boost::beast::error_code const& ec) {
-                DBG(std::cout << "session::onAsync_close(), ec:" << ec
-                              << std::endl;)
+                DBG({
+                    std::lock_guard cl(gMCons);
+                    std::cout << "session::onAsync_close(), ec:" << ec
+                              << ", side: " << e_.side() << std::endl;
+                })
                 std::unique_lock l(gMcv);
                 this->finished_ = true;
                 gCv.notify_all();
@@ -502,7 +553,10 @@ public:
     void
     sendNewLedger()
     {
-        DBG(std::cout << e_.side() << " session::sendNewLedger()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << e_.side() << " session::sendNewLedger()" << std::endl;
+        })
         auto const jv = e_.getNewLedger();
         auto const s = to_string(jv);
 
@@ -518,8 +572,12 @@ public:
     void
     onWriteNewLedger(boost::beast::error_code ec, std::size_t bytes_transferred)
     {
-        DBG(std::cout << e_.side() << " session::onWriteNewLedger(), ec:" << ec
-                      << " bytes: " << bytes_transferred << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << " session::onWriteNewLedger(), ec:" << ec
+                      << ", bytes: " << bytes_transferred
+                      << ", side: " << side() << std::endl;
+        })
         boost::ignore_unused(bytes_transferred);
         if (ec == websocket::error::closed)
             return;
@@ -537,6 +595,12 @@ public:
     blobOk() const
     {
         return e_.blobOk();
+    }
+
+    std::string
+    side() const
+    {
+        return e_.side();
     }
 };
 
@@ -567,7 +631,11 @@ public:
         if (ec)
             fail(ec, "bind");
 
-        DBG(std::cout << "listener::listen()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "listener::listen()"
+                      << ", side: " << session_->side() << std::endl;
+        })
         acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
         if (ec)
             fail(ec, "listen");
@@ -576,17 +644,29 @@ public:
     void
     run()
     {
-        DBG(std::cout << "listener::run()" << std::endl);
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "listener::run()"
+                      << ", side: " << session_->side() << std::endl;
+        })
         doAccept();
     }
 
     void
     shutdown()
     {
-        DBG(std::cout << "listener::shutdown()" << std::endl);
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "listener::shutdown()"
+                      << ", side: " << session_->side() << std::endl;
+        })
         boost::system::error_code ec;
         acceptor_.cancel(ec);
-        DBG(if (ec) std::cout << "cancel error: " << ec << std::endl);
+        DBG(if (ec) {
+            std::lock_guard cl(gMCons);
+            std::cout << "cancel error: " << ec
+                      << ", side: " << session_->side() << std::endl;
+        })
         if (session_)
             session_->shutdown();
     }
@@ -619,7 +699,11 @@ private:
     void
     doAccept()
     {
-        DBG(std::cout << "listener::doAccept()" << std::endl);
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "listener::doAccept()"
+                      << ", side: " << session_->side() << std::endl;
+        })
         acceptor_.async_accept(
             boost::asio::make_strand(ios_),
             boost::beast::bind_front_handler(
@@ -631,7 +715,11 @@ private:
     void
     onAccept(boost::beast::error_code ec, tcp::socket socket)
     {
-        DBG(std::cout << "listener::onAccept(), ec:" << ec << std::endl);
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "listener::onAccept(), ec:" << ec
+                      << ", side: " << session_->side() << std::endl;
+        })
         if (ec == boost::system::errc::operation_canceled)
             return;
         if (ec)
@@ -664,19 +752,28 @@ struct Connection
     void
     startIOThreads()
     {
-        DBG(std::cout << "Connection::startIOThreads()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "Connection::startIOThreads()" << std::endl;
+        })
         ioThreads_.reserve(NUM_THREADS);
         for (auto i = 0; i < NUM_THREADS; ++i)
             ioThreads_.emplace_back([this, i] {
                 ios_.run();
-                DBG(std::cout << "ioThread #" << i << " finished" << std::endl;)
+                DBG({
+                    std::lock_guard cl(gMCons);
+                    std::cout << "ioThread #" << i << " finished" << std::endl;
+                })
             });
     }
 
     void
     waitIOThreads()
     {
-        DBG(std::cout << "Connection::waitIOThreads()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "Connection::waitIOThreads()" << std::endl;
+        })
         for (auto& t : ioThreads_)
             if (t.joinable())
                 t.join();
@@ -686,7 +783,10 @@ struct Connection
     void
     startServers()
     {
-        DBG(std::cout << "Connection::startServers()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "Connection::startServers()" << std::endl;
+        })
         auto const address = boost::asio::ip::make_address(LHOST);
         serverLoc_ = std::make_shared<listener<engineLoc>>(
             ios_, tcp::endpoint{address, PORT_LOC});
@@ -699,7 +799,10 @@ struct Connection
     void
     shutdownServers()
     {
-        DBG(std::cout << "Connection::shutdownServers()" << std::endl;)
+        DBG({
+            std::lock_guard cl(gMCons);
+            std::cout << "Connection::shutdownServers()" << std::endl;
+        })
         serverLoc_->shutdown();
         serverIss_->shutdown();
         wait_for(1s, [this]() {
@@ -788,17 +891,15 @@ private:
         bool locRepl = false, issRepl = false;
         for (std::string l; (!locRepl || !issRepl) && std::getline(logf, l);)
         {
-            if (l.find(
-                    "initSyncDone start replay {\"chainType\": \"locking\",") !=
-                std::string::npos)
+            if (l.find("initSyncDone start replay {\"chainType\": "
+                       "\"locking\",") != std::string::npos)
             {
                 locRepl = true;
                 continue;
             }
 
-            if (l.find(
-                    "initSyncDone start replay {\"chainType\": \"issuing\",") !=
-                std::string::npos)
+            if (l.find("initSyncDone start replay {\"chainType\": "
+                       "\"issuing\",") != std::string::npos)
             {
                 issRepl = true;
                 continue;
